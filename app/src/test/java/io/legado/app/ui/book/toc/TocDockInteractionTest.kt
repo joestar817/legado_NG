@@ -4,16 +4,22 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.legado.app.R
@@ -27,6 +33,7 @@ import io.legado.app.ui.design.theme.InterfaceFontTestApplication
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgLegacyThemeInput
 import io.legado.app.ui.design.theme.NgThemeResolver
+import kotlinx.coroutines.test.StandardTestDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,13 +47,33 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "en-rUS-w411dp-h891dp-xxhdpi", application = InterfaceFontTestApplication::class)
 class TocDockInteractionTest {
-    @get:Rule val composeRule = createComposeRule()
+    @OptIn(ExperimentalTestApi::class)
+    @get:Rule val composeRule = createComposeRule(effectContext = StandardTestDispatcher())
 
     private val snapshot = NgThemeResolver.resolve(NgLegacyThemeInput(
         primaryColor = 0xFFFFF1E8.toInt(), accentColor = 0xFF008577.toInt(),
         backgroundColor = 0xFFFFF9F5.toInt(), bottomBackground = 0xFFFFF1E8.toInt(),
         errorColor = 0xFFB3261E.toInt(), isDark = false, isEInk = false,
     ))
+
+    private val pager get() = composeRule.onNode(
+        SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange),
+    )
+
+    private fun showSingleChapterCatalog(): BookChapter {
+        val chapter = BookChapter(bookUrl = "book", url = "chapter-1", title = "First chapter")
+        var state by mutableStateOf(
+            TocUiState(chapters = listOf(TocChapterUiItem(chapter)), totalChapterCount = 1),
+        )
+        composeRule.setContent {
+            NgAppTheme(snapshot = snapshot, updateSystemBars = false) {
+                TocScreen(state) { event ->
+                    if (event is TocUiEvent.TabChange) state = state.copy(selectedTab = event.tab)
+                }
+            }
+        }
+        return chapter
+    }
 
     @Test
     fun catalogDockKeepsTabSemanticsAndDispatchesBothSelections() {
@@ -73,6 +100,59 @@ class TocDockInteractionTest {
             assertTrue(TOC_TAB_BOOKMARKS in selectedTabs)
             assertTrue(TOC_TAB_CHAPTERS in selectedTabs)
         }
+    }
+
+    @Test
+    fun swipingBackFromBookmarksRestoresChapterTabAndProgress() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val chapter = showSingleChapterCatalog()
+        val chapters = composeRule.onNodeWithContentDescription(context.getString(R.string.chapter_list))
+        val bookmarks = composeRule.onNodeWithContentDescription(context.getString(R.string.bookmark))
+        val count = composeRule.onNodeWithText(context.getString(R.string.read_catalog_bookmark_count, 0))
+        val progress = composeRule.onNodeWithText(
+            context.getString(R.string.read_catalog_reading_progress, 1, 1, 100.0),
+        )
+
+        bookmarks.performClick().assertIsSelected()
+        count.assertIsDisplayed()
+        pager.performTouchInput { swipeRight() }
+        composeRule.onNodeWithText(chapter.title).assertIsDisplayed()
+        chapters.assertIsSelected()
+        progress.assertIsDisplayed()
+
+        pager.performTouchInput { swipeLeft() }
+        bookmarks.assertIsSelected()
+        count.assertIsDisplayed()
+    }
+
+    @Test
+    fun draggingBackBeforeBookmarkAnimationChangesPageRestoresChapterSelection() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val chapter = showSingleChapterCatalog()
+        val chapters = composeRule.onNodeWithContentDescription(context.getString(R.string.chapter_list))
+        val bookmarks = composeRule.onNodeWithContentDescription(context.getString(R.string.bookmark))
+        chapters.assertIsSelected()
+
+        composeRule.mainClock.autoAdvance = false
+        try {
+            bookmarks.performClick()
+            repeat(3) { composeRule.mainClock.advanceTimeByFrame() }
+            bookmarks.assertIsSelected()
+            pager.performTouchInput {
+                down(center)
+                moveBy(Offset(width * 0.38f, 0f))
+            }
+            composeRule.mainClock.advanceTimeByFrame()
+            pager.performTouchInput { up() }
+        } finally {
+            composeRule.mainClock.autoAdvance = true
+        }
+
+        composeRule.onNodeWithText(chapter.title).assertIsDisplayed()
+        chapters.assertIsSelected()
+        composeRule.onNodeWithText(
+            context.getString(R.string.read_catalog_reading_progress, 1, 1, 100.0),
+        ).assertIsDisplayed()
     }
 
     @Test

@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -90,7 +91,6 @@ import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.rememberAppearanceDockSelectionColors
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 internal const val TOC_TAB_CHAPTERS = 0
@@ -183,13 +183,17 @@ internal fun TocScreen(
             pagerState.animateScrollToPage(state.selectedTab)
         }
     }
+    val currentSelectedTab by rememberUpdatedState(state.selectedTab)
+    val currentOnEvent by rememberUpdatedState(onEvent)
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }
-            .distinctUntilChanged()
-            .collect { page ->
-                if (page != state.selectedTab) {
-                    onEvent(TocUiEvent.TabChange(page))
+        var previousPage = pagerState.currentPage
+        snapshotFlow { pagerState.currentPage to pagerState.isScrollInProgress }
+            .collect { (page, scrolling) ->
+                // An interrupted tab animation can finish on the same page it started from.
+                if (page != currentSelectedTab && (page != previousPage || !scrolling)) {
+                    currentOnEvent(TocUiEvent.TabChange(page))
                 }
+                previousPage = page
             }
     }
 
