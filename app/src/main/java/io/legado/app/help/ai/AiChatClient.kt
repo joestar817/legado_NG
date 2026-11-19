@@ -25,11 +25,15 @@ import io.legado.app.web.mcp.McpInternalToolCatalog
 import io.legado.app.web.mcp.McpToolSideEffect
 import io.legado.app.web.mcp.McpToolExecutionContext
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import splitties.init.appCtx
 import java.io.IOException
 
@@ -1201,8 +1205,7 @@ class AiChatClient {
         deferVisibleContent: Boolean,
         onStreamUpdate: (AiChatStreamUpdate) -> Unit
     ): ChatCompletionSnapshot {
-        return withContext(IO) {
-            val response = newCall(request).await()
+        return newCall(request).readCancellableStream { response ->
             response.use {
                 val responseBody = it.body
                 if (!it.isSuccessful) {
@@ -1328,6 +1331,17 @@ class AiChatClient {
             }
         }
     }
+
+    private suspend fun <T> Call.readCancellableStream(read: suspend (Response) -> T): T =
+        coroutineScope {
+            suspendCancellableCoroutine { continuation ->
+                // await() covers the headers. Keep cancellation connected during body reads too.
+                continuation.invokeOnCancellation { cancel() }
+                launch(IO) {
+                    continuation.resumeWith(runCatching { read(await()) })
+                }
+            }
+        }
 
     private fun loadModelTools(
         skillId: String,
