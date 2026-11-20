@@ -44,7 +44,8 @@
 | 紧凑批量操作轨（Trial） | `NgFlatActionRail(COMPACT_SEGMENTED / SPACED_COMPACT)` | 书架批量管理底部操作坞 | `COMPACT_SEGMENTED` 使用 28dp 高、8dp 圆角、轻承载面与细边界承载成对选择操作，不使用投影；`SPACED_COMPACT` 四个带文字动作等宽排列，启用态统一只使用主题强调色，不绘制单项遮罩或阴影；业务页只传图标、短文案、可用态与事件 |
 | 类型切换操作轨（Trial） | `NgFlatActionRail(MODE_PICKER / TEXT_MODE_PICKER / FORM_TEXT_PICKER)` | 书架布局、颜色选择顶栏文字、模型编辑 | `MODE_PICKER` 为 58dp 图标＋文字，`TEXT_MODE_PICKER` 为 44dp 独立亮白纯文字轨；`FORM_TEXT_PICKER` 为 44dp 嵌入连续表单的纯文字轨，不重复绘制外壳，选中态只用主题色文字＋小勾，不铺大面积色块。业务页不得再用大胶囊或灰色底手搓同类切换 |
 | 表单文字分页（Trial） | `NgFlatActionRail(FORM_UNDERLINE_TABS)` | 背景音乐登录方式 | 用户已确认的登录稿使用 48dp 等宽触控区、16sp 文字、7dp 间距和标签宽度的 2dp 选中下划线；透明底、无分段底板、勾选或竖向分隔，提供 Tab 和选中语义。仅显式选用此 Variant 的页面生效，其它操作轨维持原样 |
-| 连续表单文本行（Trial） | `NgFormPanel` + `NgFormPanelSectionTitle` + `NgFormInlineTextRow` | 模型编辑 | 多个相关分区共用一张亮白底板，分区标题与控件直接铺在面板内；文本行 48dp，左侧短标签、右侧单行值，只读值使用次要文字色，编辑态保留真实光标，行间只用细分隔线 |
+| 连续表单文本行（Trial） | `NgFormPanel` + `NgFormPanelSectionTitle` + `NgFormInlineTextRow` | 模型编辑 | 多个相关分区共用一张亮白底板，分区标题与控件直接铺在面板内；文本行默认 48dp，左侧短标签、右侧单行值。模型显示名称用 `WRAPPING_VALUE`，标签按内容占宽，过长的值可换行并撑高文本行。只读值使用次要文字色，编辑态保留真实光标，行间只用细分隔线 |
+| 表单单选下拉 | `NgFormSelectRow(END_ANCHORED_CONTENT)` | 模型类型、书源编辑器主题 | 菜单默认按当前字体下最长选项和标准内边距定宽，对齐触发行尾端。保留菜单项触控尺寸和宽度边界。验收时检查短选项没有大片留白，长选项有足够空间。固定宽度或整行宽度用于已有明确样式要求的场景。 |
 | 短抽屉选择面板（Trial） | `NgDrawerDragHandle(COMPACT)` + `NgCompactDrawerHeader` + `NgCompactDrawerSelectionPanel` | 书架移动到分组 | 顶部使用 12dp 公共紧凑提示线，标题在 38dp 标题栏中严格居中；所有选项共享单个中性卡面，52dp 行高、无分隔线、无独立卡片和取消按钮；业务页面只提供数据与点击事件 |
 | 少量互斥选项卡（Trial） | `NgChoiceCard` | 书架管理导出格式 | 两到三个互斥选项使用并列卡片表达，整卡可点并保留明确选中反馈；业务页面只传标题、摘要、状态和事件，不单独手搓卡面 |
 | 紧凑展开设置项（Trial） | `NgExpandableSettingsItem(COMPACT)` | 书架管理导出高级设置 | 折叠时只保留单行标题、摘要和箭头；展开后承载低频格式设置，不把高级选项平铺到主流程 |

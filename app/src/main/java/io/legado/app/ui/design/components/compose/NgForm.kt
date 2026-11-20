@@ -107,7 +107,8 @@ import kotlinx.coroutines.launch
 
 data class NgFormSelectOption(
     val label: String,
-    val value: String
+    val value: String,
+    val enabled: Boolean = true,
 )
 
 enum class NgFormSelectMenuVariant {
@@ -220,7 +221,12 @@ fun NgFormGroupDivider(
     )
 }
 
-/** 分组内的紧凑单行文本字段；分组容器负责白底、圆角与行间分隔。 */
+enum class NgFormInlineTextRowVariant {
+    SINGLE_LINE,
+    WRAPPING_VALUE,
+}
+
+/** 分组内的紧凑文本字段，由分组容器绘制底板和分隔线。 */
 @Composable
 fun NgFormInlineTextRow(
     title: String,
@@ -233,6 +239,7 @@ fun NgFormInlineTextRow(
     valueMuted: Boolean = false,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
+    variant: NgFormInlineTextRowVariant = NgFormInlineTextRowVariant.SINGLE_LINE,
 ) {
     val colors = NgTheme.colors
     val contentAlpha = if (enabled) 1f else 0.45f
@@ -242,32 +249,43 @@ fun NgFormInlineTextRow(
         valueMuted -> Color(colors.onSurfaceVariant).copy(alpha = 0.58f)
         else -> Color(colors.onSurface)
     }
+    val wrapsValue = variant == NgFormInlineTextRowVariant.WRAPPING_VALUE
+    val rowHeight = if (wrapsValue) {
+        Modifier.heightIn(min = 48.dp).padding(vertical = 6.dp)
+    } else {
+        Modifier.height(48.dp)
+    }
+    val valueHeight = if (wrapsValue) Modifier.heightIn(min = 36.dp) else Modifier.height(36.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .then(rowHeight)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = title,
-            modifier = Modifier.weight(0.38f),
+            modifier = if (wrapsValue) {
+                Modifier.widthIn(max = 120.dp).padding(end = 12.dp)
+            } else {
+                Modifier.weight(0.38f)
+            },
             color = Color(colors.onSurface).copy(alpha = contentAlpha),
             fontSize = 14.sp,
             lineHeight = 18.sp,
-            maxLines = 1,
+            maxLines = if (wrapsValue) 2 else 1,
             overflow = TextOverflow.Ellipsis,
         )
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier
-                .weight(0.62f)
-                .height(36.dp)
+                .weight(if (wrapsValue) 1f else 0.62f)
+                .then(valueHeight)
                 .semantics { contentDescription = title },
             enabled = enabled,
             readOnly = readOnly,
-            singleLine = true,
+            singleLine = !wrapsValue,
             textStyle = TextStyle(
                 fontFamily = NgTheme.fontFamily,
                 color = valueColor,
@@ -285,7 +303,7 @@ fun NgFormInlineTextRow(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(36.dp),
+                        .then(valueHeight),
                     contentAlignment = Alignment.CenterEnd,
                 ) {
                     if (value.isEmpty() && !placeholder.isNullOrBlank()) {
@@ -422,12 +440,61 @@ fun NgFormSelectRow(
     enabled: Boolean = true,
     menuVariant: NgFormSelectMenuVariant = NgFormSelectMenuVariant.MATCH_ROW,
 ) {
+    NgFormChoiceRow(
+        title = title,
+        selectedLabel = options.firstOrNull { it.value == selectedValue }?.label ?: selectedValue,
+        options = options,
+        isSelected = { it == selectedValue },
+        onValueChange = onValueChange,
+        arrowIcon = arrowIcon,
+        modifier = modifier,
+        enabled = enabled,
+        menuVariant = menuVariant,
+        multiple = false,
+    )
+}
+
+@Composable
+internal fun NgFormMultiSelectRow(
+    title: String,
+    selectedLabel: String,
+    options: List<NgFormSelectOption>,
+    selectedValues: Set<String>,
+    onToggle: (String) -> Unit,
+    arrowIcon: Painter,
+    enabled: Boolean = true,
+) {
+    NgFormChoiceRow(
+        title = title,
+        selectedLabel = selectedLabel,
+        options = options,
+        isSelected = selectedValues::contains,
+        onValueChange = onToggle,
+        arrowIcon = arrowIcon,
+        modifier = Modifier,
+        enabled = enabled,
+        menuVariant = NgFormSelectMenuVariant.END_ANCHORED_CONTENT,
+        multiple = true,
+    )
+}
+
+@Composable
+private fun NgFormChoiceRow(
+    title: String,
+    selectedLabel: String,
+    options: List<NgFormSelectOption>,
+    isSelected: (String) -> Boolean,
+    onValueChange: (String) -> Unit,
+    arrowIcon: Painter,
+    modifier: Modifier,
+    enabled: Boolean,
+    menuVariant: NgFormSelectMenuVariant,
+    multiple: Boolean,
+) {
     val colors = NgTheme.colors
     val layoutDensity = LocalDensity.current
     var expanded by remember { mutableStateOf(false) }
     var rowWidthPx by remember { mutableStateOf(0) }
-    val selectedLabel = options.firstOrNull { it.value == selectedValue }?.label
-        ?: selectedValue
     val contentAlpha = if (enabled) 1f else 0.45f
     val rowWidth = with(layoutDensity) { rowWidthPx.toDp() }
     val filter = menuVariant == NgFormSelectMenuVariant.END_ANCHORED_FILTER
@@ -444,7 +511,8 @@ fun NgFormSelectRow(
                 } ?: 0
                 with(layoutDensity) { pixels.toDp() }
             }
-            (labelWidth + optionPadding * 2).coerceAtLeast(48.dp).coerceAtMost(rowWidth)
+            val checkWidth = if (multiple) 32.dp else 0.dp
+            (labelWidth + optionPadding * 2 + checkWidth).coerceAtLeast(48.dp).coerceAtMost(rowWidth)
         }
         NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
         NgFormSelectMenuVariant.END_ANCHORED_FILTER -> minOf(rowWidth, 156.dp)
@@ -513,29 +581,31 @@ fun NgFormSelectRow(
             shadowElevation = 4.dp,
         ) {
             options.forEach { option ->
-                val selected = option.value == selectedValue
+                val selected = isSelected(option.value)
                 DropdownMenuItem(
+                    enabled = option.enabled,
                     modifier = Modifier
                         .height(44.dp)
                         .semantics { this.selected = selected },
                     text = {
                         Text(
                             text = option.label,
-                            color = Color(if (filter && selected) colors.primary else colors.onSurface),
+                            color = Color(if ((filter || multiple) && selected) colors.primary else colors.onSurface)
+                                .copy(alpha = if (option.enabled) 1f else 0.45f),
                             style = if (contentWidth) optionStyle else LocalTextStyle.current,
                             fontSize = 15.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     },
-                    trailingIcon = if (filter && selected) {
+                    trailingIcon = if ((filter || multiple) && selected) {
                         {
                             Icon(Icons.Rounded.Check, contentDescription = null,
                                 modifier = Modifier.size(20.dp), tint = Color(colors.primary))
                         }
                     } else null,
                     onClick = {
-                        expanded = false
+                        if (!multiple) expanded = false
                         onValueChange(option.value)
                     },
                     contentPadding = PaddingValues(horizontal = optionPadding),
@@ -979,6 +1049,7 @@ enum class NgFormFieldVariant {
     LABELED_UNDERLINE,
     DIALOG_UNDERLINE,
     DRAWER_UNDERLINE,
+    INLINE_END_UNDERLINE,
 }
 
 /**
@@ -986,8 +1057,8 @@ enum class NgFormFieldVariant {
  *
  * OUTLINED 保持既有 34dp 容器和焦点描边；PLAIN_UNDERLINE 提供不显示标签的
  * 32dp 单行输入线；DIALOG_UNDERLINE 提供旧网络导入弹窗同款 44dp 输入线；
- * INLINE_UNDERLINE 将标签与输入线并排。业务页面只提供字段含义和值，不再
- * 自行拼装输入外观。
+ * INLINE_UNDERLINE 将标签与输入线并排；INLINE_END_UNDERLINE 在行尾放紧凑的
+ * 输入线，让数值贴近单位。业务页面只提供字段含义和值。
  */
 @Composable
 fun NgFormField(
@@ -1037,7 +1108,8 @@ fun NgFormField(
     }
     val contentAlpha = if (enabled) 1f else 0.45f
     val compact = density == NgFormDensity.COMPACT
-    val inlineUnderlined = variant == NgFormFieldVariant.INLINE_UNDERLINE
+    val endAligned = variant == NgFormFieldVariant.INLINE_END_UNDERLINE
+    val inlineUnderlined = endAligned || variant == NgFormFieldVariant.INLINE_UNDERLINE
     val dialogUnderlined = variant == NgFormFieldVariant.DIALOG_UNDERLINE
     val drawerUnderlined = variant == NgFormFieldVariant.DRAWER_UNDERLINE
     val plainUnderlined = variant == NgFormFieldVariant.PLAIN_UNDERLINE || dialogUnderlined || drawerUnderlined
@@ -1055,7 +1127,11 @@ fun NgFormField(
         underlined -> 15.sp
         else -> 13.sp
     }
-    val valueTextAlign = if (inlineUnderlined) TextAlign.Center else TextAlign.Start
+    val valueTextAlign = when {
+        endAligned -> TextAlign.End
+        inlineUnderlined -> TextAlign.Center
+        else -> TextAlign.Start
+    }
 
     val inputField: @Composable (Modifier) -> Unit = { inputModifier ->
         BasicTextField(
@@ -1132,11 +1208,11 @@ fun NgFormField(
                 ) {
                     Box(
                         modifier = Modifier.weight(1f),
-                        contentAlignment = if (inlineUnderlined) {
-                            Alignment.Center
-                        } else {
-                            Alignment.CenterStart
-                        }
+                        contentAlignment = when (valueTextAlign) {
+                            TextAlign.End -> Alignment.CenterEnd
+                            TextAlign.Center -> Alignment.Center
+                            else -> Alignment.CenterStart
+                        },
                     ) {
                         if (value.isEmpty() && !placeholder.isNullOrBlank()) {
                             Text(
@@ -1177,6 +1253,7 @@ fun NgFormField(
             ) {
                 Text(
                     text = label,
+                    modifier = if (endAligned) Modifier.weight(0.4f) else Modifier,
                     color = Color(colors.onSurfaceVariant).copy(alpha = contentAlpha),
                     fontSize = labelFontSize,
                     lineHeight = 16.sp,
@@ -1184,7 +1261,13 @@ fun NgFormField(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.width(8.dp))
-                inputField(Modifier.weight(1f))
+                if (endAligned) {
+                    Box(Modifier.weight(0.6f), contentAlignment = Alignment.CenterEnd) {
+                        inputField(Modifier.widthIn(max = 144.dp))
+                    }
+                } else {
+                    inputField(Modifier.weight(1f))
+                }
             }
         } else if (plainUnderlined) {
             inputField(Modifier)

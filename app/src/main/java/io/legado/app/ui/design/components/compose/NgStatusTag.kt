@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -61,7 +62,8 @@ fun NgStatusTag(
     text: String,
     variant: NgStatusTagVariant,
     modifier: Modifier = Modifier,
-    style: NgStatusTagStyle = NgStatusTagStyle.REGULAR
+    style: NgStatusTagStyle = NgStatusTagStyle.REGULAR,
+    wrapText: Boolean = false,
 ) {
     val metrics = when (style) {
         NgStatusTagStyle.REGULAR -> TagMetrics(
@@ -101,13 +103,15 @@ fun NgStatusTag(
         )
     }
     val (containerColor, contentColor) = tagColors(variant)
+    val height = if (wrapText) Modifier.heightIn(min = metrics.height.dp)
+        else Modifier.height(metrics.height.dp)
     Box(
         modifier = modifier
-            .height(metrics.height.dp)
+            .then(height)
             .defaultMinSize(minWidth = metrics.minWidth.dp)
             .clip(RoundedCornerShape(metrics.cornerRadius.dp))
             .background(containerColor)
-            .padding(horizontal = metrics.horizontalPadding.dp),
+            .padding(horizontal = metrics.horizontalPadding.dp, vertical = if (wrapText) 2.dp else 0.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -115,7 +119,7 @@ fun NgStatusTag(
             color = contentColor,
             fontSize = metrics.textSize.sp,
             lineHeight = metrics.lineHeight.sp,
-            maxLines = 1,
+            maxLines = if (wrapText) Int.MAX_VALUE else 1,
             overflow = TextOverflow.Ellipsis
         )
     }
