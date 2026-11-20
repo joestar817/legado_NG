@@ -194,6 +194,10 @@ internal fun AiProviderSetting.modelReasoning(model: AiModel): AiModelReasoning 
         }
         protocol == AiReasoningProtocol.ENABLE_THINKING -> preset?.reasoningBudgetRange
         else -> null
+    }?.takeIf {
+        val generationProtocol = resolveModelGenerationRoute(model).protocol
+        generationProtocol != AiModelGenerationTestProtocol.RESPONSES ||
+            generationUrl(generationProtocol).isOpenRouterApi("responses")
     }
     return AiModelReasoning(
         supported = knownSupport || isTrial,

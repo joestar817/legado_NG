@@ -62,7 +62,7 @@ private fun AiProviderSetting.isOfficialOpenAiGenerationPath(
         url.encodedPath.trimEnd('/') == expectedPath
 }
 
-private fun AiProviderSetting.generationUrl(protocol: AiModelGenerationTestProtocol) =
+internal fun AiProviderSetting.generationUrl(protocol: AiModelGenerationTestProtocol) =
     generationApiPath(protocol)?.let { path ->
         runCatching { buildAiApiEndpoint(baseUrl, path).toHttpUrl() }.getOrNull()
     }

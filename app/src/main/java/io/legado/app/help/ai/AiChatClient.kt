@@ -41,6 +41,7 @@ import java.io.IOException
 import java.io.InterruptedIOException
 
 private const val MODEL_GENERATION_TEST_TIMEOUT_SECONDS = 20
+private const val CHAT_STREAM_TAIL_TIMEOUT_NANOS = 1_000_000_000L
 
 internal class AiChatStreamResponseException(message: String) : IOException(message)
 
@@ -426,18 +427,19 @@ class AiChatClient {
             val content = completion.content
             val toolCalls = completion.toolCalls
             if (toolCalls.size() == 0) {
+                val replyContent = AiChatToolStepContent.providerProjection(content)
                 durableAssistantContent = AiChatToolStepContent.bestRecoveryCandidate(
                     recoverableToolStepContents
                 )?.let { earlierContent ->
                     if (finalizeStateFlushRetryCount > 0) {
                         AiChatVisibleContentRecovery.recoverAfterInternalRetry(
-                            finalContent = content,
+                            finalContent = replyContent,
                             earlierContent = earlierContent
                         )
                     } else {
-                        AiChatVisibleContentRecovery.recover(content, earlierContent)
+                        AiChatVisibleContentRecovery.recover(replyContent, earlierContent)
                     }
-                } ?: content.trim()
+                } ?: replyContent.trim()
                 val finalizeEffects = hookRuntime.evaluate(
                     AgentHookEvent(
                         eventId = "$turnId:step-$stepNumber:finalize",
@@ -453,8 +455,8 @@ class AiChatClient {
                 requestMessages.applyHookEffects(finalizeEffects)
                 val finalizeBlock = finalizeEffects.block
                 if (finalizeBlock != null && finalizeStateFlushRetryCount == 0) {
-                    AiChatToolStepContent.recoveryCandidate(content)?.let(recoverableToolStepContents::add)
-                    requestMessages.add(uploadAssistantMessage(content, lastReasoning, message))
+                    AiChatToolStepContent.recoveryCandidate(replyContent)?.let(recoverableToolStepContents::add)
+                    requestMessages.add(uploadAssistantMessage(replyContent, lastReasoning, message))
                     finalizeStateFlushRetryCount += 1
                     onDurableContextUpdate(
                         durableContextUpdate(
@@ -488,7 +490,7 @@ class AiChatClient {
                         memoryTrace = memoryTrace.toList()
                     )
                 )
-                requestMessages.add(uploadAssistantMessage(content, lastReasoning, message))
+                requestMessages.add(uploadAssistantMessage(replyContent, lastReasoning, message))
                 onDurableContextUpdate(
                     durableContextUpdate(
                         requestMessages,
@@ -542,6 +544,12 @@ class AiChatClient {
                 addProperty("role", "assistant")
                 addProperty("content", providerContent)
             })
+            onStreamUpdate(AiChatStreamUpdate(
+                content = durableAssistantContent,
+                reasoning = lastReasoning,
+                toolTrace = toolTrace.toList(),
+                memoryTrace = memoryTrace.toList(),
+            ))
             // 先持久化完整 tool-call 计划。批次中途退出时不保存半组 tool result，
             // 恢复阶段会清理未闭合的 Provider 投影，并通过不可变 receipt replay。
             onDurableContextUpdate(
@@ -1275,20 +1283,21 @@ class AiChatClient {
                         it.body.charStream().buffered().use { reader ->
                             try {
                                 codec.readStream(reader) { content, reasoning ->
+                                    val preview = if (assistantTurn) {
+                                        AiChatToolStepContent.streamingProjection(content)
+                                    } else content
                                     if (assistantTurn) {
                                         partialContent = content
                                         partialReasoning = reasoning
                                     }
                                     onStreamUpdate(AiChatStreamUpdate(
-                                        content = if (tools.isEmpty()) content else "",
+                                        content = preview,
                                         reasoning = reasoning,
                                     ))
                                 }
-                            } catch (error: AiChatIncompleteStreamException) {
+                            } catch (error: Exception) {
                                 if (!assistantTurn) throw error
-                                throw AiAssistantReplyEndException(
-                                    AiAssistantReplyEndReason.INTERRUPTED, partialContent, partialReasoning,
-                                )
+                                throwInterruptedStream(error, partialContent, partialReasoning)
                             }
                         }
                     } else {
@@ -1317,10 +1326,11 @@ class AiChatClient {
             ))
             .build()
         val reasoningKey = setting.reasoningOptions(model.id).reasoningOutputField.ifBlank { "reasoning_content" }
+        val openRouterHistory = setting.openRouterChatHistory(model.id)
         val completion = if (stream) {
-            executeStreamChat(request, reasoningKey, tools.isNotEmpty(), onStreamUpdate, generationTest, assistantTurn)
+            executeStreamChat(request, reasoningKey, openRouterHistory, onStreamUpdate, generationTest, assistantTurn)
         } else {
-            executeJsonChat(request, reasoningKey, generationTest)
+            executeJsonChat(request, reasoningKey, openRouterHistory, generationTest)
         }
         if (assistantTurn) completion.requireAssistantEnd()
         return completion
@@ -1345,12 +1355,19 @@ class AiChatClient {
         } else {
             setting.reasoningOptions(model.id)
         }
+        val openRouterHistory = setting.openRouterChatHistory(model.id)
         return JsonObject().apply {
             addProperty("model", model.id)
             add(
                 "messages",
                 AiChatContextManager.providerMessages(messages).apply {
-                    forEach { item -> item.asJsonObject.removeNativeChatHistory() }
+                    forEach { item ->
+                        val message = item.asJsonObject
+                        val parts = openRouterHistory?.parts(message)
+                            ?.takeIf { message.stringOrNull("role") == "assistant" }
+                        message.removeNativeChatHistory()
+                        if (parts != null) message.add(OPENROUTER_REASONING_DETAILS, parts)
+                    }
                 }
             )
             params.temperature?.let { addProperty("temperature", it) }
@@ -1375,6 +1392,7 @@ class AiChatClient {
     private suspend fun OkHttpClient.executeJsonChat(
         request: Request,
         reasoningKey: String,
+        openRouterHistory: AiNativeChatHistory?,
         generationTest: Boolean,
     ): ChatCompletionSnapshot {
         val responseBody = if (generationTest) {
@@ -1402,14 +1420,20 @@ class AiChatClient {
                 "OpenAI response did not contain an assistant message"
             }
         }
+        val reasoning = message.stringOrNull(reasoningKey)
+            ?: message.stringOrNull("reasoning_content")
+            ?: message.stringOrNull("reasoning")
+        val parts = message.remove(OPENROUTER_REASONING_DETAILS)
+        if (openRouterHistory != null && parts?.isJsonArray == true) {
+            message.remove("reasoning")
+            openRouterHistory.attachParts(message, parts.asJsonArray)
+        }
         val usage = json.objectOrNull("usage")?.toChatUsage()
         return ChatCompletionSnapshot(
             message = message,
             content = if (generationTest) message.get("content").chatGenerationVisibleText()
             else message.get("content").contentText(),
-            reasoning = message.stringOrNull(reasoningKey)
-                ?: message.stringOrNull("reasoning_content")
-                ?: message.stringOrNull("reasoning"),
+            reasoning = reasoning,
             model = json.stringOrNull("model"),
             finishReason = choice.stringOrNull("finish_reason"),
             usage = usage,
@@ -1420,7 +1444,7 @@ class AiChatClient {
     private suspend fun OkHttpClient.executeStreamChat(
         request: Request,
         reasoningKey: String,
-        deferVisibleContent: Boolean,
+        openRouterHistory: AiNativeChatHistory?,
         onStreamUpdate: (AiChatStreamUpdate) -> Unit,
         generationTest: Boolean,
         assistantTurn: Boolean,
@@ -1435,12 +1459,23 @@ class AiChatClient {
                 var refused = false
                 var legacyFunctionCall = false
                 var usage: AiChatUsage? = null
+                var tailDeadline: Long? = null
                 val contentBuilder = StringBuilder()
                 val reasoningBuilder = StringBuilder()
+                val reasoningDetails = openRouterHistory?.let { AiOpenRouterReasoningDetails() }
                 val toolCalls = linkedMapOf<Int, StreamToolCall>()
-                responseBody.charStream().buffered().useLines { lines ->
-                    for (line in lines) {
+                responseBody.charStream().buffered().use { reader ->
+                    while (true) {
                         currentCoroutineContext().ensureActive()
+                        if (tailDeadline?.let { System.nanoTime() - it >= 0 } == true) break
+                        val line = try {
+                            reader.readLine()
+                        } catch (error: IOException) {
+                            currentCoroutineContext().ensureActive()
+                            if (tailDeadline != null) break
+                            if (!assistantTurn) throw error
+                            throwInterruptedStream(error, contentBuilder.toString(), reasoningBuilder.toString())
+                        } ?: break
                         val data = line.trim()
                             .takeIf { line -> line.startsWith("data:") }
                             ?.removePrefix("data:")
@@ -1448,8 +1483,7 @@ class AiChatClient {
                             ?: continue
                         if (data == "[DONE]") {
                             streamDone = true
-                            if (generationTest) break
-                            continue
+                            break
                         }
                         val json = runCatching {
                             JsonParser.parseString(data).asJsonObject
@@ -1463,9 +1497,11 @@ class AiChatClient {
                             val message = detail?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
                                 ?.asString?.trim().orEmpty()
                             if (streamError.isJsonObject || message.isNotEmpty()) {
-                                throw AiChatStreamResponseException(
+                                val error = AiChatStreamResponseException(
                                     message.take(500).ifEmpty { "提供商流式响应出错" }
                                 )
+                                if (!assistantTurn) throw error
+                                throwInterruptedStream(error, contentBuilder.toString(), reasoningBuilder.toString())
                             }
                         }
                         model = json.stringOrNull("model") ?: model
@@ -1475,7 +1511,7 @@ class AiChatClient {
                             ?.takeIf { it.isJsonObject }
                             ?.asJsonObject
                             ?: continue
-                        finishReason = choice.stringOrNull("finish_reason") ?: finishReason
+                        finishReason = choice.stringOrNull("finish_reason")?.takeIf(String::isNotBlank) ?: finishReason
                         val delta = choice.objectOrNull("delta")
                             ?: choice.objectOrNull("message")
                             ?: JsonObject()
@@ -1497,6 +1533,9 @@ class AiChatClient {
                             ?: delta.stringOrNull("reasoning")
                         if (!reasoningDelta.isNullOrEmpty()) {
                             reasoningBuilder.append(reasoningDelta)
+                        }
+                        delta.arrayOrNull(OPENROUTER_REASONING_DETAILS)?.let { details ->
+                            reasoningDetails?.accept(details)
                         }
                         delta.arrayOrNull("tool_calls")?.forEach { item ->
                             val obj = item.takeIf { call -> call.isJsonObject }
@@ -1529,17 +1568,27 @@ class AiChatClient {
                                 reasoning = reasoningBuilder.toString(),
                             )?.let { throw it }
                         }
-                        if ((!deferVisibleContent && contentDelta.isNotEmpty()) || !reasoningDelta.isNullOrEmpty()) {
+                        if (contentDelta.isNotEmpty() || !reasoningDelta.isNullOrEmpty()) {
+                            val content = contentBuilder.toString()
                             onStreamUpdate(
                                 AiChatStreamUpdate(
-                                    content = if (deferVisibleContent) "" else contentBuilder.toString(),
+                                    content = if (assistantTurn) AiChatToolStepContent.streamingProjection(content)
+                                    else content,
                                     reasoning = reasoningBuilder.toString()
                                         .takeIf { text -> text.isNotBlank() }
                                 )
                             )
                         }
-                        // The probe has the final choice and does not need trailing usage frames.
-                        if (generationTest && !finishReason.isNullOrBlank()) break
+                        if (finishReason != null && tailDeadline == null) {
+                            // Allow the usage tail without relying on the gateway to close SSE.
+                            if (generationTest) break
+                            val timeout = responseBody.source().timeout()
+                            val deadline = System.nanoTime() + CHAT_STREAM_TAIL_TIMEOUT_NANOS
+                            val boundedDeadline = if (timeout.hasDeadline()) minOf(deadline, timeout.deadlineNanoTime())
+                            else deadline
+                            timeout.deadlineNanoTime(boundedDeadline)
+                            tailDeadline = boundedDeadline
+                        }
                     }
                 }
                 val toolCallArray = JsonArray().apply {
@@ -1547,14 +1596,6 @@ class AiChatClient {
                 }
                 val content = contentBuilder.toString()
                 val reasoning = reasoningBuilder.toString().takeIf { text -> text.isNotBlank() }
-                if (deferVisibleContent && toolCallArray.size() == 0 && content.isNotEmpty()) {
-                    onStreamUpdate(
-                        AiChatStreamUpdate(
-                            content = content,
-                            reasoning = reasoning
-                        )
-                    )
-                }
                 val message = JsonObject().apply {
                     addProperty("role", "assistant")
                     addProperty("content", content)
@@ -1564,6 +1605,7 @@ class AiChatClient {
                     if (toolCallArray.size() > 0) {
                         add("tool_calls", toolCallArray)
                     }
+                    reasoningDetails?.result()?.let { openRouterHistory?.attachParts(this, it) }
                 }
                 ChatCompletionSnapshot(
                     message = message,
@@ -1577,6 +1619,14 @@ class AiChatClient {
                 )
             }
         }
+    }
+
+    private suspend fun throwInterruptedStream(error: Exception, content: String, reasoning: String?): Nothing {
+        currentCoroutineContext().ensureActive()
+        if (error is CancellationException) throw error
+        val preview = AiChatToolStepContent.streamingProjection(content)
+        if (preview.isBlank() && error !is AiChatIncompleteStreamException) throw error
+        throw AiAssistantReplyEndException(AiAssistantReplyEndReason.INTERRUPTED, preview, reasoning, cause = error)
     }
 
     private suspend fun <T> Call.readCancellableStream(read: suspend (Response) -> T): T =

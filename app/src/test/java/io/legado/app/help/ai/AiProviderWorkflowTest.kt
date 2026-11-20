@@ -8,9 +8,12 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.legado.app.ui.config.withModelSelection
 import io.legado.app.utils.defaultSharedPreferences
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -212,6 +215,135 @@ class AiProviderWorkflowTest {
 
             reply.set(sse(partial, "[DONE]"))
             assertEquals("Partial reply", client.send(messages(), "stream-eof", "done").content)
+        }
+    }
+
+    @Test
+    fun assistantStreamsTextWithToolsAndRetainsItAfterAProviderError() = runBlocking {
+        val release = CountDownLatch(1)
+        val request = CompletableDeferred<JsonObject>()
+        val preview = CompletableDeferred<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/v1/chat/completions") { exchange ->
+            request.complete(JsonParser.parseString(exchange.requestBody.use { it.readBytes().decodeToString() }).asJsonObject)
+            exchange.responseHeaders.set("Content-Type", "text/event-stream")
+            exchange.sendResponseHeaders(200, 0)
+            exchange.responseBody.use { body ->
+                body.write(sse("""{"choices":[{"delta":{"content":"Draft<|DSM"}}]}""").encodeToByteArray())
+                body.flush()
+                if (release.await(10, TimeUnit.SECONDS)) {
+                    body.write(sse(
+                        """{"choices":[{"delta":{"content":"L|tool arguments"}}]}""",
+                        """{"error":{"message":"gateway overloaded"}}""",
+                    ).encodeToByteArray())
+                }
+            }
+        }
+        server.start()
+        try {
+            val fixture = configureFixture(server)
+            selectFixtureAssistant(fixture, stream = true)
+            AiConfig.internalMcpEnabled = true
+            val sending = async(Dispatchers.IO) {
+                runCatching {
+                    AiChatClient().send(
+                        messages(), "tool-preview", "tool-error",
+                        enabledMcpCapabilityIds = listOf("general.service_info"),
+                        onStreamUpdate = { update -> preview.complete(update.content) },
+                    )
+                }
+            }
+            try {
+                val recorded = withTimeout(20_000) {
+                    select {
+                        request.onAwait { it }
+                        sending.onAwait { throw AssertionError("Assistant ended before sending its request", it.exceptionOrNull()) }
+                    }
+                }
+                assertTrue(recorded.arrayOrNull("tools").objectParts().isNotEmpty())
+                assertEquals("Draft", withTimeout(3_000) { preview.await() })
+            } finally {
+                release.countDown()
+            }
+            val error = withTimeout(5_000) { sending.await() }.exceptionOrNull() as AiAssistantReplyEndException
+            assertEquals(AiAssistantReplyEndReason.INTERRUPTED, error.reason)
+            assertEquals("Draft", error.partialContent)
+            assertEquals("gateway overloaded", error.cause?.message)
+            assertTrue(AiChatContextManager.interruptedReplyContent(error.partialContent, error)?.endsWith("Draft") == true)
+        } finally {
+            release.countDown()
+            AiConfig.internalMcpEnabled = false
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun assistantSettlesWithoutPeerCloseAndKeepsUsageTail() = runBlocking {
+        for (sendDone in listOf(true, false)) {
+            val release = CountDownLatch(1)
+            val flushed = CompletableDeferred<Unit>()
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+            server.createContext("/v1/chat/completions") { exchange ->
+                exchange.requestBody.use { it.readBytes() }
+                exchange.responseHeaders.set("Content-Type", "text/event-stream")
+                exchange.sendResponseHeaders(200, 0)
+                val ending = if (sendDone) sse("[DONE]") else ""
+                exchange.responseBody.use { body ->
+                    body.write((sse(
+                        """{"choices":[{"delta":{"content":"Done."},"finish_reason":"stop"}]}""",
+                        """{"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":2,"total_tokens":14}}""",
+                    ) + ending).encodeToByteArray())
+                    body.flush()
+                    flushed.complete(Unit)
+                    release.await(10, TimeUnit.SECONDS)
+                }
+            }
+            server.start()
+            try {
+                val fixture = configureFixture(server).copy(supportsStreamUsage = true)
+                selectFixtureAssistant(fixture, stream = true)
+                val sending = async(Dispatchers.IO) {
+                    AiChatClient().send(messages(), "open-connection", "done-$sendDone")
+                }
+                try {
+                    withTimeout(5_000) { flushed.await() }
+                    val reply = withTimeout(3_000) { sending.await() }
+                    assertEquals("Done.", reply.content)
+                    assertEquals(AiChatUsage(12, 2, 14), reply.usage)
+                } finally {
+                    release.countDown()
+                }
+            } finally {
+                release.countDown()
+                server.stop(0)
+            }
+        }
+    }
+
+    @Test
+    fun responsesAssistantPreservesPartialTextWhenTheGatewayReportsAnError() = runBlocking {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/v1/responses") { exchange ->
+            exchange.requestBody.use { it.readBytes() }
+            val body = sse(
+                """{"type":"response.output_text.delta","delta":"Partial text"}""",
+                """{"type":"error","message":"gateway overloaded"}""",
+            ).encodeToByteArray()
+            exchange.responseHeaders.set("Content-Type", "text/event-stream")
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.start()
+        try {
+            selectFixtureAssistant(configureFixture(server).copy(useResponsesApi = true), stream = true)
+            val error = runCatching {
+                AiChatClient().send(messages(), "responses-error", "partial")
+            }.exceptionOrNull() as AiAssistantReplyEndException
+            assertEquals(AiAssistantReplyEndReason.INTERRUPTED, error.reason)
+            assertEquals("Partial text", error.partialContent)
+            assertEquals("gateway overloaded", error.cause?.message)
+        } finally {
+            server.stop(0)
         }
     }
 

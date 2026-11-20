@@ -10,6 +10,7 @@ internal const val AI_NATIVE_HISTORY = "_legado_native_history"
 
 internal fun JsonObject.removeNativeChatHistory() {
     if (remove(AI_NATIVE_HISTORY) != null) remove("reasoning_content")
+    remove(OPENROUTER_REASONING_DETAILS)
 }
 
 internal class AiNativeChatHistory(
@@ -24,6 +25,13 @@ internal class AiNativeChatHistory(
 
     fun parts(message: JsonObject): JsonArray? = message.objectOrNull(AI_NATIVE_HISTORY)
         ?.takeIf { it.stringOrNull("route") == route }?.arrayOrNull("parts")
+
+    fun attachParts(message: JsonObject, parts: JsonArray) {
+        message.add(AI_NATIVE_HISTORY, JsonObject().apply {
+            addProperty("route", route)
+            add("parts", parts.deepCopy())
+        })
+    }
 
     fun reply(
         parts: JsonArray,
@@ -41,10 +49,7 @@ internal class AiNativeChatHistory(
         if (parts.objectParts().any { part ->
                 part.entrySet().any { (key, value) -> key != "text" && (key != "type" || value.asString != "text") }
             }) {
-            add(AI_NATIVE_HISTORY, JsonObject().apply {
-                addProperty("route", route)
-                add("parts", parts.deepCopy())
-            })
+            attachParts(this, parts)
         }
     }, model, finish, usage)
 }

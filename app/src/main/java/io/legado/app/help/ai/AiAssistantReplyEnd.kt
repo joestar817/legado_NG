@@ -10,7 +10,8 @@ internal class AiAssistantReplyEndException(
     val reason: AiAssistantReplyEndReason,
     partialContent: String = "",
     partialReasoning: String? = null,
-) : IllegalStateException(reason.name) {
+    cause: Throwable? = null,
+) : IllegalStateException(reason.name, cause) {
     val partialContent = if (reason == AiAssistantReplyEndReason.REFUSED) "" else partialContent.trim()
     val partialReasoning = partialReasoning?.takeIf {
         reason != AiAssistantReplyEndReason.REFUSED && it.isNotBlank()
@@ -34,5 +35,5 @@ internal fun assistantUnfinishedReply(
             else -> if (streamEnded) return null else AiAssistantReplyEndReason.INTERRUPTED
         }
     }
-    return AiAssistantReplyEndException(endReason, content, reasoning)
+    return AiAssistantReplyEndException(endReason, AiChatToolStepContent.streamingProjection(content), reasoning)
 }

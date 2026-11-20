@@ -1,5 +1,7 @@
 package io.legado.app.help.ai
 
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.completeWith
@@ -13,6 +15,7 @@ import okio.Buffer
 import okio.ForwardingSource
 import okio.buffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.BufferedReader
@@ -36,6 +39,65 @@ class AiChatStreamCancellationTest {
     @Test
     fun `stop closes the request after a partial reply`() {
         verifyStop(firstFrame = "partial")
+    }
+
+    @Test
+    fun openRouterStreamReplaysOrderedReasoningWithTheToolResult() = runBlocking {
+        val provider = AiDefaultProviders.all().single { it.id == "openrouter" }.copy(apiKey = "router-test")
+        val model = AiModel("anthropic/claude-example")
+        val route = requireNotNull(provider.openRouterChatHistory(model.id))
+        val frames = listOf(
+            """{"delta":{"reasoning_details":[{"type":"reasoning.summary","summary":"Find ","index":0}]}}""",
+            """{"delta":{"reasoning_details":[{"type":"reasoning.summary","summary":"evidence","index":0}]}}""",
+            """{"delta":{"reasoning_details":[{"type":"reasoning.encrypted","id":"r1","data":"opaque","index":0}]}}""",
+            """{"delta":{"reasoning_details":[{"type":"reasoning.text","id":"r2","text":"Read ","index":0}]}}""",
+            """{"delta":{"reasoning_details":[{"type":"reasoning.text","id":"r2","text":"source","index":0}]}}""",
+            """{"delta":{"reasoning_details":[{"type":"reasoning.text","id":"r2","signature":"sig","index":0}]}}""",
+            """{"delta":{"reasoning_details":[{"type":"reasoning.text","text":"Check","signature":"sig-2","index":0}]}}""",
+            """{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"mcp__legado__legado_ping","arguments":"{}"}}]},"finish_reason":"tool_calls"}""",
+        )
+        val data = frames.joinToString("") { "data: {\"choices\":[$it]}\n\n" } + "data: [DONE]\n\n"
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
+            thread(name = "openrouter-reasoning-fixture", isDaemon = true) { serveFinishedStream(server, data) }
+            val request = Request.Builder().url("http://127.0.0.1:${server.localPort}/chat/completions").build()
+            val http = OkHttpClient.Builder().proxy(Proxy.NO_PROXY).build()
+            val chat = AiChatClient()
+            val decoded = try {
+                requireNotNull(withTimeout(5_000) { readStream(chat, http, request, mutableListOf(), route) })
+            } finally {
+                http.connectionPool.evictAll()
+                http.dispatcher.executorService.shutdown()
+            }
+            val message = decoded.javaClass.getDeclaredMethod("getMessage").apply { isAccessible = true }
+                .invoke(decoded) as JsonObject
+            val restored = JsonParser.parseString(message.toString()).asJsonObject
+            val tool = JsonParser.parseString(
+                """{"role":"tool","tool_call_id":"call_1","content":"pong"}"""
+            ).asJsonObject
+            val history = listOf(restored, tool)
+            val wire = chat.buildRequestBody(provider, model, history, emptyList(), AiTextParams(), true)
+                .arrayOrNull("messages").objectParts()
+            assertEquals("call_1", wire[0].arrayOrNull("tool_calls").objectParts().single().stringOrNull("id"))
+            assertEquals("call_1", wire[1].stringOrNull("tool_call_id"))
+            assertFalse(wire[0].has(AI_NATIVE_HISTORY))
+            assertEquals(JsonParser.parseString("""
+                [
+                  {"type":"reasoning.summary","summary":"Find evidence","index":0},
+                  {"type":"reasoning.encrypted","id":"r1","data":"opaque","index":0},
+                  {"type":"reasoning.text","id":"r2","text":"Read source","signature":"sig","index":0},
+                  {"type":"reasoning.text","text":"Check","signature":"sig-2","index":0}
+                ]
+            """), wire[0].arrayOrNull(OPENROUTER_REASONING_DETAILS))
+            for ((otherProvider, otherModel) in listOf(
+                provider.copy(apiKey = "another-key") to model,
+                provider to model.copy(id = "a-different-model"),
+                provider.copy(baseUrl = "https://example.invalid/api/v1") to model,
+            )) {
+                val body = chat.buildRequestBody(otherProvider, otherModel, history, emptyList(), AiTextParams(), true)
+                assertFalse(body.toString().contains(OPENROUTER_REASONING_DETAILS))
+                assertFalse(body.toString().contains("opaque"))
+            }
+        }
     }
 
     private fun verifyStop(firstFrame: String?) = runBlocking {
@@ -123,11 +185,11 @@ class AiChatStreamCancellationTest {
         }
     }
 
-    private fun serveFinishedStream(server: ServerSocket) {
+    private fun serveFinishedStream(server: ServerSocket, stream: String = frame("next") + "data: [DONE]\n\n") {
         server.accept().use { socket ->
             socket.soTimeout = 5_000
             readRequest(socket)
-            val data = (frame("next") + "data: [DONE]\n\n").toByteArray()
+            val data = stream.toByteArray()
             val output = socket.getOutputStream()
             output.write(("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n" +
                 "Content-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray())
@@ -148,11 +210,14 @@ class AiChatStreamCancellationTest {
         chat: AiChatClient,
         client: OkHttpClient,
         request: Request,
-        updates: MutableList<String>
+        updates: MutableList<String>,
+        openRouterHistory: AiNativeChatHistory? = null,
     ): Any? = suspendCoroutineUninterceptedOrReturn { continuation ->
         val onUpdate: (AiChatStreamUpdate) -> Unit = { updates += it.content }
         try {
-            executeStreamChat.invoke(chat, client, request, "reasoning_content", false, onUpdate, false, true, continuation)
+            executeStreamChat.invoke(
+                chat, client, request, "reasoning_content", openRouterHistory, onUpdate, false, true, continuation,
+            )
         } catch (error: InvocationTargetException) {
             throw error.targetException
         }
@@ -160,7 +225,7 @@ class AiChatStreamCancellationTest {
 
     private val executeStreamChat = AiChatClient::class.java.getDeclaredMethod(
         "executeStreamChat", OkHttpClient::class.java, Request::class.java, String::class.java,
-        Boolean::class.javaPrimitiveType, Function1::class.java, Boolean::class.javaPrimitiveType,
+        AiNativeChatHistory::class.java, Function1::class.java, Boolean::class.javaPrimitiveType,
         Boolean::class.javaPrimitiveType, Continuation::class.java
     ).apply { isAccessible = true }
 }

@@ -46,15 +46,19 @@ internal fun JsonObject.addReasoningParams(
             val value = effort ?: "none".takeIf { params.disableThinking }
             value?.let { addProperty("reasoning_effort", it) }
         }
-        AiReasoningProtocol.OPENROUTER -> add("reasoning", JsonObject().apply {
-            val budget = params.assistantReasoningMaxTokens
-            when {
-                budget != null -> addProperty("max_tokens", budget)
-                effort != null -> addProperty("effort", effort)
-                else -> addProperty("enabled", params.enableThinking)
-            }
-        })
+        AiReasoningProtocol.OPENROUTER -> add("reasoning", openRouterReasoningRequest(params))
         AiReasoningProtocol.NATIVE -> Unit
+    }
+}
+
+internal fun openRouterReasoningRequest(params: AiTextParams) = JsonObject().apply {
+    val budget = params.assistantReasoningMaxTokens?.takeIf { it > 0 }
+    val effort = params.reasoningEffort
+    when {
+        params.disableThinking -> addProperty("enabled", false)
+        budget != null -> addProperty("max_tokens", budget)
+        effort != null -> addProperty("effort", effort)
+        else -> addProperty("enabled", true)
     }
 }
 

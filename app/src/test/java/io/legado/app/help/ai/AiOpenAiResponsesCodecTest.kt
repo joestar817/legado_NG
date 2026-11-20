@@ -46,6 +46,52 @@ class AiOpenAiResponsesCodecTest {
     }
 
     @Test
+    fun onlyOpenRouterSerializesAnIndependentResponsesThinkingBudget() {
+        val router = AiDefaultProviders.all().single { it.id == "openrouter" }.copy(useResponsesApi = true)
+        val model = AiModel(
+            id = "~anthropic/claude-example",
+            modelInfo = AiModelInfo(
+                endpoint = router.modelConfigurationKey(),
+                reasoning = AiModelValue(true),
+                supportsReasoningBudget = AiModelValue(true),
+                maxOutputTokens = AiModelValue(8192),
+            ),
+        )
+        val route = router.resolveModelGenerationRoute(model)
+        assertEquals(AiModelGenerationTestProtocol.RESPONSES, route.protocol)
+        val budget = reasoningBudgetChoice(2048)
+        val resolved = router.modelAssistantReasoning(model, null, null, modelEffort = budget)
+        assertEquals(1024..8191, resolved.budgetRange)
+        assertEquals(budget, resolved.selected)
+        val params = resolved.applyTo(AiTextParams())
+        val codec = AiOpenAiResponsesCodec(router, model.id, "/responses")
+        for (stream in listOf(false, true)) {
+            val request = codec.request(emptyList(), emptyList(), params, stream, null).bodyJson()
+            assertEquals(8192, request.intOrNull("max_output_tokens"))
+            assertEquals(objectFrom("""{"max_tokens":2048}"""), request.objectOrNull("reasoning"))
+        }
+
+        val standard = setting("https://api.openai.com/v1")
+        val standardRequest = AiOpenAiResponsesCodec(standard, "gpt-5", "/responses")
+            .request(emptyList(), emptyList(), params, false, null).bodyJson()
+        assertFalse(standardRequest.has("reasoning"))
+    }
+
+    @Test
+    fun openRouterResponsesPreservesAutoOffAndSelectedEffort() {
+        val router = setting("https://openrouter.ai/api/v1")
+        val codec = AiOpenAiResponsesCodec(router, "test-model", "/responses")
+        fun body(params: AiTextParams) = codec.request(emptyList(), emptyList(), params, false, null).bodyJson()
+        assertFalse(body(AiTextParams()).has("reasoning"))
+        assertEquals(objectFrom("""{"enabled":false}"""),
+            body(AiTextParams(disableThinking = true)).objectOrNull("reasoning"))
+        assertEquals(objectFrom("""{"enabled":true}"""),
+            body(AiTextParams(enableThinking = true)).objectOrNull("reasoning"))
+        assertEquals(objectFrom("""{"effort":"high"}"""),
+            body(AiTextParams(enableThinking = true, reasoningEffort = "high")).objectOrNull("reasoning"))
+    }
+
+    @Test
     fun terminalSnapshotProducesUsageAndPairedToolCallId() {
         val codec = codec()
         val reply = codec.readJson(nativeToolReply)

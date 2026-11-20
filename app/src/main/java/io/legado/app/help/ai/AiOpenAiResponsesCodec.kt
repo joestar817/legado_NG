@@ -16,6 +16,7 @@ internal class AiOpenAiResponsesCodec(
     private val history = AiNativeChatHistory(setting, modelId, url.toString())
     private val officialDeepSeek = url.isHttps && url.port == 443 && url.host == "api.deepseek.com"
     private val officialOpenAi = url.isHttps && url.port == 443 && url.host == "api.openai.com"
+    private val officialOpenRouter = url.isOpenRouterApi("responses")
     private val openAiReasoningModel = OPENAI_REASONING_MODEL.containsMatchIn(
         modelId.substringAfterLast('/').lowercase()
     )
@@ -41,7 +42,9 @@ internal class AiOpenAiResponsesCodec(
             if (officialDeepSeek || !openAiReasoningModel && !params.enableThinking) {
                 params.temperature?.let { addProperty("temperature", it) }
             }
-            if (effort != null) {
+            if (officialOpenRouter && (params.enableThinking || params.disableThinking)) {
+                add("reasoning", openRouterReasoningRequest(params))
+            } else if (effort != null) {
                 add("reasoning", JsonObject().apply { addProperty("effort", effort) })
             }
             if (officialOpenAi && openAiReasoningModel) {
