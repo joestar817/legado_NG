@@ -676,6 +676,14 @@
     <string name="ai_model_test_invalid_response">无法解析回复</string>
     <string name="ai_assistant_reply_truncated">回复已截断</string>
     <string name="ai_assistant_reply_interrupted">回复中断</string>
+    <string name="ai_chat_web_enabled">自动联网已开启</string>
+    <string name="ai_chat_web_disabled">自动联网已关闭</string>
+    <string name="ai_chat_web_searching">正在搜索网页</string>
+    <string name="ai_chat_web_reading">正在读取网页</string>
+    <string name="ai_chat_web_searching_images">正在按图搜索</string>
+    <string name="ai_chat_web_search_failed">本次搜索失败</string>
+    <string name="ai_chat_web_read_failed">未能读取 %1$s</string>
+    <string name="ai_chat_web_sources">来源 · %1$d</string>
     <string name="ai_assistant_reply_refused">模型拒绝生成</string>
     <string name="ai_model_name_and_type">名称与类型</string>
     <string name="ai_model_specifications">模型规格</string>
@@ -707,6 +715,9 @@
     <string name="ai_model_output_modalities">输出形式</string>
     <string name="ai_model_abilities">模型能力</string>
     <string name="ai_model_supported_abilities">支持能力</string>
+    <string name="ai_model_builtin_web_tools">内置工具</string>
+    <string name="ai_model_web_search">联网搜索</string>
+    <string name="ai_model_web_read_links">读链接</string>
     <string name="ai_model_modality_text">文本</string>
     <string name="ai_model_modality_image">图像</string>
     <string name="ai_model_modality_video">视频</string>

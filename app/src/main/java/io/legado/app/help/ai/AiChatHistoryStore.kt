@@ -160,6 +160,7 @@ object AiChatHistoryStore {
                 reasoning = update.reasoning,
                 toolTrace = update.toolTrace,
                 toolReceipts = update.toolReceipts,
+                webActivity = update.webActivity,
                 deliveryState = AiChatMessageSnapshot.DELIVERY_IN_FLIGHT
             )
         }
@@ -210,7 +211,8 @@ object AiChatHistoryStore {
             isPinned = isPinned,
             loadedSkillIds = GSON.toJson(loadedSkillIds),
             enabledMcpCapabilityIds = GSON.toJson(enabledMcpCapabilityIds),
-            uploadMessages = GSON.toJson(uploadMessages)
+            uploadMessages = GSON.toJson(uploadMessages),
+            webEnabled = webEnabled != false,
         )
     }
 
@@ -242,7 +244,8 @@ object AiChatHistoryStore {
             messages = messages,
             loadedSkillIds = loadedSkillIds.toStringList(),
             enabledMcpCapabilityIds = enabledMcpCapabilityIds.toStringList(),
-            uploadMessages = uploadMessages.toUploadMessages()
+            uploadMessages = uploadMessages.toUploadMessages(),
+            webEnabled = webEnabled,
         ).sanitize()
     }
 
@@ -260,7 +263,8 @@ object AiChatHistoryStore {
             messages = emptyList(),
             loadedSkillIds = loadedSkillIds.toStringList(),
             enabledMcpCapabilityIds = enabledMcpCapabilityIds.toStringList(),
-            uploadMessages = emptyList()
+            uploadMessages = emptyList(),
+            webEnabled = webEnabled,
         ).sanitize()
     }
 
@@ -424,7 +428,9 @@ data class AiChatSessionSnapshot(
     @SerializedName("enabled_mcp_capability_ids")
     val enabledMcpCapabilityIds: List<String> = emptyList(),
     @SerializedName("upload_messages")
-    val uploadMessages: List<JsonObject> = emptyList()
+    val uploadMessages: List<JsonObject> = emptyList(),
+    @SerializedName("web_enabled")
+    val webEnabled: Boolean? = null,
 ) {
     fun normalizedAgentModeIdentity(): AgentModeIdentity {
         return AgentModeRegistry.normalizePersistedIdentity(modeId, modeRevision)
@@ -448,6 +454,8 @@ data class AiChatMessageSnapshot(
     val toolReceipts: List<ToolExecutionReceipt>? = emptyList(),
     @SerializedName("memory_trace")
     val memoryTrace: List<AiMemoryTraceItem>? = emptyList(),
+    @SerializedName("web_activity")
+    val webActivity: AiWebActivity? = null,
     @SerializedName("elapsed_ms")
     val elapsedMs: Long? = null,
     @SerializedName("favorite")

@@ -223,6 +223,10 @@ import io.legado.app.help.ai.AiChatStreamUpdate
 import io.legado.app.help.ai.AiChatTurnResult
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiMemoryTraceItem
+import io.legado.app.help.ai.AiWebActivity
+import io.legado.app.help.ai.AiWebActivityAction
+import io.legado.app.help.ai.deepSeekWebRoute
+import io.legado.app.help.ai.webUrl
 import io.legado.app.help.ai.AiModelAbility
 import io.legado.app.help.ai.AiModelGenerationIssue
 import io.legado.app.help.ai.AiPendingToolCall
@@ -608,6 +612,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
     var activeStreamReasoningTarget by remember { mutableStateOf("") }
     var activeStreamToolTraceTarget by remember { mutableStateOf<List<String>>(emptyList()) }
     var activeStreamMemoryTraceTarget by remember { mutableStateOf<List<AiMemoryTraceItem>>(emptyList()) }
+    var activeWebActivity by remember { mutableStateOf<AiWebActivity?>(null) }
+    var webEnabled by remember { mutableStateOf(true) }
     var selectedDrawerIndex by remember { mutableIntStateOf(2) }
     var configVersion by remember { mutableIntStateOf(0) }
     var generationBlock by remember { mutableStateOf<Pair<String, AiModelGenerationIssue>?>(null) }
@@ -659,6 +665,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
     val selectedReasoningEnabled = remember(configVersion) {
         AiAssistantConfigUi.selectedReasoningEnabled()
     }
+    val selectedModelCanUseWeb = remember(configVersion) {
+        AiAssistantConfigUi.selectedModel()?.let { selection ->
+            selection.provider.deepSeekWebRoute(selection.model)?.enabled?.isNotEmpty()
+        } == true
+    }
+    val webControlVisible = activeAgentMode.id == AgentModeRegistry.GENERAL_ID && selectedModelCanUseWeb
     val selectedModelSupportsToolCalls = remember(configVersion) {
         AiAssistantConfigUi.selectedModel()?.model
             ?.abilities
@@ -959,7 +971,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
                             ?: message.toolTrace,
                         memoryTrace = activeStreamMemoryTraceTarget
                             .takeIf { it.isNotEmpty() }
-                            ?: message.memoryTrace
+                            ?: message.memoryTrace,
+                        webActivity = activeWebActivity,
                     )
                 }
             }
@@ -1059,7 +1072,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
             messages = visibleMessages.map { it.toSnapshot() },
             loadedSkillIds = inputAttachments.loadedSkillIds(),
             enabledMcpCapabilityIds = enabledMcpCapabilityIds.toList(),
-            uploadMessages = uploadMessages.map { it.deepCopy().asJsonObject }
+            uploadMessages = uploadMessages.map { it.deepCopy().asJsonObject },
+            webEnabled = webEnabled,
         )
         sessions.removeAll { it.id == sessionId }
         sessions.add(0, snapshot)
@@ -1117,6 +1131,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     fun startNewChat() {
         persistActiveSession()
         activeSessionId = UUID.randomUUID().toString()
+        webEnabled = true
         activeAgentMode = initialAgentMode
         activeModeEntryContext = initialModeEntryContext
         modeEntryStarted = false
@@ -1146,6 +1161,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             return
         }
         activeSessionId = session.id
+        webEnabled = session.webEnabled != false
         activeAgentMode = restoredMode
         activeModeEntryContext = session.modeEntryContext
         modeEntryStarted = session.modeEntryStarted
@@ -1350,8 +1366,11 @@ private fun AiChatRoute(onBack: () -> Unit) {
         activeStreamReasoningTarget = ""
         activeStreamToolTraceTarget = emptyList()
         activeStreamMemoryTraceTarget = emptyList()
+        activeWebActivity = null
         val uploadMessagesBeforeSend = uploadMessages.map { it.deepCopy().asJsonObject }
         val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
+        val allowWebForTurn = activeAgentMode.id == AgentModeRegistry.GENERAL_ID && webEnabled
+        val webUserText = messages.lastOrNull { it.role == ChatRole.USER }?.content.orEmpty()
         messages += ChatUiMessage(
             id = loadingId,
             role = ChatRole.ASSISTANT,
@@ -1379,7 +1398,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 .filter { it.type == AiChatInputAttachmentType.SKILL }
                 .map { it.id.removePrefix("skill.") },
             enabledMcpCapabilityIds = mcpCapabilityIds,
-            uploadMessages = uploadMessagesBeforeSend
+            uploadMessages = uploadMessagesBeforeSend,
+            webEnabled = webEnabled,
         )
         scope.launch {
             listState.scrollToItem(messages.lastIndex)
@@ -1409,6 +1429,13 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 emptyList()
                             },
                         promptUsageAnchor = promptUsageAnchor,
+                        allowWeb = allowWebForTurn,
+                        webUserText = webUserText,
+                        onWebUpdate = { update ->
+                            scope.launch {
+                                if (activeLoadingMessageId == loadingId) activeWebActivity = update
+                            }
+                        },
                         onStreamUpdate = { update: AiChatStreamUpdate ->
                             scope.launch {
                                 if (activeLoadingMessageId == loadingId) {
@@ -1520,6 +1547,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                             },
                             toolTrace = durable?.toolTrace ?: activeStreamToolTraceTarget,
                             toolReceipts = durable?.toolReceipts.orEmpty(),
+                            webActivity = durable?.webActivity ?: activeWebActivity?.settledOrNull(),
                             loading = false,
                             meta = when {
                                 partialContent == null -> "error"
@@ -1558,6 +1586,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             activeStreamReasoningTarget = ""
             activeStreamToolTraceTarget = emptyList()
             activeStreamMemoryTraceTarget = emptyList()
+            activeWebActivity = null
             refreshContextUsage()
             if (canceled) {
                 contextStatusText = null
@@ -2060,6 +2089,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 openSession(nextSession)
             } else {
                 activeSessionId = UUID.randomUUID().toString()
+                webEnabled = true
                 activeAgentMode = initialAgentMode
                 activeModeEntryContext = initialModeEntryContext
                 modeEntryStarted = false
@@ -2519,6 +2549,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 sending = sending,
                                 modelIconRes = selectedModelIconRes,
                                 reasoningEnabled = selectedReasoningEnabled,
+                                webEnabled = webEnabled,
+                                webControlVisible = webControlVisible,
                                 mcpEnabled = internalMcpEnabled && enabledMcpCapabilityIds.isNotEmpty(),
                                 skillEnabled = inputAttachments.any {
                                     it.type == AiChatInputAttachmentType.SKILL
@@ -2538,6 +2570,10 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 skillErrorText = skillToolErrorText,
                                 onSend = ::sendMessage,
                                 onStop = ::stopSending,
+                                onWebToggle = {
+                                    webEnabled = !webEnabled
+                                    if (!sending) persistActiveSession()
+                                },
                                 onModelClick = {
                                     if (modelSheetLaunchGate.tryOpen(SystemClock.elapsedRealtime())) {
                                         showModelSheet = true
@@ -4241,7 +4277,7 @@ private fun RikkaMessageItem(
         } else {
             AssistantMessageHeader()
             if (message.loading) {
-                ThinkingLoadingLine()
+                ThinkingLoadingLine(message.webActivity?.activeAction)
                 if (!message.reasoning.isNullOrBlank()) {
                     ReasoningEntry(
                         reasoning = message.reasoning,
@@ -4326,6 +4362,7 @@ private fun RikkaMessageItem(
                         )
                     }
                 }
+                message.webActivity?.let { WebSources(it) }
                 if (message.toolTrace.isNotEmpty()) {
                     ToolTraceEntry(message.toolTrace)
                 }
@@ -4982,14 +5019,19 @@ private fun InteractionChip(
 }
 
 @Composable
-private fun ThinkingLoadingLine() {
+private fun ThinkingLoadingLine(webAction: AiWebActivityAction?) {
     Row(
         modifier = Modifier.padding(top = 4.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(
-            text = "Thinking",
+            text = when (webAction) {
+                AiWebActivityAction.SEARCH -> stringResource(R.string.ai_chat_web_searching)
+                AiWebActivityAction.READ -> stringResource(R.string.ai_chat_web_reading)
+                AiWebActivityAction.IMAGE_SEARCH -> stringResource(R.string.ai_chat_web_searching_images)
+                null -> "Thinking"
+            },
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
@@ -6461,6 +6503,52 @@ private fun AgentModeEntryContext?.payloadInt(key: String): Int? {
 }
 
 @Composable
+private fun WebSources(activity: AiWebActivity) {
+    if (activity.searchFailed) {
+        Text(
+            text = stringResource(R.string.ai_chat_web_search_failed),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    activity.failedLinks.forEach { url ->
+        Text(
+            text = stringResource(R.string.ai_chat_web_read_failed, url),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    if (activity.sources.isEmpty()) return
+
+    val context = LocalContext.current
+    var expanded by remember(activity.sources) { mutableStateOf(false) }
+    InlineDetailEntry(
+        label = stringResource(R.string.ai_chat_web_sources, activity.sources.size),
+        expanded = expanded,
+        onClick = { expanded = !expanded },
+    )
+    AnimatedVisibility(visible = expanded) {
+        Column(Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 6.dp)) {
+            activity.sources.forEach { source ->
+                val url = source.url.webUrl() ?: return@forEach
+                Text(
+                    text = source.title,
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { context.openUrl(url) }
+                        .padding(vertical = 6.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ToolTraceEntry(toolTrace: List<String>) {
     var expanded by remember { mutableStateOf(false) }
     val title = "MCP 工具调用 ${toolTrace.size} 次"
@@ -7223,6 +7311,8 @@ private fun RikkaChatInput(
     sending: Boolean,
     @DrawableRes modelIconRes: Int,
     reasoningEnabled: Boolean,
+    webEnabled: Boolean,
+    webControlVisible: Boolean,
     mcpEnabled: Boolean,
     skillEnabled: Boolean,
     mcpControlVisible: Boolean,
@@ -7237,6 +7327,7 @@ private fun RikkaChatInput(
     skillErrorText: String?,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onWebToggle: () -> Unit,
     onModelClick: () -> Unit,
     onReasoningClick: () -> Unit,
     onMcpClick: () -> Unit,
@@ -7324,6 +7415,16 @@ private fun RikkaChatInput(
                                 active = reasoningEnabled,
                                 onClick = onReasoningClick
                             )
+                            if (webControlVisible) {
+                                InputDrawableIcon(
+                                    iconRes = R.drawable.ic_cfg_web,
+                                    active = webEnabled,
+                                    inactiveTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    description = stringResource(if (webEnabled) R.string.ai_chat_web_enabled
+                                        else R.string.ai_chat_web_disabled),
+                                    onClick = onWebToggle,
+                                )
+                            }
                             if (mcpControlVisible) {
                                 InputDrawableIcon(
                                     iconRes = R.drawable.ic_ai_capability_tool,
@@ -8045,7 +8146,7 @@ private fun InputModelIcon(
         Box(contentAlignment = Alignment.Center) {
             Image(
                 painter = painterResource(iconRes),
-                contentDescription = null,
+                contentDescription = stringResource(R.string.ai_model_select),
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -8056,6 +8157,8 @@ private fun InputModelIcon(
 private fun InputDrawableIcon(
     @DrawableRes iconRes: Int,
     active: Boolean,
+    description: String? = null,
+    inactiveTint: Color = Color.Unspecified,
     onClick: () -> Unit
 ) {
     Surface(
@@ -8067,9 +8170,9 @@ private fun InputDrawableIcon(
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 painter = painterResource(iconRes),
-                contentDescription = null,
+                contentDescription = description,
                 modifier = Modifier.size(22.dp),
-                tint = if (active) MaterialTheme.colorScheme.primary else Color.Unspecified
+                tint = if (active) MaterialTheme.colorScheme.primary else inactiveTint
             )
         }
     }
@@ -8113,6 +8216,7 @@ private fun AiChatTurnResult.toUiMessage(elapsedMs: Long): ChatUiMessage {
         toolTrace = toolTrace,
         toolReceipts = toolReceipts,
         memoryTrace = memoryTrace,
+        webActivity = webActivity,
         elapsedMs = elapsedMs,
         promptTokens = usage?.promptTokens,
         localPromptTokens = null,
@@ -9171,6 +9275,7 @@ private fun ChatUiMessage.toSnapshot(): AiChatMessageSnapshot {
         toolTrace = toolTrace,
         toolReceipts = toolReceipts,
         memoryTrace = memoryTrace,
+        webActivity = webActivity?.settledOrNull(),
         elapsedMs = elapsedMs,
         favorite = favorite,
         deliveryState = deliveryState.snapshotValue,
@@ -9205,6 +9310,7 @@ private fun AiChatMessageSnapshot.toUiMessage(): ChatUiMessage {
         toolTrace = toolTrace.orEmpty(),
         toolReceipts = toolReceipts.orEmpty(),
         memoryTrace = memoryTrace.orEmpty(),
+        webActivity = webActivity?.settledOrNull(),
         elapsedMs = elapsedMs,
         favorite = favorite,
         deliveryState = ChatDeliveryState.fromSnapshot(
@@ -9244,6 +9350,7 @@ private data class ChatUiMessage(
     val toolTrace: List<String> = emptyList(),
     val toolReceipts: List<ToolExecutionReceipt> = emptyList(),
     val memoryTrace: List<AiMemoryTraceItem> = emptyList(),
+    val webActivity: AiWebActivity? = null,
     val elapsedMs: Long? = null,
     val favorite: Boolean = false,
     val loading: Boolean = false,

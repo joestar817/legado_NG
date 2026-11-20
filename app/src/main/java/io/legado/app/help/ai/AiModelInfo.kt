@@ -117,7 +117,7 @@ internal fun HttpUrl.deepSeekCatalogEndpoint(): String? {
     return "https://$DEEPSEEK_API_HOST$path"
 }
 
-private fun HttpUrl.isDeepSeekApi(): Boolean =
+internal fun HttpUrl.isDeepSeekApi(): Boolean =
     isHttps && host == DEEPSEEK_API_HOST && port == 443 && username.isEmpty() && password.isEmpty()
 
 internal fun readCommonModelInfo(model: JsonObject, endpoint: String): AiModelInfo {

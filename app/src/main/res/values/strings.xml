@@ -682,6 +682,14 @@
     <string name="ai_model_test_invalid_response">Invalid response</string>
     <string name="ai_assistant_reply_truncated">Reply truncated</string>
     <string name="ai_assistant_reply_interrupted">Reply interrupted</string>
+    <string name="ai_chat_web_enabled">Automatic web access on</string>
+    <string name="ai_chat_web_disabled">Automatic web access off</string>
+    <string name="ai_chat_web_searching">Searching the web</string>
+    <string name="ai_chat_web_reading">Reading a webpage</string>
+    <string name="ai_chat_web_searching_images">Searching by image</string>
+    <string name="ai_chat_web_search_failed">Web search failed</string>
+    <string name="ai_chat_web_read_failed">Couldn’t read %1$s</string>
+    <string name="ai_chat_web_sources">Sources · %1$d</string>
     <string name="ai_assistant_reply_refused">The model declined to reply</string>
     <string name="ai_model_name_and_type">Name and type</string>
     <string name="ai_model_specifications">Model specifications</string>
@@ -713,6 +721,9 @@
     <string name="ai_model_output_modalities">Output modalities</string>
     <string name="ai_model_abilities">Model abilities</string>
     <string name="ai_model_supported_abilities">Supported abilities</string>
+    <string name="ai_model_builtin_web_tools">Built-in tools</string>
+    <string name="ai_model_web_search">Web search</string>
+    <string name="ai_model_web_read_links">Read links</string>
     <string name="ai_model_modality_text">Text</string>
     <string name="ai_model_modality_image">Image</string>
     <string name="ai_model_modality_video">Video</string>

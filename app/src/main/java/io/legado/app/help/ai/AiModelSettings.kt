@@ -28,6 +28,8 @@ data class AiModelSettings(
     @SerializedName("enabledReasoningEfforts") val enabledReasoningEfforts: List<String>? = null,
     @SerializedName("capabilityOverrides") val capabilityOverrides: Set<AiModelCapabilityField>? = null,
     @SerializedName("interfacePreference") val interfacePreference: AiModelInterfacePreference? = null,
+    @SerializedName("nativeWebSearch") val nativeWebSearch: Boolean? = null,
+    @SerializedName("nativeReadLinks") val nativeReadLinks: Boolean? = null,
 ) {
     internal fun overriddenCapabilities(): Set<AiModelCapabilityField> =
         capabilityOverrides ?: if (capabilitiesEdited) AiModelCapabilityField.entries.toSet() else emptySet()

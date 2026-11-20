@@ -31,5 +31,7 @@ data class AiChatConversation(
     @ColumnInfo(defaultValue = "[]")
     val enabledMcpCapabilityIds: String = "[]",
     @ColumnInfo(defaultValue = "[]")
-    val uploadMessages: String = "[]"
+    val uploadMessages: String = "[]",
+    @ColumnInfo(defaultValue = "1")
+    val webEnabled: Boolean = true,
 )

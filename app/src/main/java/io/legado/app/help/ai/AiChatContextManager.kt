@@ -132,8 +132,25 @@ object AiChatContextManager {
 
     internal fun isInterruptedReply(message: JsonObject): Boolean = message.has(INTERRUPTED_REPLY_ID)
 
-    internal fun providerMessages(messages: List<JsonObject>): JsonArray = JsonArray().apply {
+    internal fun providerMessages(
+        messages: List<JsonObject>,
+        turnSystemInstruction: String? = null,
+    ): JsonArray = JsonArray().apply {
         messages.forEach { add(providerMessage(it)) }
+        if (turnSystemInstruction != null) {
+            val system = firstOrNull()?.asJsonObject?.takeIf { it.role() == "system" }
+            val prompt = system?.get("content")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+            if (system != null && prompt != null) {
+                val content = if (prompt.isBlank()) turnSystemInstruction else "$prompt\n\n$turnSystemInstruction"
+                system.addProperty("content", content)
+            } else {
+                asList().add(0, JsonObject().apply {
+                    addProperty("role", "system")
+                    addProperty("content", turnSystemInstruction)
+                })
+            }
+        }
     }
 
     fun providerMessage(message: JsonObject): JsonObject {

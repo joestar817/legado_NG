@@ -10,7 +10,10 @@ import java.io.BufferedReader
 internal class AiOpenAiResponsesCodec(
     private val setting: AiProviderSetting,
     private val modelId: String,
-    endpoint: String
+    endpoint: String,
+    private val deepSeekWeb: Boolean = false,
+    private val nativeTools: List<JsonObject> = emptyList(),
+    private val webEvents: AiDeepSeekWebEvents? = null,
 ) : AiChatCodec {
     private val url = buildAiApiEndpoint(setting.baseUrl, endpoint).toHttpUrl()
     private val history = AiNativeChatHistory(setting, modelId, url.toString())
@@ -50,9 +53,10 @@ internal class AiOpenAiResponsesCodec(
             if (officialOpenAi && openAiReasoningModel) {
                 add("include", JsonArray().apply { add("reasoning.encrypted_content") })
             }
-            if (tools.isNotEmpty()) {
+            if (tools.isNotEmpty() || nativeTools.isNotEmpty()) {
                 add("tools", JsonArray().apply {
                     tools.forEach { definition -> add(functionDefinition(definition)) }
+                    nativeTools.forEach { add(it.deepCopy()) }
                 })
             } else if (params.jsonResponse) {
                 add("text", JsonObject().apply {
@@ -119,6 +123,8 @@ internal class AiOpenAiResponsesCodec(
         if (nativeMatches) {
             native.forEach { add(it.deepCopy()) }
         } else {
+            if (deepSeekWeb) native.filter { it.stringOrNull("type") == "web_search_call" }
+                .forEach { add(it.deepCopy()) }
             if (text.isNotBlank()) add(textItem("assistant", text))
             if (paired) calls.forEach { call ->
                 val function = requireNotNull(call.objectOrNull("function"))
@@ -178,6 +184,7 @@ internal class AiOpenAiResponsesCodec(
         }
         val outputs = json.arrayOrNull("output")?.objectParts()
             ?: if (finish != null) emptyList() else error("Responses 未返回 output")
+        webEvents?.responsesResult(outputs)
         val calls = JsonArray()
         val replayItems = JsonArray()
         val callIds = hashSetOf<String>()
@@ -211,6 +218,10 @@ internal class AiOpenAiResponsesCodec(
                     }
                     item.get("arguments").aiJsonObjectArgument()
                     calls.add(aiFunctionCall(callId, name, arguments))
+                    replayItems.add(item.replayItem())
+                }
+                "web_search_call" -> {
+                    check(deepSeekWeb) { "Responses 返回了未支持的网页工具" }
                     replayItems.add(item.replayItem())
                 }
                 else -> error("Responses 返回了不支持的输出项：$type")
@@ -264,6 +275,7 @@ internal class AiOpenAiResponsesCodec(
                 error("Responses 流式请求失败")
             }
             frame.requireNoAiError(event)
+            webEvents?.responsesProgress(type, frame)
             when (type) {
                 "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta" -> {
                     val delta = frame.stringOrNull("delta").orEmpty()

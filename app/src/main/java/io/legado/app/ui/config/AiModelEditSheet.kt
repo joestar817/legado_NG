@@ -61,6 +61,8 @@ import io.legado.app.help.ai.AiModelSettings
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.effectiveModelCapabilities
+import io.legado.app.help.ai.AiWebTool
+import io.legado.app.help.ai.deepSeekWebRoute
 import io.legado.app.help.ai.knownModalities
 import io.legado.app.help.ai.AiModelValue
 import io.legado.app.help.ai.modelGenerationTestProtocols
@@ -142,6 +144,7 @@ internal fun AiModelEditSheet(
     )
     val registry = remember(model) { model.registryCapabilityDefaults() }
     val draftModel = remember(draft) { modelForDraft(draft) }
+    val nativeWeb = remember(provider, draftModel) { provider.deepSeekWebRoute(draftModel) }
     val efforts = remember(provider, draftModel) { provider.modelReasoning(draftModel).efforts }
     val detected = remember(provider, info, registry, model) {
         val native = provider.nativeModelReasoning(model.id, provider.reasoningCatalogInfo(model))
@@ -162,7 +165,8 @@ internal fun AiModelEditSheet(
     }
     val invalidInterfaceOverride = unsupportedInterface && !usesProviderInterface
     val canRestore = detected.hasValues || detected.effortLevelsKnown || catalogContext != null ||
-        catalogOutput != null || !usesProviderInterface
+        catalogOutput != null || !usesProviderInterface ||
+        settings.nativeWebSearch != null || settings.nativeReadLinks != null
 
     fun editCapability(edited: AiModelEditDraft, field: AiModelCapabilityField) {
         val current = requireNotNull(edited.modelSettings)
@@ -309,6 +313,28 @@ internal fun AiModelEditSheet(
                         },
                     )
                     NgFormGroupDivider()
+                    if (nativeWeb != null) {
+                        ModelCapabilityRow(
+                            title = R.string.ai_model_builtin_web_tools,
+                            items = nativeWeb.supported.toList(),
+                            selected = nativeWeb.enabled,
+                            label = { tool ->
+                                stringResource(when (tool) {
+                                    AiWebTool.SEARCH -> R.string.ai_model_web_search
+                                    AiWebTool.READ_LINK -> R.string.ai_model_web_read_links
+                                })
+                            },
+                            onToggle = { tool ->
+                                // No explicit override is needed for the default checked state.
+                                val overrideValue = false.takeIf { tool in nativeWeb.enabled }
+                                draft = draft.copy(modelSettings = when (tool) {
+                                    AiWebTool.SEARCH -> settings.copy(nativeWebSearch = overrideValue)
+                                    AiWebTool.READ_LINK -> settings.copy(nativeReadLinks = overrideValue)
+                                })
+                            },
+                        )
+                        NgFormGroupDivider()
+                    }
                     val checked = efforts.checked.toSet()
                     NgFormMultiSelectRow(
                         title = stringResource(R.string.ai_catalog_effort_levels),
@@ -671,6 +697,8 @@ internal fun restoreModelDraft(
         abilities = abilities,
         modelSettings = settings.withCapabilityOverrides(settings.overriddenCapabilities() - restored).copy(
             interfacePreference = null,
+            nativeWebSearch = null,
+            nativeReadLinks = null,
             referenceContextWindowTokens = settings.referenceContextWindowTokens.takeIf { info.contextWindow == null },
             referenceMaxOutputTokens = settings.referenceMaxOutputTokens.takeIf { info.maxOutputTokens == null },
             enabledReasoningEfforts = settings.enabledReasoningEfforts.takeIf {

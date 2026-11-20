@@ -47,7 +47,9 @@ internal class AiChatStreamResponseException(message: String) : IOException(mess
 
 private class AiChatHttpResponseException(val status: Int) : IOException()
 
-class AiChatClient {
+class AiChatClient internal constructor(private val clientForTimeout: (Int) -> OkHttpClient) {
+
+    constructor() : this(::aiHttpClient)
 
     internal suspend fun testModelGeneration(
         setting: AiProviderSetting,
@@ -235,6 +237,9 @@ class AiChatClient {
         onDurableContextUpdate: (AiChatDurableContextUpdate) -> Unit = {},
         onContextEvent: (AiChatContextEvent) -> Unit = {},
         enabledMcpCapabilityIds: List<String> = emptyList(),
+        allowWeb: Boolean = false,
+        webUserText: String? = null,
+        onWebUpdate: (AiWebActivity) -> Unit = {},
         onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
     ): AiChatTurnResult {
         val selection = runCatching { AiConfig.requireAssistantModel() }.getOrElse {
@@ -251,6 +256,14 @@ class AiChatClient {
             assistantParams, model.catalogInfo(modelSettings), contextWindow,
         ) ?: assistantParams
         val params = AiConfig.assistantModelReasoning(setting, model).applyTo(outputParams)
+        val webRoute = setting.deepSeekWebRoute(model, AiModelGenerationRoute(protocol, null))
+        val webPlan = webRoute?.plan(
+            allowed = allowWeb,
+            userText = webUserText ?: messages.lastOrNull { it.stringOrNull("role") == "user" }
+                ?.get("content").contentText(),
+            thinkingOff = params.disableThinking && protocol != AiModelGenerationTestProtocol.CLAUDE_MESSAGES,
+        ) ?: AiWebToolPlan.Off
+        val webEvents = if (webPlan is AiWebToolPlan.Native) AiDeepSeekWebEvents(onWebUpdate) else null
         val activeSkill = AiChatContextManager.activeSkillSnapshot(messages)
         val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
             loadModelTools(
@@ -271,7 +284,7 @@ class AiChatClient {
                 add("内置 MCP 未开启")
             }
         }.toMutableList()
-        val client = aiHttpClient(setting.timeoutSeconds)
+        val client = clientForTimeout(setting.timeoutSeconds)
         val requestMessages = messages
         val recoveringInterruptedBatch =
             AiChatToolBatchRecovery.discardLatestIncompleteBatch(requestMessages)
@@ -379,6 +392,9 @@ class AiChatClient {
                     setting, model, requestMessages, tools, requestParams, conversationId, onStreamUpdate,
                     assistantTurn = true,
                     protocol = protocol,
+                    webRoute = webRoute,
+                    webPlan = webPlan,
+                    webEvents = webEvents,
                 )
             } catch (error: IllegalStateException) {
                 if (!contextOverflowRecoveryAttempted &&
@@ -417,6 +433,8 @@ class AiChatClient {
                     continue
                 }
                 throw error
+            } finally {
+                webEvents?.finishResponse()
             }
             lastModel = completion.model
             usageAccumulator.add(completion.usage)
@@ -499,7 +517,7 @@ class AiChatClient {
                         toolTrace,
                         hookRuntime,
                         toolReceipts
-                    )
+                    ).copy(webActivity = webEvents?.settled)
                 )
                 tokenCalibration = calibrationAfterModelResponse(
                     usage = completion.usage,
@@ -530,6 +548,7 @@ class AiChatClient {
                         contextWindow,
                     ),
                     contextCalibration = tokenCalibration,
+                    webActivity = webEvents?.settled,
                     compactionCount = contextCompactions.size,
                     contextCompactions = contextCompactions.toList(),
                     contextMessages = contextMessages
@@ -1255,23 +1274,29 @@ class AiChatClient {
         generationTest: Boolean = false,
         assistantTurn: Boolean = false,
         protocol: AiModelGenerationTestProtocol = setting.requireModelGenerationProtocol(model),
+        webRoute: AiDeepSeekWebRoute? = null,
+        webPlan: AiWebToolPlan = AiWebToolPlan.Off,
+        webEvents: AiDeepSeekWebEvents? = null,
     ): ChatCompletionSnapshot {
         val stream = setting.streamResponseEnabled
         val apiPath = setting.generationApiPath(protocol)
+        val nativeWeb = webPlan as? AiWebToolPlan.Native
+        val nativeTools = nativeWeb?.definitions.orEmpty()
         val codec = when (protocol) {
             AiModelGenerationTestProtocol.CLAUDE_MESSAGES ->
-                AiClaudeMessagesCodec(setting, model.id, setting.reasoningCatalogInfo(model))
+                AiClaudeMessagesCodec(setting, model.id, setting.reasoningCatalogInfo(model),
+                    webRoute != null, nativeTools, webEvents)
             AiModelGenerationTestProtocol.GEMINI_GENERATE_CONTENT ->
                 AiGeminiContentCodec(setting, model.id, setting.reasoningCatalogInfo(model))
             AiModelGenerationTestProtocol.RESPONSES -> {
                 if (apiPath == null) throw AiEndpointException("Responses API endpoint is not configured")
-                AiOpenAiResponsesCodec(setting, model.id, apiPath)
+                AiOpenAiResponsesCodec(setting, model.id, apiPath, webRoute != null, nativeTools, webEvents)
             }
             AiModelGenerationTestProtocol.CHAT_COMPLETIONS -> null
         }
         if (codec != null) {
             val providerMessages = AiChatContextManager
-                .providerMessages(messages)
+                .providerMessages(messages, nativeWeb?.systemInstruction)
                 .map { it.asJsonObject }
             val request = codec.request(providerMessages, tools, params, stream, conversationId)
             var partialContent = ""
@@ -1316,21 +1341,23 @@ class AiChatClient {
             return completion
         }
         if (apiPath == null) throw AiEndpointException("Chat Completions API endpoint is not configured")
+        val deepSeekHistory = webRoute?.let { AiNativeChatHistory(setting, model.id, it.endpoint) }
         val request = Request.Builder()
             .url(buildAiApiEndpoint(setting.baseUrl, apiPath))
             .addHeader("Authorization", "Bearer ${setting.apiKeyForRequest()}")
             .addOpenCodeProviderHeaders(setting, conversationId)
             .addHeader("Content-Type", "application/json")
             .post(jsonBody(
-                buildRequestBody(setting, model, messages, tools, params, stream),
+                buildRequestBody(setting, model, messages, tools, params, stream, nativeWeb, deepSeekHistory),
             ))
             .build()
         val reasoningKey = setting.reasoningOptions(model.id).reasoningOutputField.ifBlank { "reasoning_content" }
         val openRouterHistory = setting.openRouterChatHistory(model.id)
         val completion = if (stream) {
-            executeStreamChat(request, reasoningKey, openRouterHistory, onStreamUpdate, generationTest, assistantTurn)
+            executeStreamChat(request, reasoningKey, openRouterHistory, onStreamUpdate, generationTest,
+                assistantTurn, deepSeekHistory, webEvents)
         } else {
-            executeJsonChat(request, reasoningKey, openRouterHistory, generationTest)
+            executeJsonChat(request, reasoningKey, openRouterHistory, generationTest, deepSeekHistory, webEvents)
         }
         if (assistantTurn) completion.requireAssistantEnd()
         return completion
@@ -1349,6 +1376,8 @@ class AiChatClient {
         tools: List<JsonObject>,
         params: AiTextParams,
         stream: Boolean,
+        nativeWeb: AiWebToolPlan.Native? = null,
+        deepSeekHistory: AiNativeChatHistory? = null,
     ): JsonObject {
         val reasoningOptions = if (params.assistantReasoningProtocol == AiReasoningProtocol.CONFIGURED) {
             setting.assistantReasoningFields(model.id)
@@ -1356,17 +1385,24 @@ class AiChatClient {
             setting.reasoningOptions(model.id)
         }
         val openRouterHistory = setting.openRouterChatHistory(model.id)
+        val nativeTools = nativeWeb?.definitions.orEmpty()
         return JsonObject().apply {
             addProperty("model", model.id)
             add(
                 "messages",
-                AiChatContextManager.providerMessages(messages).apply {
+                AiChatContextManager.providerMessages(messages, nativeWeb?.systemInstruction).apply {
                     forEach { item ->
                         val message = item.asJsonObject
                         val parts = openRouterHistory?.parts(message)
                             ?.takeIf { message.stringOrNull("role") == "assistant" }
+                        val webRecord = deepSeekHistory?.deepSeekChatRecord(message)
+                            ?.takeIf { message.stringOrNull("role") == "assistant" }
                         message.removeNativeChatHistory()
+                        message.remove("server_tool_calls")
+                        message.remove("annotations")
                         if (parts != null) message.add(OPENROUTER_REASONING_DETAILS, parts)
+                        webRecord?.arrayOrNull("steps")?.let { message.add("server_tool_calls", it) }
+                        webRecord?.stringOrNull("final_reasoning")?.let { message.addProperty("reasoning_content", it) }
                     }
                 }
             )
@@ -1379,11 +1415,10 @@ class AiChatClient {
                 })
             }
             addReasoningParams(params, reasoningOptions)
-            if (tools.isNotEmpty()) {
+            if (tools.isNotEmpty() || nativeTools.isNotEmpty()) {
                 add("tools", JsonArray().apply {
-                    tools.forEach { tool ->
-                        add(tool.deepCopy())
-                    }
+                    tools.forEach { add(it.deepCopy()) }
+                    nativeTools.forEach { add(it.deepCopy()) }
                 })
             }
         }
@@ -1394,6 +1429,8 @@ class AiChatClient {
         reasoningKey: String,
         openRouterHistory: AiNativeChatHistory?,
         generationTest: Boolean,
+        deepSeekHistory: AiNativeChatHistory?,
+        webEvents: AiDeepSeekWebEvents?,
     ): ChatCompletionSnapshot {
         val responseBody = if (generationTest) {
             newCall(request).readCancellableStream { response ->
@@ -1408,6 +1445,7 @@ class AiChatClient {
             body
         }
         val json = JsonParser.parseString(responseBody).asJsonObject
+        if (deepSeekHistory != null) json.requireNoAiError()
         val choice = json.arrayOrNull("choices")
             ?.firstOrNull()
             ?.takeIf { it.isJsonObject }
@@ -1428,6 +1466,11 @@ class AiChatClient {
             message.remove("reasoning")
             openRouterHistory.attachParts(message, parts.asJsonArray)
         }
+        webEvents?.chatResult(message)
+        val serverSteps = message.arrayOrNull("server_tool_calls")
+        message.remove("server_tool_calls")
+        message.remove("annotations")
+        deepSeekHistory?.attachDeepSeekChatSteps(message, serverSteps, reasoning)
         val usage = json.objectOrNull("usage")?.toChatUsage()
         return ChatCompletionSnapshot(
             message = message,
@@ -1448,6 +1491,8 @@ class AiChatClient {
         onStreamUpdate: (AiChatStreamUpdate) -> Unit,
         generationTest: Boolean,
         assistantTurn: Boolean,
+        deepSeekHistory: AiNativeChatHistory?,
+        webEvents: AiDeepSeekWebEvents?,
     ): ChatCompletionSnapshot {
         return newCall(request).readCancellableStream { response ->
             response.use {
@@ -1463,6 +1508,8 @@ class AiChatClient {
                 val contentBuilder = StringBuilder()
                 val reasoningBuilder = StringBuilder()
                 val reasoningDetails = openRouterHistory?.let { AiOpenRouterReasoningDetails() }
+                var serverSteps: JsonArray? = null
+                var finalReasoningStart = 0
                 val toolCalls = linkedMapOf<Int, StreamToolCall>()
                 responseBody.charStream().buffered().use { reader ->
                     while (true) {
@@ -1515,6 +1562,10 @@ class AiChatClient {
                         val delta = choice.objectOrNull("delta")
                             ?: choice.objectOrNull("message")
                             ?: JsonObject()
+                        if (deepSeekHistory != null) {
+                            serverSteps = delta.arrayOrNull("server_tool_calls") ?: serverSteps
+                            if (delta.has("server_tool_calls") || delta.has("annotations")) webEvents?.chatResult(delta)
+                        }
                         refused = refused || delta.hasChatGenerationRefusal()
                         val contentDelta = if (generationTest) {
                             check(delta.stringOrNull("role") in setOf(null, "assistant")) {
@@ -1533,6 +1584,12 @@ class AiChatClient {
                             ?: delta.stringOrNull("reasoning")
                         if (!reasoningDelta.isNullOrEmpty()) {
                             reasoningBuilder.append(reasoningDelta)
+                        }
+                        if (deepSeekHistory != null) choice.objectOrNull("server_tool_event")?.let { event ->
+                            if (event.stringOrNull("type") == "step_reasoning_done") {
+                                finalReasoningStart = reasoningBuilder.length
+                            }
+                            webEvents?.chatProgress(event)
                         }
                         delta.arrayOrNull(OPENROUTER_REASONING_DETAILS)?.let { details ->
                             reasoningDetails?.accept(details)
@@ -1606,6 +1663,8 @@ class AiChatClient {
                         add("tool_calls", toolCallArray)
                     }
                     reasoningDetails?.result()?.let { openRouterHistory?.attachParts(this, it) }
+                    // The separate step records carry all thinking before the last tool call.
+                    deepSeekHistory?.attachDeepSeekChatSteps(this, serverSteps, reasoning?.substring(finalReasoningStart))
                 }
                 ChatCompletionSnapshot(
                     message = message,
@@ -2096,7 +2155,8 @@ data class AiChatTurnResult(
     val contextCalibration: AiChatTokenCalibration? = null,
     val compactionCount: Int = 0,
     val contextCompactions: List<AiChatCompactionRecord> = emptyList(),
-    val contextMessages: List<JsonObject>
+    val contextMessages: List<JsonObject>,
+    val webActivity: AiWebActivity? = null,
 )
 
 data class AiChatManualCompactionResult(
@@ -2118,7 +2178,8 @@ data class AiChatDurableContextUpdate(
     val reasoning: String?,
     val toolTrace: List<String> = emptyList(),
     val toolReceipts: List<ToolExecutionReceipt> = emptyList(),
-    val pendingReceiptIds: List<String> = emptyList()
+    val pendingReceiptIds: List<String> = emptyList(),
+    val webActivity: AiWebActivity? = null,
 )
 
 data class AiMemoryTraceItem(

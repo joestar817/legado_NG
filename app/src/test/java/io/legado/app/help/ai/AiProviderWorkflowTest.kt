@@ -14,8 +14,15 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeout
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,6 +40,134 @@ import java.util.concurrent.atomic.AtomicReference
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = Application::class)
 class AiProviderWorkflowTest {
+    @Test
+    fun defaultAssistantReceivesNativeWebGuidanceForCurrentPublicInformation() = runBlocking {
+        ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
+        AiConfig.internalMcpEnabled = false
+        val model = AiModelRegistry.enrich(AiModel("deepseek-flash"))
+        val official = AiDefaultProviders.all().single { it.id == "deepseek" }
+            .copy(apiKey = "deepseek-fixture", streamResponseEnabled = false).withFetchedModels(listOf(model))
+        val requests = LinkedBlockingQueue<JsonObject>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val body = Buffer().apply { request.body!!.writeTo(this) }.readUtf8()
+            val json = JsonParser.parseString(body).asJsonObject
+            requests += json
+            val reply = if (json.has("input")) {
+                """{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}]}"""
+            } else {
+                """{"choices":[{"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}"""
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(reply.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val assistant = AiChatClient { client }
+        val question = "帮我查一下天蚕土豆的新书神通者更新到了多少章"
+        for (responses in listOf(false, true)) {
+            AiProviderStore.saveProviders(listOf(official.copy(useResponsesApi = responses)))
+            assertTrue(AiConfig.saveAssistantModel(official.id, model.id))
+            val systemMessage = assistant.newSystemMessage()
+            val originalSystemMessage = systemMessage.deepCopy()
+            val chat = mutableListOf(systemMessage, assistant.newUserMessage(question))
+            val result = assistant.send(chat, "deepseek-search-fixture", "search", allowWeb = true)
+            val body = requests.remove()
+            assertEquals(listOf("deepseek_web_search"), body.arrayOrNull("tools").objectParts()
+                .map { it.stringOrNull("type") })
+            assertFalse(body.has("tool_choice"))
+            val outgoing = body.arrayOrNull(if (responses) "input" else "messages").objectParts()
+            val systemPrompt = outgoing.single { it.stringOrNull("role") == "system" }.get("content").contentText()
+            assertTrue(systemPrompt.contains("MCP 使用"))
+            assertTrue(systemPrompt.contains("公开连载的更新"))
+            assertTrue(systemPrompt.contains("先用内置网页搜索核实"))
+            assertFalse(systemPrompt.contains("先读取网页"))
+            assertEquals(question, outgoing.last().get("content").contentText())
+            assertEquals(originalSystemMessage, result.contextMessages.first())
+        }
+    }
+
+    @Test
+    fun officialChatReadsLinksAndNeverLeaksTheToolOrSignatureToAnotherRoute() = runBlocking {
+        ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
+        val model = AiModelRegistry.enrich(AiModel("deepseek-flash"))
+        val official = AiDefaultProviders.all().single { it.id == "deepseek" }
+            .copy(apiKey = "deepseek-fixture", streamResponseEnabled = true).withFetchedModels(listOf(model))
+        val thirdParty = AiDefaultProviders.all().single { it.id == "sensenova" }
+            .copy(apiKey = "sensenova-fixture", streamResponseEnabled = true).withFetchedModels(listOf(model))
+        AiProviderStore.saveProviders(listOf(official, thirdParty))
+        assertTrue(AiConfig.saveAssistantModel(official.id, model.id))
+        val requests = LinkedBlockingQueue<Pair<String, JsonObject>>()
+        val payload = AtomicReference(sse(
+            """{"choices":[{"delta":{"reasoning_content":"Before reading."}}]}""",
+            """{"choices":[{"delta":{},"server_tool_event":{"type":"step_reasoning_done","step":0}}]}""",
+            """{"choices":[{"delta":{},"server_tool_event":{"type":"call_started","step":0,"call":{"id":"r1","kind":"read_link","action":{"type":"read_link","url":"https://example.org/book"}}}}]}""",
+            """{"choices":[{"delta":{"content":"Read.","reasoning_content":"After reading."}}]}""",
+            """{"choices":[{"delta":{"annotations":[{"type":"url_citation","url_citation":{"url":"https://example.org/book","title":"Book review"}}],"server_tool_calls":[{"index":0,"reasoning_content":"Before reading.","calls":[{"id":"r1","kind":"read_link","status":"completed","action":{"type":"read_link","url":"https://example.org/book"},"page":{"url":"https://example.org/book","title":"Book review"},"signature":"read-signature"}]}]},"finish_reason":"stop"}]}""",
+            "[DONE]",
+        ))
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val body = Buffer().apply { request.body!!.writeTo(this) }.readUtf8()
+            requests += request.url.host to JsonParser.parseString(body).asJsonObject
+            Response.Builder()
+                .request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(payload.get().toResponseBody("text/event-stream".toMediaType()))
+                .build()
+        }.build()
+        val assistant = AiChatClient { client }
+        val updates = mutableListOf<AiWebActivity>()
+        val first = assistant.send(
+            messages = mutableListOf(assistant.newUserMessage("请读 https://example.org/book")),
+            conversationId = "deepseek-web-fixture", turnId = "read", allowWeb = true,
+            onWebUpdate = { updates += it },
+        )
+        val (firstHost, firstBody) = requests.remove()
+        assertEquals("api.deepseek.com", firstHost)
+        assertEquals(listOf("deepseek_read_url"), firstBody.arrayOrNull("tools").objectParts()
+            .map { it.stringOrNull("type") }.filter { it != "function" })
+        val readPrompt = firstBody.arrayOrNull("messages").objectParts().first()
+        assertEquals("system", readPrompt.stringOrNull("role"))
+        assertTrue(readPrompt.get("content").contentText().contains("先读取网页"))
+        assertFalse(readPrompt.get("content").contentText().contains("内置网页搜索"))
+        assertEquals("Read.", first.content)
+        assertEquals("Before reading.After reading.", first.reasoning)
+        assertEquals(listOf(AiWebSource("https://example.org/book", "Book review")), first.webActivity?.sources)
+        assertTrue(updates.any { it.activeAction == AiWebActivityAction.READ })
+        assertNull(updates.last().activeAction)
+
+        payload.set(sse("""{"choices":[{"delta":{"content":"Follow-up."},"finish_reason":"stop"}]}""", "[DONE]"))
+        fun followUp() = (first.contextMessages + assistant.newUserMessage("还有呢？")).toMutableList()
+        assistant.send(followUp(), "deepseek-web-fixture", "same-route", allowWeb = false)
+        val (_, sameBody) = requests.remove()
+        assertTrue(sameBody.toString().contains("read-signature"))
+        assertFalse(sameBody.toString().contains("先读取网页"))
+        val replayed = sameBody.arrayOrNull("messages").objectParts().single { it.has("server_tool_calls") }
+        assertEquals("After reading.", replayed.stringOrNull("reasoning_content"))
+        assertTrue(sameBody.arrayOrNull("tools").objectParts().all { it.stringOrNull("type") == "function" })
+
+        assertTrue(AiConfig.saveAssistantModel(thirdParty.id, model.id))
+        assistant.send(followUp(), "deepseek-web-fixture", "other-route", allowWeb = true)
+        val (otherHost, otherBody) = requests.remove()
+        assertEquals(thirdParty.baseUrl.substringAfter("://").substringBefore('/'), otherHost)
+        assertFalse(otherBody.toString().contains("read-signature"))
+        assertFalse(otherBody.toString().contains("server_tool_calls"))
+        assertFalse(otherBody.toString().contains("内置网页搜索"))
+        assertTrue(otherBody.arrayOrNull("tools").objectParts().all { it.stringOrNull("type") == "function" })
+
+        AiProviderStore.saveProvider(official.copy(useResponsesApi = true))
+        assertTrue(AiConfig.saveAssistantModel(official.id, model.id))
+        payload.set(sse(
+            """{"type":"response.completed","response":{"status":"completed","output":[{"type":"web_search_call","id":"ws1","kind":"search","status":"completed","action":{"type":"search","sources":[{"title":"Publisher","url":"https://example.org/publisher"}]}},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Found."}]}]}}""",
+        ))
+        val switched = assistant.send(followUp(), "deepseek-web-fixture", "responses", allowWeb = true)
+        val (responsesHost, responsesBody) = requests.remove()
+        assertEquals("api.deepseek.com", responsesHost)
+        assertTrue(responsesBody.has("input"))
+        assertEquals(listOf("deepseek_web_search"), responsesBody.arrayOrNull("tools").objectParts()
+            .map { it.stringOrNull("type") }.filter { it != "function" })
+        assertFalse(responsesBody.toString().contains("read-signature"))
+        assertEquals(listOf(AiWebSource("https://example.org/publisher", "Publisher")), switched.webActivity?.sources)
+    }
+
     @Test
     fun configuredNativeAndResponsesModelsReachTheirActualChatEndpoints() = runBlocking {
         val calls = LinkedBlockingQueue<Pair<String, JsonObject>>()
