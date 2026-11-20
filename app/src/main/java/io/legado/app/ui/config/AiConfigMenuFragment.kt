@@ -157,11 +157,12 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
 
     private fun assistantReasoningSummary(providers: List<AiProviderSetting>): String {
         val selected = selectedAssistantModel(providers)
+        val picker = selected?.let { AiAssistantConfigUi.AssistantModelOption(it.provider, it.model).reasoningPicker() }
         return when {
-            selected == null -> getString(R.string.ai_assistant_reasoning_select_model_first)
-            !selected.model.supportsReasoning() ->
+            picker == null -> getString(R.string.ai_assistant_reasoning_select_model_first)
+            !picker.available ->
                 getString(R.string.ai_assistant_reasoning_unsupported)
-            else -> AiConfig.assistantReasoningLevel.displayName()
+            else -> picker.selectedLabel(requireContext())
         }
     }
 

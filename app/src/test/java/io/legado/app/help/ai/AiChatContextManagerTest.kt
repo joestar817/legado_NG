@@ -14,31 +14,38 @@ import java.net.SocketTimeoutException
 class AiChatContextManagerTest {
 
     @Test
-    fun interruptedDraftCanBeEnabledAgainAfterLoadingSavedHistory() {
+    fun nativeProtocolMetadataDoesNotCountAsAdditionalContext() {
+        val assistant = message("assistant", "Summary")
+        val withHistory = assistant.deepCopy().apply {
+            addProperty(AI_NATIVE_HISTORY, "opaque payload ".repeat(1024))
+        }
+        assertEquals(
+            AiChatContextManager.estimateTokens(listOf(assistant)),
+            AiChatContextManager.estimateTokens(listOf(withHistory)),
+        )
+    }
+
+    @Test
+    fun stoppedReplyRemainsInContextAfterLoadingSavedHistory() {
         val draftText = checkNotNull(AiChatContextManager.interruptedReplyContent(
             "第一点",
-            SocketTimeoutException("provider details")
+            CancellationException("cancellation details")
         ))
         val original = listOf(
             message("user", "第一条请求"),
             message("tool", "已完成的工具结果"),
             AiChatContextManager.interruptedReplyMessage("draft-id", draftText),
-            message("user", "继续")
+            message("user", "我说的是第二点")
         )
         val restored = JsonParser.parseString(JsonArray().apply { original.forEach(::add) }.toString())
             .asJsonArray.map { it.asJsonObject }
 
-        val disabled = AiChatContextManager.providerMessages(restored, includeInterruptedReplies = false)
-        val enabled = AiChatContextManager.providerMessages(restored, includeInterruptedReplies = true)
+        val outgoing = AiChatContextManager.providerMessages(restored).map { it.asJsonObject }
 
-        assertEquals(listOf(original[0], original[1], original[3]), disabled.map { it.asJsonObject })
-        assertEquals(4, enabled.size())
-        assertEquals("assistant", enabled[2].asJsonObject.role())
-        assertEquals(draftText, enabled[2].asJsonObject.content())
-        assertEquals(2, enabled[2].asJsonObject.size())
-        assertTrue(draftText.contains("网络超时"))
+        assertEquals(listOf(original[0], original[1], message("assistant", draftText), original[3]), outgoing)
+        assertTrue(draftText.contains("生成已停止"))
         assertTrue(draftText.endsWith("第一点"))
-        assertFalse(draftText.contains("provider details"))
+        assertFalse(draftText.contains("cancellation details"))
         assertTrue(AiChatContextManager.isInterruptedReply(restored[2]))
     }
 
@@ -51,10 +58,16 @@ class AiChatContextManagerTest {
             "草稿",
             AiChatStreamResponseException("raw provider error")
         ))
+        val timeout = checkNotNull(AiChatContextManager.interruptedReplyContent(
+            "草稿",
+            SocketTimeoutException("provider details")
+        ))
 
         assertTrue(stopped.contains("生成已停止"))
         assertTrue(providerError.contains("服务商返回错误"))
         assertFalse(providerError.contains("raw provider error"))
+        assertTrue(timeout.contains("网络超时"))
+        assertFalse(timeout.contains("provider details"))
     }
 
     @Test
@@ -73,18 +86,14 @@ class AiChatContextManagerTest {
     }
 
     @Test
-    fun disabledDraftDoesNotCountTowardTheContextBudget() {
+    fun interruptedReplyCountsTowardTheContextBudget() {
         val history = listOf(message("user", "继续"))
         val withDraft = listOf(
             AiChatContextManager.interruptedReplyMessage("draft", "尚未完成的回复"),
             history.single()
         )
 
-        assertEquals(
-            AiChatContextManager.breakdown(history),
-            AiChatContextManager.breakdown(withDraft, includeInterruptedReplies = false)
-        )
-        assertTrue(AiChatContextManager.breakdown(withDraft, includeInterruptedReplies = true).totalTokens >
+        assertTrue(AiChatContextManager.breakdown(withDraft).totalTokens >
             AiChatContextManager.breakdown(history).totalTokens)
     }
 
@@ -125,10 +134,8 @@ class AiChatContextManagerTest {
 
         assertEquals(history.takeLast(3), compacted.drop(1))
         assertEquals(
-            listOf(compacted[0], history[2], history[4]),
-            AiChatContextManager.providerMessages(
-                compacted, includeInterruptedReplies = false
-            ).map { it.asJsonObject }
+            listOf(compacted[0], history[2], message("assistant", "要续写的草稿"), history[4]),
+            AiChatContextManager.providerMessages(compacted).map { it.asJsonObject }
         )
     }
 

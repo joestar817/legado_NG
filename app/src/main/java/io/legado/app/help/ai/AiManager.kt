@@ -26,6 +26,7 @@ object AiManager {
     private val googleProvider by lazy { GoogleAiProvider() }
     private val claudeProvider by lazy { ClaudeAiProvider() }
     private val initialModelFetchLocks = ConcurrentHashMap<String, Mutex>()
+    private val catalogRequests = mutableMapOf<String, Any>()
 
     suspend fun generateText(
         messages: List<AiMessage>,
@@ -37,6 +38,11 @@ object AiManager {
         val requestModel = modelId ?: setting.model
         check(setting.enabled) { "AI provider is disabled" }
         check(requestModel.isNotBlank()) { "AI model is empty" }
+        if (modelId != null) {
+            check(setting.availableCatalogModel(requestModel)?.isTextChatModel() == true) {
+                "Selected AI model is unavailable. Select a text model again."
+            }
+        }
         return providerFor(setting).generateText(setting.copy(model = requestModel), messages, params)
     }
 
@@ -48,52 +54,95 @@ object AiManager {
     private suspend fun listModels(setting: AiProviderSetting): List<AiModel> {
         return providerFor(setting).listModels(setting)
             .filter { it.id.isNotBlank() }
-            .map { AiModelRegistry.enrich(it) }
+            .map { AiModelRegistry.enrich(it).withCatalogCapabilities(it.modelInfo) }
             .distinctBy { it.id }
             .sortedBy { it.id.lowercase() }
     }
 
     suspend fun fetchAndSaveModels(providerId: String): List<AiModel> {
-        val models = listModels(providerId)
-        if (models.isEmpty()) return models
-        synchronized(AiProviderStore) {
-            val setting = AiProviderStore.provider(providerId)
-                ?: error("AI provider not found: $providerId")
-            AiProviderStore.saveProvider(setting.withFetchedModels(models))
+        val (requested, token) = synchronized(AiProviderStore) {
+            val provider = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
+            provider to beginCatalogRequest(providerId)
         }
-        return models
+        try {
+            val models = listModels(requested)
+            currentCoroutineContext().ensureActive()
+            synchronized(AiProviderStore) {
+                val setting = AiProviderStore.provider(providerId)
+                    ?: error("AI provider not found: $providerId")
+                check(catalogRequests[providerId] === token && setting.matchesCatalogRequest(requested)) {
+                    "AI model list changed. Refresh again."
+                }
+                AiProviderStore.saveProvider(setting.withFetchedModels(models))
+            }
+            return models
+        } finally {
+            finishCatalogRequest(providerId, token)
+        }
     }
 
     suspend fun ensureProviderModelCatalog(providerId: String): List<AiModel> {
         val lock = initialModelFetchLocks.getOrPut(providerId) { Mutex() }
         return lock.withLock {
-            val requested = AiProviderStore.provider(providerId)
-                ?: error("AI provider not found: $providerId")
-            check(requested.enabled && requested.apiKey.isNotBlank()) { "AI provider is not ready" }
-            if (requested.models.isNotEmpty()) return@withLock requested.models
-
-            val models = listModels(requested)
-            currentCoroutineContext().ensureActive()
-            check(models.isNotEmpty()) { "No available models returned" }
-            val updated = AiProviderStore.saveInitialFetchedModels(requested, models)
-                ?: error("AI provider changed while fetching models")
-            updated.models
+            val (requested, token) = synchronized(AiProviderStore) {
+                val provider = AiProviderStore.provider(providerId)
+                    ?: error("AI provider not found: $providerId")
+                check(provider.enabled && provider.apiKey.isNotBlank() && !provider.apiKeyNeedsReentry()) {
+                    "AI provider is not ready"
+                }
+                if (!provider.catalogFetchRequired()) return@withLock provider.models
+                provider to beginCatalogRequest(providerId)
+            }
+            try {
+                val models = listModels(requested)
+                currentCoroutineContext().ensureActive()
+                synchronized(AiProviderStore) {
+                    check(catalogRequests[providerId] === token) { "AI model list changed. Refresh again." }
+                    val updated = AiProviderStore.saveInitialFetchedModels(requested, models)
+                        ?: error("AI provider changed while fetching models")
+                    updated.models
+                }
+            } finally {
+                finishCatalogRequest(providerId, token)
+            }
         }
     }
 
     suspend fun refreshEnabledProviderModels(): AiModelBatchRefreshResult {
-        val enabled = AiProviderStore.enabledProviders()
-        val missingKey = enabled.filter { it.apiKey.isBlank() }.map { it.name }
-        val ready = enabled.filter { it.apiKey.isNotBlank() }
+        val (ready, missingKey, tokens) = synchronized(AiProviderStore) {
+            val enabled = AiProviderStore.enabledProviders()
+            val missing = enabled.filter { it.apiKey.isBlank() || it.apiKeyNeedsReentry() }
+            val configured = enabled - missing.toSet()
+            Triple(configured, missing.map { it.name }, configured.associate { it.id to beginCatalogRequest(it.id) })
+        }
+        return try {
+            refreshProviderCatalogs(ready, missingKey, tokens)
+        } finally {
+            tokens.forEach { (id, token) -> finishCatalogRequest(id, token) }
+        }
+    }
+
+    private suspend fun refreshProviderCatalogs(
+        ready: List<AiProviderSetting>,
+        missingKey: List<String>,
+        tokens: Map<String, Any>,
+    ): AiModelBatchRefreshResult {
         val semaphore = Semaphore(4)
         val attempts = coroutineScope {
             ready.map { provider ->
                 async(Dispatchers.IO) {
                     semaphore.withPermit {
                         try {
-                            val models = listModels(provider)
-                            check(models.isNotEmpty()) { "No available models returned" }
-                            ProviderModelFetch(provider, models)
+                            synchronized(AiProviderStore) {
+                                val current = AiProviderStore.provider(provider.id)
+                                check(
+                                    current != null && current.enabled && !current.apiKeyNeedsReentry() &&
+                                        catalogRequests[provider.id] === tokens[provider.id] &&
+                                        current.matchesCatalogRequest(provider)
+                                ) { "AI model list changed. Refresh again." }
+                            }
+                            currentCoroutineContext().ensureActive()
+                            ProviderModelFetch(provider, listModels(provider))
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Throwable) {
@@ -111,11 +160,8 @@ object AiManager {
             val current = AiProviderStore.providers()
             val updated = current.map { provider ->
                 val result = fetched[provider.id] ?: return@map provider
-                if (!provider.enabled || provider.apiKey != result.provider.apiKey ||
-                    provider.baseUrl != result.provider.baseUrl ||
-                    provider.modelsUrl != result.provider.modelsUrl ||
-                    provider.useCustomModelsUrl != result.provider.useCustomModelsUrl ||
-                    provider.type != result.provider.type
+                if (!provider.enabled || catalogRequests[provider.id] !== tokens[provider.id] ||
+                    !provider.matchesCatalogRequest(result.provider)
                 ) {
                     failed += provider.name
                     provider
@@ -129,6 +175,15 @@ object AiManager {
             if (refreshedCount > 0) AiProviderStore.saveProviders(updated)
         }
         return AiModelBatchRefreshResult(refreshedCount, modelCount, missingKey, failed)
+    }
+
+    // The caller captures the provider snapshot and registers the request under the store lock.
+    private fun beginCatalogRequest(id: String): Any = Any().also { catalogRequests[id] = it }
+
+    private fun finishCatalogRequest(id: String, token: Any) {
+        synchronized(AiProviderStore) {
+            if (catalogRequests[id] === token) catalogRequests.remove(id)
+        }
     }
 
     suspend fun testConnection(providerId: String): AiTextResult {
@@ -185,26 +240,31 @@ internal fun initialFetchedModelsUpdate(
     current: AiProviderSetting,
     models: List<AiModel>,
 ): AiProviderSetting? {
-    if (current.id != requested.id || !current.enabled ||
-        current.apiKey != requested.apiKey || current.baseUrl != requested.baseUrl ||
-        current.modelsUrl != requested.modelsUrl ||
-        current.useCustomModelsUrl != requested.useCustomModelsUrl ||
-        current.type != requested.type
-    ) return null
-    if (current.models.isNotEmpty()) return current
+    if (!current.enabled || !current.matchesCatalogRequest(requested)) return null
+    if (!current.catalogFetchRequired()) return current
     return current.withFetchedModels(models)
 }
 
 internal fun AiProviderSetting.withFetchedModels(models: List<AiModel>): AiProviderSetting {
     val modelIds = models.map { it.id }.toSet()
-    val availableModelIds = if (availableModelSelectionInitialized) {
-        availableModelIds.filter { it in modelIds }
-    } else {
-        models.map { it.id }
-    }
+    val endpoint = modelConfigurationKey()
+    val manual = this.models.filter { it.manualModelEndpoint == endpoint && it.id !in modelIds }
+    val mergedModels = mergeModelInfo(models) + manual
+    val mergedIds = mergedModels.map { it.id }.toSet()
+    val unlistedEdits = (this.models + unlistedModelEdits.orEmpty())
+        .filter { previous ->
+            val settings = previous.modelSettings ?: return@filter false
+            settings.catalogEndpoint != endpoint || previous.id !in mergedIds
+        }
+        .distinctBy { it.id to it.modelSettings?.catalogEndpoint }
+        .map { it.copy(modelInfo = null) }
     return copy(
-        models = models,
-        availableModelIds = availableModelIds,
-        availableModelSelectionInitialized = true
+        model = model.takeIf { it in mergedIds } ?: models.firstOrNull { it.isTextChatModel() }?.id ?: model,
+        models = mergedModels,
+        availableModelIds = if (availableModelSelectionInitialized) availableModelIds else mergedModels.map { it.id },
+        availableModelSelectionInitialized = availableModelSelectionInitialized || models.isNotEmpty(),
+        catalogRefreshRequired = false,
+        catalogLoaded = true,
+        unlistedModelEdits = unlistedEdits.takeIf { it.isNotEmpty() },
     )
 }

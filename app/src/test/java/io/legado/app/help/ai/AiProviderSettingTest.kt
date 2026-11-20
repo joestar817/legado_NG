@@ -9,6 +9,16 @@ import org.junit.Test
 class AiProviderSettingTest {
 
     @Test
+    fun ocrUsesStableTypeAndExistingTypeValuesStillLoad() {
+        val model = AiModel("paddle-ocr", type = AiModelType.OCR)
+        val serialized = GSON.toJsonTree(model).asJsonObject
+        assertEquals("ocr", serialized.get("type").asString)
+        assertEquals(model, GSON.fromJson(serialized, AiModel::class.java))
+        val stored = """{"id":"existing","type":"embedding"}"""
+        assertEquals(AiModelType.EMBEDDING, GSON.fromJson(stored, AiModel::class.java).type)
+    }
+
+    @Test
     fun parseObfuscatedReleaseProviderCache() {
         val json = """
             {
@@ -155,7 +165,7 @@ class AiProviderSettingTest {
 
         val refreshed = provider.withFetchedModels(models)
         assertEquals(models, refreshed.models)
-        assertEquals(listOf("old-model"), refreshed.availableModelIds)
+        assertEquals(listOf("old-model", "removed-model"), refreshed.availableModelIds)
         assertEquals("old-model", refreshed.model)
         assertTrue(refreshed.availableModelSelectionInitialized)
 

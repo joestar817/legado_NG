@@ -38,7 +38,7 @@ class AiInitialModelCatalogTest {
             provider.copy(enabled = false),
             provider.copy(apiKey = "different"),
             provider.copy(baseUrl = "https://other.invalid"),
-            provider.copy(modelsUrl = "/other-models"),
+            provider.copy(useCustomModelsUrl = true, modelsUrl = "/other-models"),
             provider.copy(useCustomModelsUrl = true),
             provider.copy(type = AiProviderType.GOOGLE),
         ).forEach { current ->

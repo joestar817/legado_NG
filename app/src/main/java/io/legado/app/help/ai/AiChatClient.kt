@@ -5,6 +5,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
+import io.legado.app.R
 import io.legado.app.data.AgentToolResultStore
 import io.legado.app.data.entities.AgentToolResultArtifact
 import io.legado.app.data.entities.AgentToolExecutionIntent
@@ -24,6 +25,7 @@ import io.legado.app.web.mcp.McpInternalChannel
 import io.legado.app.web.mcp.McpInternalToolCatalog
 import io.legado.app.web.mcp.McpToolSideEffect
 import io.legado.app.web.mcp.McpToolExecutionContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -36,10 +38,92 @@ import okhttp3.Request
 import okhttp3.Response
 import splitties.init.appCtx
 import java.io.IOException
+import java.io.InterruptedIOException
+
+private const val MODEL_GENERATION_TEST_TIMEOUT_SECONDS = 20
 
 internal class AiChatStreamResponseException(message: String) : IOException(message)
 
+private class AiChatHttpResponseException(val status: Int) : IOException()
+
 class AiChatClient {
+
+    internal suspend fun testModelGeneration(
+        setting: AiProviderSetting,
+        model: AiModel,
+        stream: Boolean,
+        protocol: AiModelGenerationTestProtocol = setting.resolveModelGenerationRoute(model, stream = stream).protocol,
+    ): AiModelGenerationTestResult {
+        currentCoroutineContext().ensureActive()
+        if (setting.apiKey.isBlank() || setting.apiKeyNeedsReentry()) {
+            return AiModelGenerationTestResult.Failure(AiModelGenerationTestFailure.MISSING_API_KEY)
+        }
+        when (setting.resolveModelGenerationRoute(model, protocolOverride = protocol, stream = stream).issue) {
+            AiModelGenerationIssue.UNSUPPORTED_PROTOCOL ->
+                return AiModelGenerationTestResult.Failure(AiModelGenerationTestFailure.UNSUPPORTED_PROTOCOL)
+            AiModelGenerationIssue.STREAMING_REQUIRED ->
+                return AiModelGenerationTestResult.Failure(AiModelGenerationTestFailure.STREAMING_REQUIRED)
+            null -> Unit
+        }
+        if (setting.type == AiProviderType.OPENAI && setting.generationApiPath(protocol) == null) {
+            return AiModelGenerationTestResult.Failure(AiModelGenerationTestFailure.INVALID_ENDPOINT)
+        }
+        val messages = listOf(JsonObject().apply {
+            addProperty("role", "user")
+            addProperty("content", "请只回复 OK。")
+        })
+        var partialReply = ""
+        return try {
+            val timeoutSeconds = minOf(setting.timeoutSeconds, MODEL_GENERATION_TEST_TIMEOUT_SECONDS)
+            val completion = aiHttpClient(timeoutSeconds).newBuilder()
+                .retryOnConnectionFailure(false)
+                .build()
+                .completeChat(
+                    setting = setting.copy(streamResponseEnabled = stream),
+                    model = model,
+                    messages = messages,
+                    tools = emptyList(),
+                    params = AiTextParams(),
+                    conversationId = null,
+                    onStreamUpdate = { partialReply = it.content },
+                    generationTest = true,
+                    protocol = protocol,
+                )
+            val result = evaluateModelGenerationTestReply(
+                content = completion.content,
+                finishReason = completion.finishReason?.trim()?.lowercase()?.ifBlank { null },
+                streamEnded = completion.streamEnded,
+                toolCallReceived = completion.toolCalls.size() > 0 ||
+                    completion.message.objectOrNull("function_call") != null,
+                refused = completion.message.hasChatGenerationRefusal(),
+            )
+            if (result is AiModelGenerationTestResult.Failure && result.reply.isEmpty()) {
+                result.copy(reply = partialReply.trim())
+            } else {
+                result
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            val partial = partialReply.trim()
+            val reason = when {
+                error is AiChatHttpResponseException -> AiModelGenerationTestFailure.HTTP
+                error is AiEndpointException -> AiModelGenerationTestFailure.INVALID_ENDPOINT
+                error is InterruptedIOException -> AiModelGenerationTestFailure.TIMEOUT
+                error is AiChatIncompleteStreamException || partial.isNotEmpty() ->
+                    AiModelGenerationTestFailure.INTERRUPTED
+                error is AiChatStreamResponseException -> AiModelGenerationTestFailure.INVALID_RESPONSE
+                error is IOException -> AiModelGenerationTestFailure.NETWORK
+                else -> AiModelGenerationTestFailure.INVALID_RESPONSE
+            }
+            AiModelGenerationTestResult.Failure(
+                reason = reason,
+                reply = partial,
+                httpStatus = (error as? AiChatHttpResponseException)?.status,
+            )
+        }
+    }
 
     suspend fun compactContext(
         messages: MutableList<JsonObject>,
@@ -57,10 +141,10 @@ class AiChatClient {
             throw IllegalStateException("请先在模型设置中选择聊天模型")
         }
         val setting = AiProviderStore.provider(selection.providerId)
-            ?: error("AI provider not found: ${selection.providerId}")
-        check(setting.enabled) { "AI provider is disabled" }
-        check(setting.type == AiProviderType.OPENAI) { "AI 聊天暂只支持 OpenAI 兼容提供商" }
+            ?: error(appCtx.getString(R.string.ai_assistant_model_reselect))
         val model = resolveModel(setting, selection.modelId)
+        setting.requireModelGenerationProtocol(model)
+        val contextWindow = assistantContextWindow(setting, model)
         val activeSkill = AiChatContextManager.activeSkillSnapshot(messages)
         val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
             loadModelTools(
@@ -104,12 +188,15 @@ class AiChatClient {
         )
         var blocked: AgentHookResult.BlockBoundary? = null
         val record = compactIfNeeded(
+            setting = setting,
+            model = model,
             messages = messages,
             toolDefinitions = tools,
             calibration = calibration,
             stage = AiChatCompactionStage.PRE_TURN,
             onContextEvent = onContextEvent,
             conversationId = conversationId,
+            contextWindow = contextWindow,
             force = true,
             beforeCompaction = {
                 hookRuntime.evaluate(
@@ -127,7 +214,7 @@ class AiChatClient {
         ) ?: error(blocked?.message ?: "上下文压缩未执行")
         return AiChatManualCompactionResult(
             record = record,
-            contextUsage = AiChatContextManager.usage(messages, tools),
+            contextUsage = AiChatContextManager.usage(messages, tools, contextWindow = contextWindow),
             contextMessages = messages.map { it.deepCopy().asJsonObject }
         )
     }
@@ -153,11 +240,16 @@ class AiChatClient {
             throw IllegalStateException("请先在模型设置中选择聊天模型")
         }
         val setting = AiProviderStore.provider(selection.providerId)
-            ?: error("AI provider not found: ${selection.providerId}")
-        check(setting.enabled) { "AI provider is disabled" }
-        check(setting.type == AiProviderType.OPENAI) { "AI 聊天暂只支持 OpenAI 兼容提供商" }
+            ?: error(appCtx.getString(R.string.ai_assistant_model_reselect))
         val model = resolveModel(setting, selection.modelId)
-        val params = AiConfig.assistantChatParams(model.abilities.contains(AiModelAbility.REASONING))
+        val protocol = setting.requireModelGenerationProtocol(model)
+        val modelSettings = model.modelSettingsFor(setting.officialDeepSeekModelConfigEndpoint())
+        val contextWindow = assistantContextWindow(setting, model)
+        val assistantParams = AiTextParams(temperature = AiConfig.temperature)
+        val outputParams = modelSettings?.applyOutputLimit(
+            assistantParams, model.catalogInfo(modelSettings), contextWindow,
+        ) ?: assistantParams
+        val params = AiConfig.assistantModelReasoning(setting, model).applyTo(outputParams)
         val activeSkill = AiChatContextManager.activeSkillSnapshot(messages)
         val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
             loadModelTools(
@@ -232,12 +324,15 @@ class AiChatClient {
         )
         try {
             compactIfNeeded(
+                setting,
+                model,
                 requestMessages,
                 tools,
                 tokenCalibration,
                 AiChatCompactionStage.PRE_TURN,
                 onContextEvent,
                 conversationId = conversationId,
+                contextWindow = contextWindow,
                 beforeCompaction = {
                     hookRuntime.evaluate(
                         AgentHookEvent(
@@ -266,45 +361,39 @@ class AiChatClient {
         }
             while (true) {
             currentCoroutineContext().ensureActive()
-            val stream = setting.streamResponseEnabled
-            val body = buildRequestBody(setting, model, requestMessages, tools, params, stream)
-            val request = Request.Builder()
-                .url("${setting.baseUrl.trimEndSlash()}${setting.chatCompletionsPath.ensureStartSlash()}")
-                .apply {
-                    if (setting.apiKey.isNotBlank()) {
-                        addHeader("Authorization", "Bearer ${setting.apiKey}")
-                    }
+            val requestParams = if (params.maxTokens != null) {
+                val usage = AiChatContextManager.usage(requestMessages, tools, tokenCalibration, contextWindow)
+                val available = contextWindow - usage.estimatedTokens
+                check(available > 0) { "当前上下文已超过配置的窗口，无法分配输出 tokens" }
+                val maxTokens = minOf(params.maxTokens, available)
+                check(params.assistantReasoningMaxTokens?.let { it < maxTokens } != false) {
+                    "上下文余量不足，请调低思考预算"
                 }
-                .addOpenCodeProviderHeaders(setting, conversationId)
-                .addHeader("Content-Type", "application/json")
-                .post(jsonBody(body))
-                .build()
-            val reasoningKey = setting.reasoningOptions(model.id)
-                .reasoningOutputField
-                .ifBlank { "reasoning_content" }
+                params.copy(maxTokens = maxTokens)
+            } else {
+                params
+            }
             val completion = try {
-                if (stream) {
-                    client.executeStreamChat(
-                        request = request,
-                        reasoningKey = reasoningKey,
-                        deferVisibleContent = tools.isNotEmpty(),
-                        onStreamUpdate = onStreamUpdate
-                    )
-                } else {
-                    client.executeJsonChat(request, reasoningKey)
-                }
+                client.completeChat(
+                    setting, model, requestMessages, tools, requestParams, conversationId, onStreamUpdate,
+                    assistantTurn = true,
+                    protocol = protocol,
+                )
             } catch (error: IllegalStateException) {
                 if (!contextOverflowRecoveryAttempted &&
                     AiConfig.contextCompactionEnabled &&
                     error.isContextWindowExceeded()
                 ) {
                     compactIfNeeded(
+                        setting = setting,
+                        model = model,
                         messages = requestMessages,
                         toolDefinitions = tools,
                         calibration = tokenCalibration,
                         stage = AiChatCompactionStage.PRE_TURN,
                         onContextEvent = onContextEvent,
                         conversationId = conversationId,
+                        contextWindow = contextWindow,
                         force = true,
                         beforeCompaction = {
                             hookRuntime.evaluate(
@@ -365,7 +454,7 @@ class AiChatClient {
                 val finalizeBlock = finalizeEffects.block
                 if (finalizeBlock != null && finalizeStateFlushRetryCount == 0) {
                     AiChatToolStepContent.recoveryCandidate(content)?.let(recoverableToolStepContents::add)
-                    requestMessages.add(uploadAssistantMessage(content, lastReasoning))
+                    requestMessages.add(uploadAssistantMessage(content, lastReasoning, message))
                     finalizeStateFlushRetryCount += 1
                     onDurableContextUpdate(
                         durableContextUpdate(
@@ -399,7 +488,7 @@ class AiChatClient {
                         memoryTrace = memoryTrace.toList()
                     )
                 )
-                requestMessages.add(uploadAssistantMessage(content, lastReasoning))
+                requestMessages.add(uploadAssistantMessage(content, lastReasoning, message))
                 onDurableContextUpdate(
                     durableContextUpdate(
                         requestMessages,
@@ -435,7 +524,8 @@ class AiChatClient {
                     contextUsage = AiChatContextManager.usage(
                         contextMessages,
                         tools,
-                        tokenCalibration
+                        tokenCalibration,
+                        contextWindow,
                     ),
                     contextCalibration = tokenCalibration,
                     compactionCount = contextCompactions.size,
@@ -677,7 +767,8 @@ class AiChatClient {
                 val modelResultCharBudget = resolveToolResultCharBudget(
                     messages = requestMessages,
                     toolDefinitions = tools,
-                    calibration = tokenCalibration
+                    calibration = tokenCalibration,
+                    contextWindow = contextWindow,
                 )
                 val boundedModelToolContent = AiModelToolContent.format(
                     result,
@@ -792,12 +883,15 @@ class AiChatClient {
                 )
             )
             compactIfNeeded(
+                    setting,
+                    model,
                     requestMessages,
                     tools,
                     tokenCalibration,
                     AiChatCompactionStage.MID_TURN,
                     onContextEvent,
                     conversationId = conversationId,
+                    contextWindow = contextWindow,
                     beforeCompaction = {
                         hookRuntime.evaluate(
                             AgentHookEvent(
@@ -859,16 +953,19 @@ class AiChatClient {
     }
 
     private suspend fun compactIfNeeded(
+        setting: AiProviderSetting,
+        model: AiModel,
         messages: MutableList<JsonObject>,
         toolDefinitions: List<JsonObject>,
         calibration: AiChatTokenCalibration?,
         stage: AiChatCompactionStage,
         onContextEvent: (AiChatContextEvent) -> Unit,
         conversationId: String,
+        contextWindow: Int,
         force: Boolean = false,
         beforeCompaction: () -> AgentHookEffects = { AgentHookEffects() }
     ): AiChatCompactionRecord? {
-        val usage = AiChatContextManager.usage(messages, toolDefinitions, calibration)
+        val usage = AiChatContextManager.usage(messages, toolDefinitions, calibration, contextWindow)
         if (!AiConfig.contextCompactionEnabled && !force) {
             check(usage.estimatedTokens < usage.contextWindowTokens) {
                 "当前上下文约 ${usage.estimatedTokens} tokens，已超过配置的 ${usage.contextWindowTokens} tokens 上下文窗口；请开启自动压缩或增大上下文窗口"
@@ -877,7 +974,7 @@ class AiChatClient {
         }
         val officialUsageReachedThreshold =
             calibration?.contextTokens?.let { it >= usage.thresholdTokens } == true
-        val hardWindowGuard = usage.contextWindowTokens * HARD_WINDOW_GUARD_PERCENT / 100
+        val hardWindowGuard = usage.contextWindowTokens.toLong() * HARD_WINDOW_GUARD_PERCENT / 100
         val predictedNearWindowLimit = usage.estimatedTokens >= hardWindowGuard
         if (!force && !officialUsageReachedThreshold && !predictedNearWindowLimit) return null
 
@@ -896,13 +993,14 @@ class AiChatClient {
                 beforeUsage = usage
             )
         )
-        val summary = createCompactionSummary(messages, conversationId, pinnedArtifactRefs)
+        val summary = createCompactionSummary(setting, model, messages, conversationId, pinnedArtifactRefs)
         val replacement = AiChatContextManager.buildCompactedHistory(
             messages,
             summary.content,
-            pinnedArtifactRefs
+            pinnedArtifactRefs,
+            contextWindow = contextWindow,
         )
-        val replacementUsage = AiChatContextManager.usage(replacement, toolDefinitions)
+        val replacementUsage = AiChatContextManager.usage(replacement, toolDefinitions, contextWindow = contextWindow)
         check(replacementUsage.estimatedTokens < usage.thresholdTokens) {
             "上下文压缩后仍有约 ${replacementUsage.estimatedTokens} tokens，" +
                 "未降到 ${usage.thresholdTokens} tokens 阈值以下"
@@ -930,16 +1028,12 @@ class AiChatClient {
     }
 
     private suspend fun createCompactionSummary(
+        setting: AiProviderSetting,
+        model: AiModel,
         messages: List<JsonObject>,
         conversationId: String,
         pinnedArtifactRefs: Set<String> = emptySet()
     ): AiChatCompactionSummary {
-        val selection = AiConfig.contextCompactionModel()
-        val setting = AiProviderStore.provider(selection.providerId)
-            ?: error("AI provider not found: ${selection.providerId}")
-        check(setting.enabled) { "上下文压缩模型所属的 AI provider 已禁用" }
-        check(setting.type == AiProviderType.OPENAI) { "上下文压缩暂只支持 OpenAI 兼容提供商" }
-        val model = resolveModel(setting, selection.modelId)
         val prompt = appCtx.assets.open(CONTEXT_COMPACTION_PROMPT_ASSET)
             .bufferedReader(Charsets.UTF_8)
             .use { it.readText() }
@@ -947,11 +1041,11 @@ class AiChatClient {
             messages,
             pinnedArtifactRefs
         ).toSet()
-        val compactionHistory = messages.filterNot { message ->
-                message.stringOrNull("role") == "system" || message in pinnedMessages ||
-                    AiChatContextManager.isInterruptedReply(message)
-            }
-            .mapTo(mutableListOf()) { it.deepCopy().asJsonObject }
+        val compactionHistory = messages
+            .filterNot { message -> message.stringOrNull("role") == "system" || message in pinnedMessages }
+            .mapTo(mutableListOf()) { it.deepCopy().apply { removeNativeChatHistory() } }
+        val client = aiHttpClient(setting.timeoutSeconds)
+        val params = setting.compactionTextParams(model)
         while (true) {
             currentCoroutineContext().ensureActive()
             val compactionMessages = buildList {
@@ -965,29 +1059,10 @@ class AiChatClient {
                     addProperty("content", "请将以上上下文压缩为可继续当前任务的接续摘要。")
                 })
             }
-            val body = buildRequestBody(
-                setting = setting,
-                model = model,
-                messages = compactionMessages,
-                tools = emptyList(),
-                params = AiTextParams(temperature = 0f, disableThinking = true),
-                stream = false
-            )
-            val request = Request.Builder()
-                .url("${setting.baseUrl.trimEndSlash()}${setting.chatCompletionsPath.ensureStartSlash()}")
-                .apply {
-                    if (setting.apiKey.isNotBlank()) {
-                        addHeader("Authorization", "Bearer ${setting.apiKey}")
-                    }
-                }
-                .addOpenCodeProviderHeaders(setting, conversationId)
-                .addHeader("Content-Type", "application/json")
-                .post(jsonBody(body))
-                .build()
             val completion = try {
-                aiHttpClient(setting.timeoutSeconds)
-                    .executeJsonChat(request, setting.reasoningOptions(model.id).reasoningOutputField)
-            } catch (error: IllegalStateException) {
+                client.completeChat(setting, model, compactionMessages, emptyList(), params, conversationId)
+            } catch (error: Exception) {
+                if (error !is IllegalStateException && error !is AiChatStreamResponseException) throw error
                 if (!error.isContextWindowExceeded()) throw error
                 val reduced = AiChatContextManager
                     .trimOldestCompactionHistoryUnit(compactionHistory) ||
@@ -996,6 +1071,13 @@ class AiChatClient {
                     throw IllegalStateException("压缩模型的上下文窗口不足，无法生成接续摘要", error)
                 }
                 continue
+            }
+            check(
+                completion.streamEnded &&
+                    completion.toolCalls.size() == 0 &&
+                    completion.finishReason?.lowercase() !in INCOMPLETE_SUMMARY_FINISH_REASONS
+            ) {
+                "上下文压缩未完成，已保留压缩前的上下文"
             }
             return AiChatCompactionSummary(
                 content = completion.content
@@ -1042,7 +1124,7 @@ class AiChatClient {
     ): AiChatContextUsage {
         val selection = AiConfig.requireAssistantModel()
         val setting = AiProviderStore.provider(selection.providerId)
-            ?: error("AI provider not found: ${selection.providerId}")
+            ?: error(appCtx.getString(R.string.ai_assistant_model_reselect))
         val model = resolveModel(setting, selection.modelId)
         val activeSkill = AiChatContextManager.activeSkillSnapshot(messages)
         val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
@@ -1063,7 +1145,7 @@ class AiChatClient {
             providerId = selection.providerId,
             modelId = model.id
         )
-        return AiChatContextManager.usage(messages, tools, calibration)
+        return AiChatContextManager.usage(messages, tools, calibration, assistantContextWindow(setting, model))
     }
 
     private fun resolveTokenCalibration(
@@ -1074,9 +1156,6 @@ class AiChatClient {
         modelId: String
     ): AiChatTokenCalibration? {
         anchor ?: return null
-        if (!AiConfig.assistantIncludeInterruptedReplies &&
-            messages.any(AiChatContextManager::isInterruptedReply)
-        ) return null
         if (anchor.providerId != null && anchor.providerId != providerId) return null
         if (anchor.modelId != null && anchor.modelId != modelId) return null
         val contextTokens = anchor.contextTokens
@@ -1131,24 +1210,148 @@ class AiChatClient {
     }
 
     private fun resolveModel(setting: AiProviderSetting, modelId: String): AiModel {
-        val model = setting.models.firstOrNull { it.id == modelId } ?: AiModel(id = modelId, name = modelId)
-        return AiModelRegistry.enrich(model)
+        setting.assistantModelChoice(modelId)?.model?.let { return it }
+        val missingName = setting.missingCatalogModelName(modelId)
+        error(
+            if (missingName != null) appCtx.getString(R.string.ai_assistant_model_missing, missingName)
+            else appCtx.getString(R.string.ai_assistant_model_reselect)
+        )
     }
 
-    private fun buildRequestBody(
+    private fun assistantContextWindow(setting: AiProviderSetting, model: AiModel): Int {
+        return capAssistantContextWindow(
+            AiConfig.assistantContextWindowTokens,
+            setting.assistantContextWindowLimit(model),
+        )
+    }
+
+    private fun AiProviderSetting.requireModelGenerationProtocol(model: AiModel): AiModelGenerationTestProtocol {
+        val route = resolveModelGenerationRoute(model)
+        when (route.issue) {
+            AiModelGenerationIssue.UNSUPPORTED_PROTOCOL ->
+                error(appCtx.getString(R.string.ai_model_interface_unsupported))
+            AiModelGenerationIssue.STREAMING_REQUIRED ->
+                error(appCtx.getString(R.string.ai_model_streaming_required))
+            null -> return route.protocol
+        }
+    }
+
+    private suspend fun OkHttpClient.completeChat(
         setting: AiProviderSetting,
         model: AiModel,
         messages: List<JsonObject>,
         tools: List<JsonObject>,
         params: AiTextParams,
-        stream: Boolean
+        conversationId: String?,
+        onStreamUpdate: (AiChatStreamUpdate) -> Unit = {},
+        generationTest: Boolean = false,
+        assistantTurn: Boolean = false,
+        protocol: AiModelGenerationTestProtocol = setting.requireModelGenerationProtocol(model),
+    ): ChatCompletionSnapshot {
+        val stream = setting.streamResponseEnabled
+        val apiPath = setting.generationApiPath(protocol)
+        val codec = when (protocol) {
+            AiModelGenerationTestProtocol.CLAUDE_MESSAGES ->
+                AiClaudeMessagesCodec(setting, model.id, setting.reasoningCatalogInfo(model))
+            AiModelGenerationTestProtocol.GEMINI_GENERATE_CONTENT ->
+                AiGeminiContentCodec(setting, model.id, setting.reasoningCatalogInfo(model))
+            AiModelGenerationTestProtocol.RESPONSES -> {
+                if (apiPath == null) throw AiEndpointException("Responses API endpoint is not configured")
+                AiOpenAiResponsesCodec(setting, model.id, apiPath)
+            }
+            AiModelGenerationTestProtocol.CHAT_COMPLETIONS -> null
+        }
+        if (codec != null) {
+            val providerMessages = AiChatContextManager
+                .providerMessages(messages)
+                .map { it.asJsonObject }
+            val request = codec.request(providerMessages, tools, params, stream, conversationId)
+            var partialContent = ""
+            var partialReasoning: String? = null
+            val reply = newCall(request).readCancellableStream { response ->
+                response.use {
+                    it.requireChatHttpSuccess(generationTest)
+                    if (stream) {
+                        it.body.charStream().buffered().use { reader ->
+                            try {
+                                codec.readStream(reader) { content, reasoning ->
+                                    if (assistantTurn) {
+                                        partialContent = content
+                                        partialReasoning = reasoning
+                                    }
+                                    onStreamUpdate(AiChatStreamUpdate(
+                                        content = if (tools.isEmpty()) content else "",
+                                        reasoning = reasoning,
+                                    ))
+                                }
+                            } catch (error: AiChatIncompleteStreamException) {
+                                if (!assistantTurn) throw error
+                                throw AiAssistantReplyEndException(
+                                    AiAssistantReplyEndReason.INTERRUPTED, partialContent, partialReasoning,
+                                )
+                            }
+                        }
+                    } else {
+                        val json = JsonParser.parseString(it.body.string()).asJsonObject
+                        json.requireNoAiError()
+                        codec.readJson(json)
+                    }
+                }
+            }
+            val completion = ChatCompletionSnapshot(
+                reply.message, reply.content, reply.reasoning, reply.model,
+                reply.finishReason, reply.usage, reply.toolCalls,
+            )
+            if (assistantTurn) completion.requireAssistantEnd(partialContent, partialReasoning)
+            if (!generationTest) reply.requireCompleted()
+            return completion
+        }
+        if (apiPath == null) throw AiEndpointException("Chat Completions API endpoint is not configured")
+        val request = Request.Builder()
+            .url(buildAiApiEndpoint(setting.baseUrl, apiPath))
+            .addHeader("Authorization", "Bearer ${setting.apiKeyForRequest()}")
+            .addOpenCodeProviderHeaders(setting, conversationId)
+            .addHeader("Content-Type", "application/json")
+            .post(jsonBody(
+                buildRequestBody(setting, model, messages, tools, params, stream),
+            ))
+            .build()
+        val reasoningKey = setting.reasoningOptions(model.id).reasoningOutputField.ifBlank { "reasoning_content" }
+        val completion = if (stream) {
+            executeStreamChat(request, reasoningKey, tools.isNotEmpty(), onStreamUpdate, generationTest, assistantTurn)
+        } else {
+            executeJsonChat(request, reasoningKey, generationTest)
+        }
+        if (assistantTurn) completion.requireAssistantEnd()
+        return completion
+    }
+
+    private fun Response.requireChatHttpSuccess(generationTest: Boolean) {
+        if (isSuccessful) return
+        if (generationTest) throw AiChatHttpResponseException(code)
+        error("HTTP $code: ${body.string().take(500)}")
+    }
+
+    internal fun buildRequestBody(
+        setting: AiProviderSetting,
+        model: AiModel,
+        messages: List<JsonObject>,
+        tools: List<JsonObject>,
+        params: AiTextParams,
+        stream: Boolean,
     ): JsonObject {
-        val reasoningOptions = setting.reasoningOptions(model.id)
+        val reasoningOptions = if (params.assistantReasoningProtocol == AiReasoningProtocol.CONFIGURED) {
+            setting.assistantReasoningFields(model.id)
+        } else {
+            setting.reasoningOptions(model.id)
+        }
         return JsonObject().apply {
             addProperty("model", model.id)
             add(
                 "messages",
-                AiChatContextManager.providerMessages(messages, AiConfig.assistantIncludeInterruptedReplies)
+                AiChatContextManager.providerMessages(messages).apply {
+                    forEach { item -> item.asJsonObject.removeNativeChatHistory() }
+                }
             )
             params.temperature?.let { addProperty("temperature", it) }
             params.maxTokens?.let { addProperty("max_tokens", it) }
@@ -1171,11 +1374,20 @@ class AiChatClient {
 
     private suspend fun OkHttpClient.executeJsonChat(
         request: Request,
-        reasoningKey: String
+        reasoningKey: String,
+        generationTest: Boolean,
     ): ChatCompletionSnapshot {
-        val (response, responseBody) = executeJsonOrThrow(request)
-        if (!response.isSuccessful) {
-            error("HTTP ${response.code}: ${responseBody.take(500)}")
+        val responseBody = if (generationTest) {
+            newCall(request).readCancellableStream { response ->
+                response.use {
+                    it.requireChatHttpSuccess(generationTest)
+                    it.body.string()
+                }
+            }
+        } else {
+            val (response, body) = executeJsonOrThrow(request)
+            if (!response.isSuccessful) error("HTTP ${response.code}: ${body.take(500)}")
+            body
         }
         val json = JsonParser.parseString(responseBody).asJsonObject
         val choice = json.arrayOrNull("choices")
@@ -1185,10 +1397,16 @@ class AiChatClient {
             ?: error("OpenAI response missing choices")
         val message = choice.objectOrNull("message")
             ?: error("OpenAI response missing message")
+        if (generationTest) {
+            check(message.stringOrNull("role") in setOf(null, "assistant")) {
+                "OpenAI response did not contain an assistant message"
+            }
+        }
         val usage = json.objectOrNull("usage")?.toChatUsage()
         return ChatCompletionSnapshot(
             message = message,
-            content = message.get("content").contentText(),
+            content = if (generationTest) message.get("content").chatGenerationVisibleText()
+            else message.get("content").contentText(),
             reasoning = message.stringOrNull(reasoningKey)
                 ?: message.stringOrNull("reasoning_content")
                 ?: message.stringOrNull("reasoning"),
@@ -1203,34 +1421,39 @@ class AiChatClient {
         request: Request,
         reasoningKey: String,
         deferVisibleContent: Boolean,
-        onStreamUpdate: (AiChatStreamUpdate) -> Unit
+        onStreamUpdate: (AiChatStreamUpdate) -> Unit,
+        generationTest: Boolean,
+        assistantTurn: Boolean,
     ): ChatCompletionSnapshot {
         return newCall(request).readCancellableStream { response ->
             response.use {
                 val responseBody = it.body
-                if (!it.isSuccessful) {
-                    error("HTTP ${it.code}: ${responseBody.string().take(500)}")
-                }
+                it.requireChatHttpSuccess(generationTest)
                 var model: String? = null
                 var finishReason: String? = null
+                var streamDone = false
+                var refused = false
+                var legacyFunctionCall = false
                 var usage: AiChatUsage? = null
                 val contentBuilder = StringBuilder()
                 val reasoningBuilder = StringBuilder()
                 val toolCalls = linkedMapOf<Int, StreamToolCall>()
                 responseBody.charStream().buffered().useLines { lines ->
-                    lines.forEach { line ->
+                    for (line in lines) {
                         currentCoroutineContext().ensureActive()
                         val data = line.trim()
                             .takeIf { line -> line.startsWith("data:") }
                             ?.removePrefix("data:")
                             ?.trim()
-                            ?: return@forEach
+                            ?: continue
                         if (data == "[DONE]") {
-                            return@forEach
+                            streamDone = true
+                            if (generationTest) break
+                            continue
                         }
                         val json = runCatching {
                             JsonParser.parseString(data).asJsonObject
-                        }.getOrNull() ?: return@forEach
+                        }.getOrNull() ?: continue
                         json.get("error")?.let { streamError ->
                             val detail = when {
                                 streamError.isJsonObject -> streamError.asJsonObject.get("message")
@@ -1251,12 +1474,21 @@ class AiChatClient {
                             ?.firstOrNull()
                             ?.takeIf { it.isJsonObject }
                             ?.asJsonObject
-                            ?: return@forEach
+                            ?: continue
                         finishReason = choice.stringOrNull("finish_reason") ?: finishReason
                         val delta = choice.objectOrNull("delta")
                             ?: choice.objectOrNull("message")
                             ?: JsonObject()
-                        val contentDelta = delta.get("content").contentText()
+                        refused = refused || delta.hasChatGenerationRefusal()
+                        val contentDelta = if (generationTest) {
+                            check(delta.stringOrNull("role") in setOf(null, "assistant")) {
+                                "OpenAI response did not contain an assistant message"
+                            }
+                            legacyFunctionCall = legacyFunctionCall || delta.objectOrNull("function_call") != null
+                            delta.get("content").chatGenerationVisibleText()
+                        } else {
+                            delta.get("content").contentText()
+                        }
                         if (contentDelta.isNotEmpty()) {
                             contentBuilder.append(contentDelta)
                         }
@@ -1287,6 +1519,16 @@ class AiChatClient {
                                 }
                             }
                         }
+                        // A later read failure must not override an explicit refusal or truncation.
+                        if (assistantTurn && (refused || !finishReason.isNullOrBlank())) {
+                            assistantUnfinishedReply(
+                                finishReason = finishReason,
+                                streamEnded = true,
+                                refused = refused,
+                                content = contentBuilder.toString(),
+                                reasoning = reasoningBuilder.toString(),
+                            )?.let { throw it }
+                        }
                         if ((!deferVisibleContent && contentDelta.isNotEmpty()) || !reasoningDelta.isNullOrEmpty()) {
                             onStreamUpdate(
                                 AiChatStreamUpdate(
@@ -1296,6 +1538,8 @@ class AiChatClient {
                                 )
                             )
                         }
+                        // The probe has the final choice and does not need trailing usage frames.
+                        if (generationTest && !finishReason.isNullOrBlank()) break
                     }
                 }
                 val toolCallArray = JsonArray().apply {
@@ -1315,6 +1559,8 @@ class AiChatClient {
                     addProperty("role", "assistant")
                     addProperty("content", content)
                     reasoning?.let { value -> addProperty("reasoning_content", value) }
+                    if (refused) addProperty("refusal", "refusal")
+                    if (legacyFunctionCall) add("function_call", JsonObject())
                     if (toolCallArray.size() > 0) {
                         add("tool_calls", toolCallArray)
                     }
@@ -1326,7 +1572,8 @@ class AiChatClient {
                     model = model,
                     finishReason = finishReason,
                     usage = usage,
-                    toolCalls = toolCallArray
+                    toolCalls = toolCallArray,
+                    streamEnded = streamDone || !finishReason.isNullOrBlank(),
                 )
             }
         }
@@ -1378,12 +1625,19 @@ class AiChatClient {
         }
     }
 
-    private fun uploadAssistantMessage(content: String, reasoning: String?): JsonObject {
+    private fun uploadAssistantMessage(
+        content: String,
+        reasoning: String?,
+        providerMessage: JsonObject? = null,
+    ): JsonObject {
         return JsonObject().apply {
             addProperty("role", "assistant")
             addProperty("content", content)
             if (!reasoning.isNullOrBlank()) {
                 addProperty("reasoning_content", reasoning)
+            }
+            providerMessage?.objectOrNull(AI_NATIVE_HISTORY)?.let {
+                add(AI_NATIVE_HISTORY, it.deepCopy())
             }
         }
     }
@@ -1557,9 +1811,10 @@ class AiChatClient {
     private fun resolveToolResultCharBudget(
         messages: List<JsonObject>,
         toolDefinitions: List<JsonObject>,
-        calibration: AiChatTokenCalibration?
+        calibration: AiChatTokenCalibration?,
+        contextWindow: Int,
     ): Int {
-        val usage = AiChatContextManager.usage(messages, toolDefinitions, calibration)
+        val usage = AiChatContextManager.usage(messages, toolDefinitions, calibration, contextWindow)
         return AiToolResultBudget.resolveChars(
             contextWindowTokens = usage.contextWindowTokens,
             thresholdTokens = usage.thresholdTokens,
@@ -1643,8 +1898,16 @@ class AiChatClient {
         val model: String?,
         val finishReason: String?,
         val usage: AiChatUsage?,
-        val toolCalls: JsonArray
-    )
+        val toolCalls: JsonArray,
+        val streamEnded: Boolean = true,
+    ) {
+        fun requireAssistantEnd(partialContent: String = "", partialReasoning: String? = null) {
+            assistantUnfinishedReply(
+                finishReason, streamEnded, message.hasChatGenerationRefusal(),
+                content.ifBlank { partialContent }, reasoning ?: partialReasoning,
+            )?.let { throw it }
+        }
+    }
 
     private class StreamToolCall {
         var id: String = ""
@@ -1670,12 +1933,17 @@ class AiChatClient {
         private const val AGENT_RUNTIME_NOTICE_PREFIX = "[AI_RUNTIME_NOTICE]"
         private const val HARD_WINDOW_GUARD_PERCENT = 95
         private const val MCP_TOOL_PREFIX = "mcp__legado__"
+        private val INCOMPLETE_SUMMARY_FINISH_REASONS = setOf(
+            "length", "content_filter", "refusal", "aborted", "cancelled", "error",
+            "incomplete", "insufficient_system_resource", "tool_calls", "function_call",
+        )
         private val CONTEXT_WINDOW_ERROR_MARKERS = listOf(
             "maximum context length",
             "context length",
             "context window",
             "context_length",
-            "too many tokens"
+            "too many tokens",
+            "prompt is too long",
         )
         private val AGENT_SYSTEM_PROMPT = """
             你是 Legado / 阅读NG 内置 AI 助手。回答要简洁直接。

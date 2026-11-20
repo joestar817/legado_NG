@@ -10,14 +10,17 @@ class OpenAiCompatibleProvider : AiProvider {
 
     override suspend fun listModels(setting: AiProviderSetting): List<AiModel> {
         val client = aiHttpClient(setting.timeoutSeconds)
+        val deepSeekEndpoint = setting.officialDeepSeekCatalogEndpoint()
+        val modelKey = setting.modelConfigurationKey()
+        val apiKey = setting.apiKeyForRequest()
         var lastError: Throwable? = null
         AiModelEndpointResolver.candidates(setting).forEach { url ->
             try {
                 val request = Request.Builder()
-                    .url(url)
+                    .url(buildAiApiEndpoint(setting.baseUrl, url))
                     .apply {
-                        if (setting.apiKey.isNotBlank()) {
-                            addHeader("Authorization", "Bearer ${setting.apiKey}")
+                        if (apiKey.isNotBlank()) {
+                            addHeader("Authorization", "Bearer $apiKey")
                         }
                     }
                     .addOpenCodeProviderHeaders(setting)
@@ -31,8 +34,15 @@ class OpenAiCompatibleProvider : AiProvider {
                     error("HTTP ${response.code}: ${body.take(500)}")
                 }
                 val json = JsonParser.parseString(body).asJsonObject
-                return parseModels(json)
+                val resolved = response.request.url
+                val infoEndpoint = modelKey.takeIf {
+                    resolved.sameOriginAs(request.url) && (deepSeekEndpoint == null ||
+                            request.url.deepSeekCatalogEndpoint() == deepSeekEndpoint && resolved.deepSeekCatalogEndpoint() != null)
+                }
+                return parseModels(json, infoEndpoint, setting.openAiCatalogFormat(resolved), resolved.catalogSourceId())
             } catch (e: CancellationException) {
+                throw e
+            } catch (e: AiEndpointException) {
                 throw e
             } catch (e: Throwable) {
                 lastError = e
@@ -69,11 +79,12 @@ class OpenAiCompatibleProvider : AiProvider {
         }
 
         val client = aiHttpClient(setting.timeoutSeconds)
+        val apiKey = setting.apiKeyForRequest()
         val request = Request.Builder()
-            .url("${setting.baseUrl.trimEndSlash()}${setting.chatCompletionsPath.ensureStartSlash()}")
+            .url(buildAiApiEndpoint(setting.baseUrl, setting.chatCompletionsPath))
             .apply {
-                if (setting.apiKey.isNotBlank()) {
-                    addHeader("Authorization", "Bearer ${setting.apiKey}")
+                if (apiKey.isNotBlank()) {
+                    addHeader("Authorization", "Bearer $apiKey")
                 }
             }
             .addOpenCodeProviderHeaders(setting)
@@ -110,34 +121,41 @@ class OpenAiCompatibleProvider : AiProvider {
         )
     }
 
-    private fun parseModels(json: JsonObject): List<AiModel> {
-        return json.arrayOrNull("data")
-            ?.mapNotNull { item ->
-                val obj = item.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
-                val id = obj.stringOrNull("id") ?: return@mapNotNull null
-                val clearCapabilities = AiModelRegistry.shouldClearDeclaredCapabilities(id)
-                AiModel(
-                    id = id,
-                    name = obj.stringOrNull("name") ?: id,
-                    ownedBy = obj.stringOrNull("owned_by").orEmpty(),
-                    inputModalities = if (clearCapabilities) {
-                        emptyList()
-                    } else {
-                        obj.stringArrayOrEmpty("input_modalities").toModelModalities()
-                    },
-                    outputModalities = if (clearCapabilities) {
-                        emptyList()
-                    } else {
-                        obj.stringArrayOrEmpty("output_modalities").toModelModalities()
-                    },
-                    abilities = if (clearCapabilities) {
-                        emptyList()
-                    } else {
-                        obj.stringArrayOrEmpty("supported_features").toModelAbilities()
-                    }
-                )
-            }
-            ?: emptyList()
+    internal fun parseModels(
+        json: JsonObject,
+        configurationKey: String?,
+        format: AiModelCatalogFormat = AiModelCatalogFormat.COMPATIBLE,
+        catalogSourceId: String? = null,
+    ): List<AiModel> {
+        check(json.get("has_more")?.let { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean && it.asBoolean } != true) {
+            "Model catalog response is incomplete"
+        }
+        return json.modelCatalogEntries("data", "id").map { (obj, id) ->
+            val clearCapabilities = AiModelRegistry.shouldClearDeclaredCapabilities(id)
+            AiModel(
+                id = id,
+                name = obj.stringOrNull("name") ?: id,
+                ownedBy = obj.stringOrNull("owned_by").orEmpty(),
+                inputModalities = if (clearCapabilities) {
+                    emptyList()
+                } else {
+                    obj.stringArrayOrEmpty("input_modalities").toModelModalities()
+                },
+                outputModalities = if (clearCapabilities) {
+                    emptyList()
+                } else {
+                    obj.stringArrayOrEmpty("output_modalities").toModelModalities()
+                },
+                abilities = if (clearCapabilities) {
+                    emptyList()
+                } else {
+                    obj.stringArrayOrEmpty("supported_features").toModelAbilities()
+                },
+                modelInfo = configurationKey?.let {
+                    readModelInfo(obj, it, format).copy(catalogSourceId = catalogSourceId)
+                },
+            )
+        }
     }
 
     private fun JsonObject.stringArrayOrEmpty(key: String): List<String> {
@@ -168,6 +186,7 @@ class OpenAiCompatibleProvider : AiProvider {
             if ("image" in values) add(AiModelModality.IMAGE)
             if ("audio" in values) add(AiModelModality.AUDIO)
             if ("video" in values) add(AiModelModality.VIDEO)
+            if ("file" in values) add(AiModelModality.FILE)
         }
     }
 }

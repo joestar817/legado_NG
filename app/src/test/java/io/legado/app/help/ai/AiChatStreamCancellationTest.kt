@@ -152,7 +152,7 @@ class AiChatStreamCancellationTest {
     ): Any? = suspendCoroutineUninterceptedOrReturn { continuation ->
         val onUpdate: (AiChatStreamUpdate) -> Unit = { updates += it.content }
         try {
-            executeStreamChat.invoke(chat, client, request, "reasoning_content", false, onUpdate, continuation)
+            executeStreamChat.invoke(chat, client, request, "reasoning_content", false, onUpdate, false, true, continuation)
         } catch (error: InvocationTargetException) {
             throw error.targetException
         }
@@ -160,6 +160,7 @@ class AiChatStreamCancellationTest {
 
     private val executeStreamChat = AiChatClient::class.java.getDeclaredMethod(
         "executeStreamChat", OkHttpClient::class.java, Request::class.java, String::class.java,
-        Boolean::class.javaPrimitiveType, Function1::class.java, Continuation::class.java
+        Boolean::class.javaPrimitiveType, Function1::class.java, Boolean::class.javaPrimitiveType,
+        Boolean::class.javaPrimitiveType, Continuation::class.java
     ).apply { isAccessible = true }
 }

@@ -1,6 +1,7 @@
 package io.legado.app.ui.config
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -93,6 +94,8 @@ internal data class AiModelSelectionItemUiModel(
     val searchAliases: List<String> = emptyList(),
     @param:DrawableRes val iconRes: Int,
     val capabilities: List<ModelCapabilityTag>,
+    val textTrial: Boolean = false,
+    @param:StringRes val generationHintRes: Int? = null,
 )
 
 @Immutable
@@ -112,8 +115,6 @@ internal data class AiModelSelectionSheetState(
     val providers: List<AiModelSelectionProviderUiModel>,
     val selectedProviderId: String = "",
     val selectedModelId: String = "",
-    val followAssistantLabel: String? = null,
-    val followAssistantSelected: Boolean = false,
 )
 
 internal fun AiModelSelectionSheetState.withUpdatedProvider(
@@ -126,14 +127,11 @@ internal fun AiModelSelectionSheetState.withUpdatedProvider(
 )
 
 internal data class AiModelSelectionTarget(
-    val providerId: String? = null,
-    val modelId: String? = null,
-    val followAssistant: Boolean = false,
+    val providerId: String,
+    val modelId: String,
 )
 
 internal data class AiModelSelectionPosition(val pageKey: String, val row: Int)
-
-private const val FOLLOW_ASSISTANT_PAGE = "follow-assistant"
 
 private enum class AiModelCatalogFetchStatus { LOADING, FAILED }
 
@@ -153,12 +151,7 @@ internal fun List<AiModelSelectionProviderUiModel>.filterModels(
     }
 }
 
-internal fun AiModelSelectionSheetState.selectedTarget(
-    includeFollowAssistant: Boolean,
-): AiModelSelectionTarget? {
-    if (includeFollowAssistant && followAssistantLabel != null && followAssistantSelected) {
-        return AiModelSelectionTarget(followAssistant = true)
-    }
+internal fun AiModelSelectionSheetState.selectedTarget(): AiModelSelectionTarget? {
     val provider = providers.firstOrNull { it.id == selectedProviderId } ?: return null
     if (provider.models.none { it.id == selectedModelId }) return null
     return AiModelSelectionTarget(providerId = provider.id, modelId = selectedModelId)
@@ -166,11 +159,7 @@ internal fun AiModelSelectionSheetState.selectedTarget(
 
 internal fun AiModelSelectionTarget.position(
     providers: List<AiModelSelectionProviderUiModel>,
-    showFollowAssistant: Boolean,
 ): AiModelSelectionPosition? {
-    if (followAssistant) {
-        return AiModelSelectionPosition(FOLLOW_ASSISTANT_PAGE, 0).takeIf { showFollowAssistant }
-    }
     val provider = providers.firstOrNull { it.id == providerId } ?: return null
     val row = provider.models.indexOfFirst { it.id == modelId }
     return if (row < 0) null else AiModelSelectionPosition(providerPageKey(provider.id), row)
@@ -180,7 +169,7 @@ private data class AiModelSelectionPage(
     val key: String,
     val label: String,
     @param:DrawableRes val iconRes: Int,
-    val providerId: String? = null,
+    val providerId: String,
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -192,7 +181,6 @@ internal fun AiModelSelectionSheet(
     onRefresh: () -> Unit,
     onFetchProvider: (suspend (String) -> Unit)? = null,
     onSelect: (providerId: String, modelId: String) -> Unit,
-    onFollowAssistant: (() -> Unit)? = null,
 ) {
     var query by remember { mutableStateOf("") }
     var searchExpanded by remember { mutableStateOf(false) }
@@ -235,37 +223,21 @@ internal fun AiModelSelectionSheet(
     val filteredProviders = remember(state.providers, normalizedQuery) {
         state.providers.filterModels(normalizedQuery)
     }
-    val includeFollowAssistant = state.followAssistantLabel != null && onFollowAssistant != null
-    val showFollowAssistant = includeFollowAssistant &&
-        (normalizedQuery.isBlank() ||
-            state.followAssistantLabel?.contains(normalizedQuery, ignoreCase = true) == true)
-    val automaticLabel = stringResource(R.string.ai_model_automatic_group)
-    val pages = remember(state.providers, includeFollowAssistant, automaticLabel) {
-        buildList {
-            if (includeFollowAssistant) {
-                add(AiModelSelectionPage(
-                    key = FOLLOW_ASSISTANT_PAGE,
-                    label = automaticLabel,
-                    iconRes = R.drawable.ic_ai_chat_suggestion,
-                ))
-            }
-            state.providers.forEach { provider ->
-                add(AiModelSelectionPage(
-                    key = providerPageKey(provider.id),
-                    label = provider.name,
-                    iconRes = provider.iconRes,
-                    providerId = provider.id,
-                ))
-            }
+    val pages = remember(state.providers) {
+        state.providers.map { provider ->
+            AiModelSelectionPage(
+                key = providerPageKey(provider.id),
+                label = provider.name,
+                iconRes = provider.iconRes,
+                providerId = provider.id,
+            )
         }
     }
     val pagerState = rememberPagerState(pageCount = { pages.size })
     val currentPages by rememberUpdatedState(pages)
     val currentOnProviderOpen by rememberUpdatedState<(String) -> Unit>({ openProvider(it) })
-    val selectedTarget = remember(state, includeFollowAssistant) {
-        state.selectedTarget(includeFollowAssistant)
-    }
-    val selectedVisible = selectedTarget?.position(filteredProviders, showFollowAssistant)
+    val selectedTarget = remember(state) { state.selectedTarget() }
+    val selectedVisible = selectedTarget?.position(filteredProviders)
     val refreshInteractionSource = remember { MutableInteractionSource() }
     val locateInteractionSource = remember { MutableInteractionSource() }
     val searchInteractionSource = remember { MutableInteractionSource() }
@@ -273,12 +245,10 @@ internal fun AiModelSelectionSheet(
     LaunchedEffect(isLoading, pages) {
         if (!initialPageChosen && !isLoading && pages.isNotEmpty()) {
             initialPageChosen = true
-            if (!includeFollowAssistant) {
-                val firstWithModels = pages.indexOfFirst { page ->
-                    state.providers.any { it.id == page.providerId && it.models.isNotEmpty() }
-                }
-                if (firstWithModels > 0) pagerState.scrollToPage(firstWithModels)
+            val firstWithModels = pages.indexOfFirst { page ->
+                state.providers.any { it.id == page.providerId && it.models.isNotEmpty() }
             }
+            if (firstWithModels > 0) pagerState.scrollToPage(firstWithModels)
         }
     }
     LaunchedEffect(normalizedQuery) {
@@ -291,10 +261,10 @@ internal fun AiModelSelectionSheet(
             }
         }
     }
-    LaunchedEffect(locateRequest, filteredProviders, showFollowAssistant, pages) {
+    LaunchedEffect(locateRequest, filteredProviders, pages) {
         if (locateRequest == 0) return@LaunchedEffect
         val target = locateTarget ?: return@LaunchedEffect
-        val position = target.position(filteredProviders, showFollowAssistant)
+        val position = target.position(filteredProviders)
         val page = pages.indexOfFirst { it.key == position?.pageKey }
         if (position == null || page < 0) {
             locatingSelection = false
@@ -455,7 +425,7 @@ internal fun AiModelSelectionSheet(
                                 page = page,
                                 selected = pagerState.currentPage == index,
                                 onClick = {
-                                    page.providerId?.let { openProvider(it) }
+                                    openProvider(page.providerId)
                                     if (pagerState.currentPage != index) {
                                         scope.launch { pagerState.animateScrollToPage(index) }
                                     }
@@ -506,31 +476,15 @@ internal fun AiModelSelectionSheet(
                     val listState = listStates.getOrPut(page.key) { LazyListState() }
                     val provider = filteredProviders.firstOrNull { it.id == page.providerId }
                     val originalProvider = state.providers.firstOrNull { it.id == page.providerId }
-                    val fetchStatus = page.providerId?.let { fetchStatuses[it] }
+                    val fetchStatus = fetchStatuses[page.providerId]
                     when {
-                        page.providerId == null && showFollowAssistant -> {
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 10.dp),
-                            ) {
-                                item(key = FOLLOW_ASSISTANT_PAGE) {
-                                    AiFollowAssistantModelCard(
-                                        label = requireNotNull(state.followAssistantLabel),
-                                        summary = stringResource(R.string.ai_context_compaction_model_follow_summary),
-                                        selected = state.followAssistantSelected,
-                                        onClick = requireNotNull(onFollowAssistant),
-                                    )
-                                }
-                            }
-                        }
-                        page.providerId != null && fetchStatus == AiModelCatalogFetchStatus.LOADING -> {
+                        fetchStatus == AiModelCatalogFetchStatus.LOADING -> {
                             AiModelCatalogMessage(
                                 text = stringResource(R.string.loading),
                                 loading = true,
                             )
                         }
-                        page.providerId != null && originalProvider?.needsFetch == true -> {
+                        originalProvider?.needsFetch == true -> {
                             val failed = fetchStatus == AiModelCatalogFetchStatus.FAILED
                             AiModelCatalogMessage(
                                 text = stringResource(
@@ -543,14 +497,14 @@ internal fun AiModelSelectionSheet(
                                 onAction = { openProvider(page.providerId, retry = true) },
                             )
                         }
-                        page.providerId != null && originalProvider?.noEnabledModels == true -> {
+                        originalProvider?.noEnabledModels == true -> {
                             AiModelSelectionMessage(
                                 stringResource(R.string.ai_model_none_enabled), Modifier.fillMaxSize(),
                             )
                         }
-                        page.providerId == null || provider == null || provider.models.isEmpty() -> {
+                        provider == null || provider.models.isEmpty() -> {
                             val message = if (normalizedQuery.isNotBlank() &&
-                                (page.providerId == null || originalProvider?.models?.isNotEmpty() == true)
+                                originalProvider?.models?.isNotEmpty() == true
                             ) {
                                 stringResource(R.string.ai_model_search_empty)
                             } else {
@@ -604,20 +558,11 @@ private fun AiModelSelectionTab(
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (page.providerId == null) {
-                Icon(
-                    painter = painterResource(page.iconRes),
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = color,
-                )
-            } else {
-                Image(
-                    painter = painterResource(page.iconRes),
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            Image(
+                painter = painterResource(page.iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
             Text(
                 text = page.label,
                 color = color,
@@ -733,7 +678,14 @@ private fun AiModelSelectionCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (model.capabilities.isNotEmpty()) {
+                if (model.textTrial) {
+                    Text(
+                        text = stringResource(R.string.ai_model_try_as_text_chat),
+                        modifier = Modifier.padding(top = 4.dp),
+                        color = ngDrawerSecondaryTextColor(colorResource(R.color.ng_on_surface_variant)),
+                        fontSize = 12.sp,
+                    )
+                } else if (model.capabilities.isNotEmpty()) {
                     Row(
                         modifier = Modifier.padding(top = 6.dp),
                     ) {
@@ -744,75 +696,14 @@ private fun AiModelSelectionCard(
                 } else {
                     Spacer(Modifier.height(6.dp))
                 }
-            }
-        }
-        AiModelSelectionIndicator(selected)
-    }
-}
-
-@Composable
-private fun AiFollowAssistantModelCard(
-    label: String,
-    summary: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 12.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(ngDrawerContentCardColor()),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick,
-                )
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(colorResource(R.color.ng_icon_container))
-                    .padding(7.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_ai_chat_suggestion),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    tint = Color(NgTheme.colors.primary),
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = label,
-                    color = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
-                    fontSize = 16.sp,
-                    lineHeight = 19.sp,
-                    letterSpacing = 0.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = summary,
-                    modifier = Modifier.padding(top = 4.dp),
-                    color = ngDrawerSecondaryTextColor(colorResource(R.color.ng_on_surface_variant)),
-                    fontSize = 13.sp,
-                    lineHeight = 16.sp,
-                    letterSpacing = 0.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                model.generationHintRes?.let { hint ->
+                    Text(
+                        text = stringResource(hint),
+                        modifier = Modifier.padding(top = 4.dp),
+                        color = ngDrawerSecondaryTextColor(colorResource(R.color.ng_on_surface_variant)),
+                        fontSize = 12.sp,
+                    )
+                }
             }
         }
         AiModelSelectionIndicator(selected)

@@ -18,8 +18,10 @@ import android.widget.Toast
 import androidx.activity.ComponentDialog
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.isVisible
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
@@ -31,6 +33,7 @@ import io.legado.app.databinding.FragmentAiConfigBinding
 import io.legado.app.data.appDb
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiManager
+import io.legado.app.help.ai.AiManualModelAddResult
 import io.legado.app.help.ai.AiModel
 import io.legado.app.help.ai.AiModelAbility
 import io.legado.app.help.ai.AiModelModality
@@ -46,6 +49,20 @@ import io.legado.app.help.ai.AiSkillExistsException
 import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.ai.AiSkillScope
 import io.legado.app.help.ai.aiProviderHost
+import io.legado.app.help.ai.apiKeyNeedsReentry
+import io.legado.app.help.ai.assistantContextWindowLabel
+import io.legado.app.help.ai.assistantContextWindowLimit
+import io.legado.app.help.ai.assistantContextWindowOptions
+import io.legado.app.help.ai.assistantModelChoice
+import io.legado.app.help.ai.capAssistantContextWindow
+import io.legado.app.help.ai.catalogFetchRequired
+import io.legado.app.help.ai.effectiveModelCapabilities
+import io.legado.app.help.ai.effectiveModelInfo
+import io.legado.app.help.ai.isManualModel
+import io.legado.app.help.ai.modelConfigurationKey
+import io.legado.app.help.ai.modelPresetProviderId
+import io.legado.app.help.ai.modelSettingsFor
+import io.legado.app.help.ai.withCatalogCapabilities
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.ui.code.CodeEditActivity
 import io.legado.app.ui.design.components.NgStatusTagSpec
@@ -63,10 +80,13 @@ import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.hideSoftInput
 import io.legado.app.utils.share
 import io.legado.app.utils.showDialogFragment
+import io.legado.app.utils.showHelp
 import io.legado.app.utils.showWithAppNavigationBarVisibility
+import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -127,6 +147,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private enum class ProviderDetailTab { CONFIG, MODELS }
 
+    private data class AddModelTarget(val providerId: String, val configurationKey: String)
+
     private sealed interface SkillTreeRow {
         val path: String
         val name: String
@@ -166,6 +188,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var providerScreenState by mutableStateOf(AiProviderListScreenState())
     private var providerFormScreenState by mutableStateOf(AiProviderFormScreenState())
     private var providerDetailScreenState by mutableStateOf(AiProviderDetailScreenState())
+    private var addModelTarget by mutableStateOf<AddModelTarget?>(null)
     private var aiMenuScreenState by mutableStateOf(AiConfigMenuScreenState())
     private var petManagerNavigationPending = false
     private var skillListScreenItems by mutableStateOf<List<AiSkillListItemUiModel>>(emptyList())
@@ -181,9 +204,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     )
     private var purifySettingsScreenState by mutableStateOf(AiPurifySettingsScreenState())
     private var showDisabledProviders = LocalConfig.aiProviderListShowDisabled
-    private var modelSearchQuery: String = ""
     private var providerDetailTab = ProviderDetailTab.CONFIG
-    private val autoFetchedModelProviderIds = hashSetOf<String>()
+    private val autoFetchedModelProviderRevisions = hashMapOf<String, String?>()
     private var requestJob: Job? = null
     private var modelRefreshJob: Job? = null
     private var isRefreshingAllModels by mutableStateOf(false)
@@ -249,6 +271,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     override fun onDestroyView() {
+        addModelTarget = null
         activity?.findViewById<TitleBar>(R.id.title_bar)?.let { titleBar ->
             titleBar.isVisible = true
             titleBar.setTemporarySolidSurface(false)
@@ -387,6 +410,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun showMain() {
+        addModelTarget = null
         currentPage = Page.MAIN
         setFeatureComposePage(Page.MAIN)
         currentProviderId = null
@@ -397,6 +421,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun showProviderList() {
+        addModelTarget = null
         currentPage = Page.PROVIDERS
         setFeatureComposePage(Page.PROVIDERS)
         currentProviderId = null
@@ -411,6 +436,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         providerId: String,
         tab: ProviderDetailTab = ProviderDetailTab.CONFIG
     ) {
+        if (currentProviderId != providerId) {
+            addModelTarget = null
+            providerDetailScreenState = providerDetailScreenState.copy(
+                modelQuery = "",
+                modelFilter = AiProviderModelFilter.ALL,
+                revealModelId = null,
+            )
+        }
         currentPage = Page.DETAIL
         setFeatureComposePage(Page.DETAIL)
         currentProviderId = providerId
@@ -718,7 +751,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun refreshProviders() {
         val allProviders = AiProviderStore.providers()
-        autoFetchedModelProviderIds.retainAll(allProviders.mapTo(hashSetOf()) { it.id })
+        autoFetchedModelProviderRevisions.keys.retainAll(allProviders.mapTo(hashSetOf()) { it.id })
         val providers = ConfigListVisibilitySupport.visibleItems(
             allItems = allProviders,
             showDisabled = showDisabledProviders,
@@ -748,7 +781,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                             getString(R.string.ai_provider_model_count, modelCount.toString())
                         },
                         modelCountWarning = modelCount == 0,
-                        keyConfigured = provider.apiKey.isNotBlank(),
+                        keyConfigured = provider.apiKey.isNotBlank() && !provider.apiKeyNeedsReentry(),
                         reorderable = true,
                         deletable = !provider.builtIn
                     )
@@ -864,29 +897,44 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     providerFormScreenState =
                         providerFormScreenState.withAutoNameForBaseUrl(action.value)
                 }
-                providerFormScreenState = providerFormScreenState.withField(
+                val updated = providerFormScreenState.withField(
                     action.field,
                     action.value
                 )
+                if (updated == providerFormScreenState) return
+                providerFormScreenState = updated
                 val provider = saveCurrentProvider(
                     updateHeader = action.field == AiProviderFormField.NAME ||
-                        action.field == AiProviderFormField.BASE_URL
+                        action.field == AiProviderFormField.BASE_URL,
+                    keepProtocolPathDraft = action.field == AiProviderFormField.CHAT_PATH ||
+                        action.field == AiProviderFormField.RESPONSES_PATH,
                 )
-                if (action.field == AiProviderFormField.API_KEY && provider != null) {
+                if (provider != null && action.field in setOf(
+                        AiProviderFormField.API_KEY, AiProviderFormField.BASE_URL,
+                        AiProviderFormField.CHAT_PATH, AiProviderFormField.MODELS_URL,
+                    )) {
                     refreshModelList(provider)
                 }
             }
 
             is AiProviderFormScreenAction.ToggleChanged -> {
-                providerFormScreenState = providerFormScreenState.withToggle(
+                val updated = providerFormScreenState.withToggle(
                     action.toggle,
                     action.checked
                 )
-                saveCurrentProvider()
+                if (updated == providerFormScreenState) return
+                providerFormScreenState = updated
+                val provider = saveCurrentProvider()
+                if (action.toggle == AiProviderFormToggle.CUSTOM_MODELS_URL && provider != null) {
+                    refreshModelList(provider)
+                }
             }
 
             AiProviderFormScreenAction.TestConnectionRequested -> testConnection()
             AiProviderFormScreenAction.QueryBalanceRequested -> queryBalance()
+            AiProviderFormScreenAction.UseKeyForCurrentAddress -> {
+                saveCurrentProvider(useExistingKeyHere = true)?.let(::refreshModelList)
+            }
             AiProviderFormScreenAction.ResetRequested -> confirmResetCurrentProvider()
             AiProviderFormScreenAction.DeleteRequested -> confirmDeleteCurrentProvider()
         }
@@ -894,32 +942,31 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun commitProviderOrder(orderedProviderIds: List<String>) {
         if (providerSearchQuery.isNotBlank()) return
-        val allProviders = AiProviderStore.providers()
-        val visibleProviders = ConfigListVisibilitySupport.visibleItems(
-            allItems = allProviders,
-            showDisabled = showDisabledProviders,
-            isEnabled = AiProviderSetting::enabled
-        )
-        val visibleIds = visibleProviders.map(AiProviderSetting::id)
-        if (orderedProviderIds == visibleIds) return
-        if (orderedProviderIds.size != visibleIds.size ||
-            orderedProviderIds.toSet().size != orderedProviderIds.size ||
-            orderedProviderIds.toSet() != visibleIds.toSet()
-        ) {
-            refreshProviders()
-            return
-        }
-        val providersById = visibleProviders.associateBy(AiProviderSetting::id)
-        val reorderedProviders = orderedProviderIds.mapNotNull(providersById::get)
-        AiProviderStore.saveProviders(
-            ConfigListVisibilitySupport.mergeVisibleOrder(
+        val reordered = synchronized(AiProviderStore) {
+            val allProviders = AiProviderStore.providers()
+            val visibleProviders = ConfigListVisibilitySupport.visibleItems(
                 allItems = allProviders,
-                reorderedVisibleItems = reorderedProviders,
                 showDisabled = showDisabledProviders,
-                isEnabled = AiProviderSetting::enabled
+                isEnabled = AiProviderSetting::enabled,
             )
-        )
-        refreshMain()
+            val visibleIds = visibleProviders.map(AiProviderSetting::id)
+            if (orderedProviderIds == visibleIds) return
+            if (orderedProviderIds.size != visibleIds.size || orderedProviderIds.toSet() != visibleIds.toSet()) {
+                false
+            } else {
+                val providersById = visibleProviders.associateBy(AiProviderSetting::id)
+                AiProviderStore.saveProviders(
+                    ConfigListVisibilitySupport.mergeVisibleOrder(
+                        allItems = allProviders,
+                        reorderedVisibleItems = orderedProviderIds.mapNotNull(providersById::get),
+                        showDisabled = showDisabledProviders,
+                        isEnabled = AiProviderSetting::enabled,
+                    )
+                )
+                true
+            }
+        }
+        if (reordered) refreshMain()
         refreshProviders()
     }
 
@@ -930,6 +977,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             provider.type.localizedDisplayName()
         )
         providerDetailScreenState = providerDetailScreenState.copy(
+            providerId = provider.id,
             providerName = provider.name,
             providerIconRes = provider.iconRes(),
             selectedTab = providerDetailTab.ordinal,
@@ -945,11 +993,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         if (tab == ProviderDetailTab.MODELS) {
             binding.composeProviderDetail.clearFocus()
             binding.composeProviderDetail.hideSoftInput()
-            maybeAutoFetchModels()
+            val provider = currentProviderId?.let(AiProviderStore::provider) ?: return
+            if (provider.builtIn && provider.id == "deepseek") refreshModelList(provider)
+            maybeAutoFetchModels(provider)
         }
     }
 
     private fun showModelEditDialog(provider: AiProviderSetting, model: AiModel) {
+        val modelInfo = provider.effectiveModelInfo(model)
         val dialog = BottomSheetDialog(requireContext())
         dialog.setContentView(
             requireContext().createNgBottomDrawerComposeHost(
@@ -957,15 +1008,18 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
             ) {
                 AiModelEditSheet(
+                    provider = provider,
                     model = model,
+                    info = modelInfo,
+                    modelForDraft = { modelWithEdits(model, it) },
                     onSave = { draft ->
-                        saveModelEdit(provider, model, draft)
-                        dialog.dismiss()
+                        if (draft == null || saveModelEdit(provider, model, draft)) dialog.dismiss()
+                        else toastOnUi(R.string.ai_model_catalog_changed)
                     },
                 )
             }
         )
-        configureModelEditSheet(dialog)
+        configureModelEditSheet(dialog, 0.80f)
         dialog.showWithAppNavigationBarVisibility()
     }
 
@@ -1031,12 +1085,33 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             )
             setContent {
                 NgAppTheme {
+                    val formState = providerFormScreenState
+                    val helpDocument = AiProviderHelpDocuments.forProvider(
+                        providerId = formState.providerId,
+                        builtIn = formState.builtIn,
+                        baseUrl = formState.baseUrl,
+                    )
                     AiProviderDetailScreen(
                         state = providerDetailScreenState,
-                        formState = providerFormScreenState,
+                        formState = formState,
                         onFormAction = ::handleProviderFormAction,
                         onAction = ::handleProviderDetailAction,
+                        onHelp = helpDocument?.let { fileName -> { showHelp(fileName) } },
                     )
+                    val target = addModelTarget
+                    if (target != null && target.providerId == providerDetailScreenState.providerId) {
+                        val models = providerDetailScreenState.models
+                        val ids = remember(models) { models.mapTo(hashSetOf()) { it.id } }
+                        AiAddModelDialog(
+                            existingModelIds = ids,
+                            onDismissRequest = { addModelTarget = null },
+                            onAdd = { id, type -> addProviderModel(target, id, type) },
+                            onViewExisting = { id ->
+                                addModelTarget = null
+                                showModelDetail(id)
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -1143,23 +1218,80 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 showProviderDetailTab(tab)
             }
             is AiProviderDetailAction.ModelQueryChanged -> {
-                modelSearchQuery = action.query
-                refreshModelList(currentProviderId?.let { AiProviderStore.provider(it) })
+                providerDetailScreenState = providerDetailScreenState.copy(modelQuery = action.query)
+            }
+            is AiProviderDetailAction.ModelFilterChanged -> {
+                providerDetailScreenState = providerDetailScreenState.copy(
+                    modelFilter = action.filter.orAllFor(providerDetailScreenState.models),
+                )
+            }
+            AiProviderDetailAction.AddModelRequested -> {
+                val provider = currentProviderId?.let(AiProviderStore::provider) ?: return
+                addModelTarget = AddModelTarget(provider.id, provider.modelConfigurationKey())
+            }
+            is AiProviderDetailAction.ModelRevealed -> {
+                if (providerDetailScreenState.revealModelId == action.modelId) {
+                    providerDetailScreenState = providerDetailScreenState.copy(revealModelId = null)
+                }
             }
             AiProviderDetailAction.RefreshModels -> fetchModels()
-            AiProviderDetailAction.ToggleVisibleModelSelection -> toggleVisibleModelSelection()
+            is AiProviderDetailAction.SetModelsEnabled -> setModelsEnabled(action.ids, action.enabled)
             AiProviderDetailAction.Back -> {
                 requireActivity().onBackPressedDispatcher.onBackPressed()
             }
             is AiProviderDetailAction.EditModel -> showModelDetail(action.modelId)
+            is AiProviderDetailAction.DeleteModelRequested -> confirmDeleteManualModel(action.modelId)
             is AiProviderDetailAction.ToggleModel -> {
-                val provider = currentProviderId?.let(AiProviderStore::provider) ?: return
-                val model = provider.displayModels().firstOrNull {
-                    it.safeId() == action.modelId
-                } ?: return
-                toggleAvailableModel(model, action.selected)
+                setModelsEnabled(setOf(action.modelId), action.selected)
             }
         }
+    }
+
+    private fun addProviderModel(target: AddModelTarget, id: String, type: AiModelType) {
+        when (AiProviderStore.addManualModel(target.providerId, id, type, target.configurationKey)) {
+            AiManualModelAddResult.ADDED -> {
+                addModelTarget = null
+                refreshModelList(AiProviderStore.provider(target.providerId))
+                val state = providerDetailScreenState
+                val item = state.models.firstOrNull { it.id == id }
+                if (item != null) {
+                    val queryMatches = listOf(item).filterProviderModels(state.modelQuery, AiProviderModelFilter.ALL)
+                        .isNotEmpty()
+                    providerDetailScreenState = state.copy(
+                        modelQuery = state.modelQuery.takeIf { queryMatches }.orEmpty(),
+                        modelFilter = state.modelFilter.takeIf { it.matches(item.type) } ?: AiProviderModelFilter.ALL,
+                        revealModelId = item.id,
+                    )
+                }
+                refreshMain()
+            }
+            AiManualModelAddResult.DUPLICATE -> refreshModelList(AiProviderStore.provider(target.providerId))
+            AiManualModelAddResult.UNAVAILABLE -> {
+                addModelTarget = null
+                toastOnUi(R.string.ai_model_catalog_changed)
+            }
+        }
+    }
+
+    private fun confirmDeleteManualModel(modelId: String) {
+        val provider = currentProviderId?.let(AiProviderStore::provider) ?: return
+        val configurationKey = provider.modelConfigurationKey()
+        val model = provider.models.firstOrNull {
+            it.safeId() == modelId && it.manualModelEndpoint == configurationKey
+        } ?: return
+        showAiClassicDialog(
+            title = getString(R.string.ai_delete_model),
+            message = getString(R.string.ai_delete_model_message, model.displayName()),
+            cancelText = getString(android.R.string.cancel),
+            dismissBeforeConfirm = true,
+            onConfirm = {
+                if (AiProviderStore.removeManualModel(provider.id, modelId, configurationKey)) {
+                    refreshModelList(AiProviderStore.provider(provider.id))
+                    refreshMain()
+                    toastOnUi(R.string.ai_model_deleted)
+                }
+            },
+        )
     }
 
     private fun handlePurifyModelSettingsAction(action: AiPurifyModelSettingsAction) {
@@ -1204,20 +1336,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         when (action) {
             AiAssistantModelSettingsAction.SelectModel -> showAssistantModelSelectDialog()
             AiAssistantModelSettingsAction.SelectReasoning -> showAssistantReasoningDialog()
-            AiAssistantModelSettingsAction.SelectCompactionModel -> {
-                showContextCompactionModelSelectDialog()
-            }
             AiAssistantModelSettingsAction.SelectContextWindow -> {
                 showAssistantContextWindowDialog()
             }
             AiAssistantModelSettingsAction.SelectCompactionThreshold -> {
                 showContextCompactionThresholdDialog()
-            }
-            is AiAssistantModelSettingsAction.IncludeInterruptedRepliesChanged -> {
-                AiConfig.assistantIncludeInterruptedReplies = action.enabled
-                assistantModelSettingsScreenState = assistantModelSettingsScreenState.copy(
-                    includeInterruptedReplies = action.enabled
-                )
             }
             is AiAssistantModelSettingsAction.InternalMcpChanged -> {
                 AiConfig.internalMcpEnabled = action.enabled
@@ -1347,14 +1470,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         refreshModelSettings()
     }
 
-    private fun configureModelEditSheet(dialog: BottomSheetDialog) {
+    private fun configureModelEditSheet(dialog: BottomSheetDialog, heightFraction: Float) {
         dialog.setOnShowListener {
             val sheet = dialog.findViewById<View>(
                 com.google.android.material.R.id.design_bottom_sheet
             ) ?: return@setOnShowListener
             sheet.setBackgroundColor(Color.TRANSPARENT)
             sheet.layoutParams = sheet.layoutParams.apply {
-                height = (resources.displayMetrics.heightPixels * 0.70f).toInt()
+                height = (resources.displayMetrics.heightPixels * heightFraction).toInt()
             }
             BottomSheetBehavior.from(sheet).apply {
                 skipCollapsed = true
@@ -1368,20 +1491,51 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         provider: AiProviderSetting,
         original: AiModel,
         draft: AiModelEditDraft,
-    ) {
-        val updated = original.copy(
+    ): Boolean {
+        val settings = draft.modelSettings ?: return false
+        synchronized(AiProviderStore) {
+            val current = AiProviderStore.provider(provider.id) ?: return false
+            val modelId = original.safeId()
+            if (current.catalogRevision != provider.catalogRevision ||
+                (current.catalogRefreshRequired && !current.isManualModel(modelId)) ||
+                current.modelConfigurationKey() != settings.catalogEndpoint
+            ) return false
+            val currentModel = current.models.firstOrNull { it.safeId() == modelId }
+                ?: return false
+            if (currentModel != original) return false
+            val initial = current.effectiveModelCapabilities(currentModel)
+            val capabilitiesChanged = draft.type != initial.safeType() ||
+                draft.inputModalities != initial.safeInputModalities().toSet() ||
+                draft.outputModalities != initial.safeOutputModalities().toSet() ||
+                draft.abilities != initial.safeAbilities().toSet()
+            val updated = if (capabilitiesChanged) {
+                modelWithEdits(currentModel, draft)
+            } else {
+                currentModel.copy(displayName = draft.displayName.trim(), modelSettings = settings)
+            }
+            AiProviderStore.saveProvider(current.copy(models = current.models.updatedWithModel(updated)))
+        }
+        refreshModelList(AiProviderStore.provider(provider.id))
+        refreshMain()
+        return true
+    }
+
+    private fun modelWithEdits(original: AiModel, draft: AiModelEditDraft): AiModel {
+        val explicitModalities = draft.modelSettings != null &&
+            (draft.type == AiModelType.CHAT || draft.type == AiModelType.VIDEO)
+        return original.copy(
             displayName = draft.displayName.trim(),
             type = draft.type,
-            inputModalities = modelInputModalitiesForDraft(draft.type, draft.inputModalities),
-            outputModalities = modelOutputModalitiesForDraft(draft.type, draft.outputModalities),
+            inputModalities = if (explicitModalities) draft.inputModalities.toList()
+                else modelInputModalitiesForDraft(draft.type, draft.inputModalities),
+            outputModalities = if (explicitModalities) draft.outputModalities.toList()
+                else modelOutputModalitiesForDraft(draft.type, draft.outputModalities),
             abilities = mergeModelAbilitiesForEdit(
                 original = original,
                 exposedAbilities = modelAbilitiesForDraft(draft.type, draft.abilities),
             ),
+            modelSettings = draft.modelSettings ?: original.modelSettings,
         )
-        AiProviderStore.saveProvider(provider.copy(models = provider.models.updatedWithModel(updated)))
-        refreshModelList(AiProviderStore.provider(provider.id))
-        refreshMain()
     }
 
     private fun addProvider(type: AiProviderType) {
@@ -1762,7 +1916,12 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         val reasoningEnabled = selectedPurifyModel()?.model?.supportsReasoning() == true
         val readAloudReasoningEnabled =
             selectedReadAloudStoryboardModel()?.model?.supportsReasoning() == true
-        val assistantReasoningEnabled = selectedAssistantModel()?.model?.supportsReasoning() == true
+        val assistantModel = selectedAssistantModel()
+        val assistantReasoningEnabled = assistantModel?.assistantReasoning()?.hasControls == true
+        val assistantWindow = capAssistantContextWindow(
+            AiConfig.assistantContextWindowTokens,
+            assistantModel?.let { it.provider.assistantContextWindowLimit(it.model) },
+        )
         val purifySettingsSummary = getString(
             R.string.ai_purify_settings_summary,
             getString(if (AiConfig.purifyAutoApply) R.string.enabled else R.string.disabled),
@@ -1792,10 +1951,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         assistantModelSettingsScreenState = AiAssistantModelSettingsScreenState(
             modelSummary = assistantModelSummaryText(),
             reasoningSummary = assistantReasoningSummaryText(),
-            compactionModelSummary = contextCompactionModelSummaryText(),
             contextWindowSummary = getString(
                 R.string.ai_assistant_context_window_summary,
-                contextWindowLabel(AiConfig.assistantContextWindowTokens),
+                assistantContextWindowLabel(assistantWindow),
             ),
             compactionThresholdSummary = if (AiConfig.contextCompactionThresholdPercent == 0) {
                 getString(R.string.ai_context_compaction_threshold_off)
@@ -1803,11 +1961,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 getString(
                     R.string.ai_context_compaction_threshold_summary,
                     AiConfig.contextCompactionThresholdPercent,
-                    AiConfig.assistantContextWindowTokens *
-                        AiConfig.contextCompactionThresholdPercent / 100 / 1000,
+                    assistantWindow.toLong() * AiConfig.contextCompactionThresholdPercent / 100 / 1000,
                 )
             },
-            includeInterruptedReplies = AiConfig.assistantIncludeInterruptedReplies,
             internalMcpEnabled = AiConfig.internalMcpEnabled,
             internalMcpSummary = getString(
                 if (AiConfig.internalMcpEnabled) {
@@ -1873,7 +2029,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             selected == null && AiConfig.assistantModelId.isBlank() ->
                 getString(R.string.ai_assistant_model_not_selected)
             selected == null ->
-                getString(R.string.ai_assistant_model_unavailable)
+                AiAssistantConfigUi.missingSelectedModelLabel(providers)
+                    ?: getString(R.string.ai_assistant_model_unavailable)
             else ->
                 getString(
                     R.string.ai_purify_model_selected_summary,
@@ -1886,32 +2043,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun assistantReasoningSummaryText(
         providers: List<AiProviderSetting>? = null
     ): String {
-        val selected = selectedAssistantModel(providers)
+        val picker = selectedAssistantModel(providers)?.reasoningPicker()
         return when {
-            selected == null -> getString(R.string.ai_assistant_reasoning_select_model_first)
-            !selected.model.supportsReasoning() -> getString(R.string.ai_assistant_reasoning_unsupported)
+            picker == null -> getString(R.string.ai_assistant_reasoning_select_model_first)
+            !picker.available -> getString(R.string.ai_assistant_reasoning_unsupported)
             else -> getString(
                 R.string.ai_purify_reasoning_level_summary,
-                AiConfig.assistantReasoningLevel.displayName()
-            )
-        }
-    }
-
-    private fun contextCompactionModelSummaryText(): String {
-        val providerId = AiConfig.contextCompactionProviderId
-        val modelId = AiConfig.contextCompactionModelId
-        if (providerId.isBlank() || modelId.isBlank()) {
-            return getString(R.string.ai_context_compaction_model_follow)
-        }
-        val provider = AiProviderStore.provider(providerId)
-        val model = provider?.purifyEligibleModels()?.firstOrNull { it.safeId() == modelId }
-        return if (provider == null || model == null) {
-            getString(R.string.ai_assistant_model_unavailable)
-        } else {
-            getString(
-                R.string.ai_purify_model_selected_summary,
-                model.displayName(),
-                provider.name
+                picker.selectedLabel(requireContext())
             )
         }
     }
@@ -1994,9 +2132,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         val provider = providers.firstOrNull { it.id == providerId }
             ?.takeIf { it.enabled }
             ?: return null
-        val model = provider.assistantEligibleModels()
-            .firstOrNull { it.safeId() == modelId }
-            ?: return null
+        val model = provider.assistantModelChoice(modelId)?.model ?: return null
         return AiAssistantConfigUi.AssistantModelOption(provider, model)
     }
 
@@ -2004,7 +2140,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         PURIFY,
         READ_ALOUD,
         ASSISTANT,
-        CONTEXT_COMPACTION,
     }
 
     private fun modelSelectionProviders(
@@ -2023,13 +2158,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiModelSelectionTarget.PURIFY -> AiConfig.purifyProviderId
             AiModelSelectionTarget.READ_ALOUD -> AiConfig.readAloudStoryboardProviderId
             AiModelSelectionTarget.ASSISTANT -> AiConfig.assistantProviderId
-            AiModelSelectionTarget.CONTEXT_COMPACTION -> AiConfig.contextCompactionProviderId
         }
         val selectedModelId = when (target) {
             AiModelSelectionTarget.PURIFY -> AiConfig.purifyModelId
             AiModelSelectionTarget.READ_ALOUD -> AiConfig.readAloudStoryboardModelId
             AiModelSelectionTarget.ASSISTANT -> AiConfig.assistantModelId
-            AiModelSelectionTarget.CONTEXT_COMPACTION -> AiConfig.contextCompactionModelId
         }
         val dialog = BottomSheetDialog(requireContext())
         var sheetState by mutableStateOf(AiModelSelectionSheetState(
@@ -2037,16 +2170,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             emptyText = when (target) {
                 AiModelSelectionTarget.ASSISTANT ->
                     getString(R.string.ai_assistant_model_empty)
-                AiModelSelectionTarget.CONTEXT_COMPACTION -> null
                 else -> getString(R.string.ai_purify_model_empty)
             },
             providers = modelSelectionProviders(target),
             selectedProviderId = selectedProviderId,
             selectedModelId = selectedModelId,
-            followAssistantLabel = getString(R.string.ai_context_compaction_model_follow)
-                .takeIf { target == AiModelSelectionTarget.CONTEXT_COMPACTION },
-            followAssistantSelected = target == AiModelSelectionTarget.CONTEXT_COMPACTION &&
-                (selectedProviderId.isBlank() || selectedModelId.isBlank()),
         ))
         dialog.setContentView(
             requireContext().createNgBottomDrawerComposeHost(
@@ -2076,7 +2204,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                             refreshMain()
                         }
                     },
-                    onSelect = { providerId, modelId ->
+                    onSelect = select@{ providerId, modelId ->
                         when (target) {
                             AiModelSelectionTarget.PURIFY -> {
                                 AiConfig.savePurifyModel(providerId, modelId)
@@ -2085,24 +2213,16 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                                 AiConfig.saveReadAloudStoryboardModel(providerId, modelId)
                             }
                             AiModelSelectionTarget.ASSISTANT -> {
-                                AiConfig.saveAssistantModel(providerId, modelId)
-                            }
-                            AiModelSelectionTarget.CONTEXT_COMPACTION -> {
-                                AiConfig.saveContextCompactionModel(providerId, modelId)
+                                if (!AiConfig.saveAssistantModel(providerId, modelId)) {
+                                    toastOnUi(R.string.ai_assistant_model_unavailable)
+                                    sheetState = sheetState.copy(providers = modelSelectionProviders(target))
+                                    return@select
+                                }
                             }
                         }
                         refreshModelSettings()
                         refreshMain()
                         dialog.dismiss()
-                    },
-                    onFollowAssistant = if (target == AiModelSelectionTarget.CONTEXT_COMPACTION) {
-                        {
-                            AiConfig.followAssistantForContextCompaction()
-                            refreshModelSettings()
-                            dialog.dismiss()
-                        }
-                    } else {
-                        null
                     },
                 )
             }
@@ -2170,21 +2290,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
-    private fun showContextCompactionModelSelectDialog() {
-        showComposeModelSelectionSheet(AiModelSelectionTarget.CONTEXT_COMPACTION)
-    }
-
     private fun showAssistantContextWindowDialog() {
-        val options = AiConfig.ASSISTANT_CONTEXT_WINDOW_OPTIONS
-        val labels = options.map(::contextWindowLabel)
-        showDiscreteScaleDialog(
-            title = getString(R.string.ai_assistant_context_window_dialog_title),
-            description = getString(R.string.ai_assistant_context_window_dialog_desc),
-            iconRes = R.drawable.ic_ai_context_menu,
-            labels = labels,
-            selectedIndex = options.indexOf(AiConfig.assistantContextWindowTokens).coerceAtLeast(0)
-        ) { index ->
-            options.getOrNull(index)?.let { value ->
+        val selectedModel = selectedAssistantModel()
+        val limit = selectedModel?.let { it.provider.assistantContextWindowLimit(it.model) }
+        val options = assistantContextWindowOptions(limit)
+        val initialWindow = capAssistantContextWindow(AiConfig.assistantContextWindowTokens, limit)
+        showComposeAiScaleDialog(traceName = "context_window") {
+            AiAssistantContextWindowDialogContent(options, initialWindow, selectedModel) { value ->
                 AiConfig.assistantContextWindowTokens = value
                 refreshModelSettings()
             }
@@ -2192,22 +2304,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun showContextCompactionThresholdDialog() {
-        val options = AiConfig.CONTEXT_COMPACTION_THRESHOLD_OPTIONS
-        val labels = options.map(Int::toString)
-        val currentLabels = options.map { value ->
-            if (value == 0) getString(R.string.ai_context_compaction_off) else "$value%"
-        }
-        showDiscreteScaleDialog(
-            title = getString(R.string.ai_context_compaction_threshold_dialog_title),
-            description = getString(R.string.ai_context_compaction_threshold_dialog_desc),
-            iconRes = R.drawable.ic_read_aloud_speed,
-            labels = labels,
-            currentLabels = currentLabels,
-            selectedIndex = options.indexOf(AiConfig.contextCompactionThresholdPercent)
-                .coerceAtLeast(0),
-            tintIcon = { index -> options.getOrNull(index) != 0 }
-        ) { index ->
-            options.getOrNull(index)?.let { value ->
+        val initialPercent = AiConfig.contextCompactionThresholdPercent
+        showComposeAiScaleDialog(traceName = "compaction_threshold") {
+            AiCompactionThresholdDialogContent(initialPercent) { value ->
                 AiConfig.contextCompactionThresholdPercent = value
                 refreshModelSettings()
             }
@@ -2253,7 +2352,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             ).show()
             return
         }
-        if (!selected.model.supportsReasoning()) {
+        val picker = selected.reasoningPicker()
+        if (!picker.available) {
             Toast.makeText(
                 requireContext(),
                 R.string.ai_assistant_reasoning_unsupported,
@@ -2261,14 +2361,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             ).show()
             return
         }
-        showReasoningLevelDialog(
-            title = getString(R.string.ai_assistant_reasoning_title),
-            currentLevel = AiConfig.assistantReasoningLevel,
-            iconTintWhenOff = false
-        ) { level ->
-            AiConfig.assistantReasoningLevel = level
-            refreshModelSettings()
-            refreshMain()
+        showComposeAiScaleDialog(traceName = "reasoning_depth") {
+            AiAssistantReasoningControls(selected) {
+                refreshModelSettings()
+                refreshMain()
+            }
         }
     }
 
@@ -2301,29 +2398,28 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentLabels: List<String> = labels,
         selectedIndex: Int,
         tintIcon: (Int) -> Boolean = { true },
+        fitLabels: Boolean = false,
         onSelectedIndexChanged: (Int) -> Unit
     ) {
         if (labels.isEmpty()) return
-        showComposeDiscreteScaleDialog(
-            title = title,
-            description = description,
-            iconRes = iconRes,
-            labels = labels,
-            currentLabels = currentLabels,
-            selectedIndex = selectedIndex,
-            tintIcon = tintIcon,
-            onSelectedIndexChanged = onSelectedIndexChanged,
-        )
+        showComposeAiScaleDialog {
+            AiDiscreteScaleDialogContent(
+                title = title,
+                description = description,
+                iconRes = iconRes,
+                labels = labels,
+                currentLabels = currentLabels,
+                initialSelectedIndex = selectedIndex,
+                tintIcon = tintIcon,
+                fitLabels = fitLabels,
+                onSelectedIndexChanged = onSelectedIndexChanged,
+            )
+        }
     }
-    private fun showComposeDiscreteScaleDialog(
-        title: String,
-        description: String?,
-        iconRes: Int,
-        labels: List<String>,
-        currentLabels: List<String>,
-        selectedIndex: Int,
-        tintIcon: (Int) -> Boolean,
-        onSelectedIndexChanged: (Int) -> Unit,
+
+    private fun showComposeAiScaleDialog(
+        traceName: String? = null,
+        content: @Composable () -> Unit,
     ) {
         val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
             setViewCompositionStrategy(
@@ -2331,16 +2427,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             )
             setContent {
                 NgAppTheme(updateSystemBars = false) {
-                    AiDiscreteScaleDialogContent(
-                        title = title,
-                        description = description,
-                        iconRes = iconRes,
-                        labels = labels,
-                        currentLabels = currentLabels,
-                        initialSelectedIndex = selectedIndex,
-                        tintIcon = tintIcon,
-                        onSelectedIndexChanged = onSelectedIndexChanged,
-                    )
+                    content()
                 }
             }
         }
@@ -2348,22 +2435,18 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(composeView)
         dialog.setCanceledOnTouchOutside(true)
-        dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            dialog.window?.setLayout(
+        val trace = AiScaleDialogTrace.start(traceName, dialog.window, composeView)
+        trace?.snapshot("before_window_config")
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setLayout(
                 (resources.displayMetrics.widthPixels * 0.9f).toInt(),
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
         }
+        trace?.snapshot("before_show")
         dialog.show()
-    }
-
-    private fun contextWindowLabel(tokens: Int): String {
-        return if (tokens >= 1_000_000) {
-            "${tokens / 1_000_000}M"
-        } else {
-            "${tokens / 1000}K"
-        }
+        trace?.snapshot("show_returned")
     }
 
     private fun AiProviderSetting.purifyEligibleModels(): List<AiModel> {
@@ -2399,10 +2482,17 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun saveCurrentProvider(
         showToast: Boolean = false,
-        updateHeader: Boolean = false
+        updateHeader: Boolean = false,
+        useExistingKeyHere: Boolean = false,
+        keepProtocolPathDraft: Boolean = false,
     ): AiProviderSetting? {
-        val provider = readProviderFromForm() ?: return null
-        AiProviderStore.saveProvider(provider)
+        val provider = synchronized(AiProviderStore) {
+            val candidate = readProviderFromForm() ?: return null
+            AiProviderStore.saveProvider(candidate, useExistingKeyHere)
+        }
+        providerFormScreenState = providerFormScreenState
+            .copy(apiKeyNeedsReentry = provider.apiKeyNeedsReentry())
+            .withProtocolFields(provider, keepPathDraft = keepProtocolPathDraft)
         if (updateHeader) {
             setPageTitle(provider.name)
             providerDetailScreenState = providerDetailScreenState.copy(
@@ -2415,17 +2505,19 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return provider
     }
 
-    private fun maybeAutoFetchModels() {
-        val provider = currentProviderId?.let { AiProviderStore.provider(it) } ?: return
-        val hasInitializedModels = provider.availableModelSelectionInitialized &&
-            provider.displayModels().isNotEmpty()
+    private fun maybeAutoFetchModels(provider: AiProviderSetting) {
+        if (providerDetailScreenState.isRefreshingModels) return
+        val hasInitializedModels = !provider.catalogFetchRequired() &&
+            (provider.catalogLoaded || provider.availableModelSelectionInitialized)
         if (
-            provider.apiKey.isBlank() ||
+            provider.apiKey.isBlank() || provider.apiKeyNeedsReentry() ||
             hasInitializedModels ||
-            !autoFetchedModelProviderIds.add(provider.id)
+            (provider.id in autoFetchedModelProviderRevisions &&
+                autoFetchedModelProviderRevisions[provider.id] == provider.catalogRevision)
         ) {
             return
         }
+        autoFetchedModelProviderRevisions[provider.id] = provider.catalogRevision
         fetchModels()
     }
 
@@ -2437,11 +2529,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             providerDetailScreenState = providerDetailScreenState.copy(isRefreshingModels = false)
             return
         }
-        if (provider.apiKey.isBlank()) {
+        if (provider.apiKey.isBlank() || provider.apiKeyNeedsReentry()) {
             providerDetailScreenState = providerDetailScreenState.copy(isRefreshingModels = false)
             showAiClassicDialog(
                 title = getString(R.string.ai_fetch_models),
-                message = getString(R.string.ai_api_key_required),
+                message = getString(
+                    if (provider.apiKeyNeedsReentry()) R.string.ai_api_key_wrong_origin else R.string.ai_api_key_required,
+                ),
             )
             return
         }
@@ -2449,29 +2543,59 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         requestJob = lifecycleScope.launch {
             try {
                 val models = AiManager.fetchAndSaveModels(provider.id)
-                check(models.isNotEmpty()) { getString(R.string.ai_model_list_empty) }
-                val saved = AiProviderStore.provider(provider.id) ?: provider
-                if (saved.model.isBlank() || models.none { it.id == saved.model }) {
-                    AiProviderStore.saveProvider(saved.copy(model = models.first().id))
+                val current = currentProviderId?.let(AiProviderStore::provider)
+                if (current == null || current.id != provider.id || current.catalogRevision != provider.catalogRevision) {
+                    return@launch
                 }
                 refreshCurrentDetail()
+                val missing = AiAssistantConfigUi.missingSelectedModelLabel(listOf(current))
+                val currentIds = models.mapTo(HashSet()) { it.id }
+                val removedEnabled = if (provider.catalogLoaded && !provider.catalogRefreshRequired) {
+                    provider.effectiveAvailableModelIds().count { it !in currentIds && !current.isManualModel(it) }
+                } else 0
+                val countMessage = if (removedEnabled > 0) {
+                    getString(R.string.ai_model_list_count_with_missing, models.size, removedEnabled)
+                } else {
+                    getString(R.string.ai_model_list_count, models.size.toString())
+                }
                 Toast.makeText(
                     requireContext(),
-                    getString(R.string.ai_model_list_count, models.size.toString()),
-                    Toast.LENGTH_SHORT
+                    missing ?: countMessage,
+                    if (missing != null || removedEnabled > 0) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
                 ).show()
-            } catch (e: Throwable) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                val current = currentProviderId?.let(AiProviderStore::provider)
+                if (current == null || current.id != provider.id || current.catalogRevision != provider.catalogRevision) {
+                    return@launch
+                }
+                if (addModelTarget?.providerId == provider.id) {
+                    toastOnUi(R.string.ai_model_refresh_failed)
+                    return@launch
+                }
                 showAiClassicDialog(
-                    title = getString(R.string.ai_fetch_models),
-                    message = getString(
-                        R.string.ai_test_failed,
-                        e.localizedMessage ?: e.toString(),
-                    ),
+                    title = getString(R.string.ai_model_refresh_failed),
+                    message = if (current.catalogLoaded || current.models.isNotEmpty()) {
+                        getString(R.string.ai_model_refresh_kept_previous)
+                    } else {
+                        getString(R.string.ai_model_refresh_retry)
+                    },
+                    cancelText = getString(android.R.string.cancel),
+                    confirmText = getString(R.string.retry),
+                    dismissBeforeConfirm = true,
+                    onConfirm = ::fetchModels,
                 )
             } finally {
                 providerDetailScreenState = providerDetailScreenState.copy(
                     isRefreshingModels = false,
                 )
+                if (isActive && isAdded && currentPage == Page.DETAIL && providerDetailTab == ProviderDetailTab.MODELS) {
+                    val current = currentProviderId?.let(AiProviderStore::provider)
+                    if (current != null && (current.id != provider.id || current.catalogRevision != provider.catalogRevision)) {
+                        maybeAutoFetchModels(current)
+                    }
+                }
             }
         }
     }
@@ -2638,30 +2762,42 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun refreshModelList(provider: AiProviderSetting?) {
+        val modelSource = provider?.modelConfigurationKey()
+        val presetProvider = provider?.modelPresetProviderId()
+        val catalogCurrent = provider?.catalogRefreshRequired == false
         val selectedIds = provider?.effectiveAvailableModelIds().orEmpty().toSet()
-        val models = provider?.displayModels().orEmpty()
-            .filter { model ->
-                modelSearchQuery.isBlank()
-                    || model.safeId().contains(modelSearchQuery, ignoreCase = true)
-                    || model.safeName().contains(modelSearchQuery, ignoreCase = true)
-                    || model.displayName().contains(modelSearchQuery, ignoreCase = true)
-                    || model.safeOwnedBy().contains(modelSearchQuery, ignoreCase = true)
-            }
-            .sortSelectedModelsFirst(selectedIds)
         val providerIconRes = provider?.iconRes() ?: R.drawable.ic_cfg_web
+        val models = provider?.displayModels().orEmpty().sortSelectedModelsFirst(selectedIds).map { model ->
+            val catalogInfo = modelSource?.let { model.effectiveModelInfo(it, presetProvider, catalogCurrent) }
+            val effective = model.withCatalogCapabilities(catalogInfo)
+            val contextWindow = model.modelSettingsFor(modelSource)?.referenceContextWindow(catalogInfo)
+                ?: catalogInfo?.contextWindow?.value
+            AiProviderModelItemUiModel(
+                id = model.safeId(),
+                name = model.displayName(),
+                iconRes = model.iconRes(providerIconRes),
+                capabilities = effective.capabilityTags(),
+                selected = model.safeId() in selectedIds,
+                type = effective.providerListType(modelSource),
+                searchAliases = listOf(model.safeName(), model.safeOwnedBy()),
+                contextWindowLabel = contextWindow?.let { tokens ->
+                    getString(R.string.ai_catalog_context_badge, assistantContextWindowLabel(tokens))
+                },
+                isManual = modelSource != null && model.manualModelEndpoint == modelSource,
+            )
+        }
         providerDetailScreenState = providerDetailScreenState.copy(
-            modelQuery = modelSearchQuery,
-            models = models.map { model ->
-                AiProviderModelItemUiModel(
-                    id = model.safeId(),
-                    name = model.displayName(),
-                    iconRes = model.iconRes(providerIconRes),
-                    capabilities = model.capabilityTags(),
-                    selected = model.safeId() in selectedIds,
-                )
+            modelFilter = providerDetailScreenState.modelFilter.orAllFor(models),
+            emptyModelNoticeRes = when {
+                provider?.apiKeyNeedsReentry() == true -> R.string.ai_api_key_wrong_origin
+                provider?.catalogRefreshRequired == true && provider.apiKey.isNotBlank() ->
+                    R.string.ai_model_catalog_refresh_required
+                provider?.catalogLoaded == true && provider.models.isEmpty() && provider.apiKey.isNotBlank() ->
+                    R.string.ai_model_catalog_empty
+                else -> null
             },
+            models = models,
         )
-        updateModelSelectionAction(provider, models)
     }
 
     private fun List<AiModel>.sortSelectedModelsFirst(selectedIds: Set<String>): List<AiModel> {
@@ -2671,69 +2807,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return sortedByDescending { it.safeId() in selectedIds }
     }
 
-    private fun updateModelSelectionAction(
-        provider: AiProviderSetting?,
-        visibleModels: List<AiModel>
-    ) {
-        val visibleIds = visibleModels.map { it.safeId() }.filter { it.isNotBlank() }.toSet()
-        val selectedIds = provider?.effectiveAvailableModelIds().orEmpty().toSet()
-        val selectedVisibleCount = visibleIds.count { it in selectedIds }
-        val actionText = when {
-            selectedVisibleCount == visibleIds.size -> getString(R.string.ai_disable_all_models)
-            else -> getString(R.string.ai_enable_all_models)
+    private fun setModelsEnabled(ids: Set<String>, enabled: Boolean) {
+        val updated = synchronized(AiProviderStore) {
+            val provider = currentProviderId?.let(AiProviderStore::provider) ?: return
+            val settings = provider.withModelSelection(ids, enabled)
+            if (settings === provider) return
+            AiProviderStore.saveProvider(settings)
         }
-        providerDetailScreenState = providerDetailScreenState.copy(
-            modelSelectionActionText = actionText,
-            modelSelectionActionEnabled = visibleIds.isNotEmpty(),
-            allVisibleModelsSelected = visibleIds.isNotEmpty() &&
-                selectedVisibleCount == visibleIds.size,
-        )
-    }
-
-    private fun toggleVisibleModelSelection() {
-        val provider = currentProviderId?.let { AiProviderStore.provider(it) } ?: return
-        val visibleIds = providerDetailScreenState.models.map { it.id }
-            .filter { it.isNotBlank() }
-            .toSet()
-        if (visibleIds.isEmpty()) {
-            return
-        }
-        val selected = provider.effectiveAvailableModelIds().toMutableSet()
-        val selectedVisibleCount = visibleIds.count { it in selected }
-        if (selectedVisibleCount == visibleIds.size) {
-            selected.removeAll(visibleIds)
-        } else {
-            selected.addAll(visibleIds)
-        }
-        AiProviderStore.saveProvider(
-            provider.copy(
-                availableModelIds = selected.toList(),
-                availableModelSelectionInitialized = true
-            )
-        )
-        refreshModelList(AiProviderStore.provider(provider.id))
-        refreshMain()
-    }
-
-    private fun toggleAvailableModel(model: AiModel, checked: Boolean) {
-        val provider = currentProviderId?.let { AiProviderStore.provider(it) } ?: return
-        val modelId = model.safeId()
-        if (modelId.isBlank()) {
-            return
-        }
-        val selected = provider.effectiveAvailableModelIds().toMutableSet()
-        if (checked) {
-            selected.add(modelId)
-        } else {
-            selected.remove(modelId)
-        }
-        AiProviderStore.saveProvider(
-            provider.copy(
-                availableModelIds = selected.toList(),
-                availableModelSelectionInitialized = true
-            )
-        )
-        refreshModelList(AiProviderStore.provider(provider.id))
+        refreshModelList(updated)
         refreshMain()
     }
 
@@ -2757,6 +2838,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiModelType.EMBEDDING -> listOf(AiModelModality.TEXT)
             AiModelType.ASR -> listOf(AiModelModality.AUDIO)
             AiModelType.TTS -> listOf(AiModelModality.TEXT)
+            AiModelType.OCR -> listOf(AiModelModality.TEXT, AiModelModality.IMAGE)
         }
     }
 
@@ -2778,8 +2860,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             )
 
             AiModelType.IMAGE -> listOf(AiModelModality.IMAGE)
-            AiModelType.EMBEDDING -> listOf(AiModelModality.TEXT)
-            AiModelType.ASR -> listOf(AiModelModality.TEXT)
+            AiModelType.EMBEDDING,
+            AiModelType.ASR,
+            AiModelType.OCR -> listOf(AiModelModality.TEXT)
             AiModelType.TTS -> listOf(AiModelModality.AUDIO)
         }
     }
@@ -2796,6 +2879,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
             AiModelType.IMAGE,
             AiModelType.EMBEDDING,
+            AiModelType.OCR,
             AiModelType.VIDEO -> emptyList()
             AiModelType.ASR -> listOf(AiModelAbility.ASR)
             AiModelType.TTS -> listOf(AiModelAbility.TTS)

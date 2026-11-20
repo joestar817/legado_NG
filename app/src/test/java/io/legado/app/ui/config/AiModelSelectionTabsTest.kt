@@ -62,22 +62,10 @@ class AiModelSelectionTabsTest {
             title = "Model", emptyText = null, providers = providers,
             selectedProviderId = "second", selectedModelId = "shared",
         )
-        val target = state.selectedTarget(includeFollowAssistant = false)!!
-        assertEquals(AiModelSelectionPosition("provider:second", 1), target.position(providers, false))
-        assertEquals(AiModelSelectionPosition("provider:second", 0), target.position(providers.filterModels("Gamma"), false))
-        assertNull(target.position(providers.filterModels("Alpha"), false))
-    }
-
-    @Test
-    fun followAssistantRemainsASelectableAndLocatablePage() {
-        val state = AiModelSelectionSheetState(
-            title = "Model", emptyText = null, providers = providers,
-            followAssistantLabel = "Follow chat model", followAssistantSelected = true,
-        )
-        val target = state.selectedTarget(includeFollowAssistant = true)!!
-        assertEquals(AiModelSelectionPosition("follow-assistant", 0), target.position(providers, true))
-        assertNull(target.position(providers, false))
-        assertNull(state.selectedTarget(includeFollowAssistant = false))
+        val target = state.selectedTarget()!!
+        assertEquals(AiModelSelectionPosition("provider:second", 1), target.position(providers))
+        assertEquals(AiModelSelectionPosition("provider:second", 0), target.position(providers.filterModels("Gamma")))
+        assertNull(target.position(providers.filterModels("Alpha")))
     }
 
     private fun provider(id: String, name: String, vararg models: AiModelSelectionItemUiModel) =

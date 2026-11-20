@@ -57,7 +57,21 @@ data class AiProviderSetting(
     @SerializedName(value = "streamResponseEnabled", alternate = ["x"])
     val streamResponseEnabled: Boolean = false,
     @SerializedName("supportsStreamUsage")
-    val supportsStreamUsage: Boolean = false
+    val supportsStreamUsage: Boolean = false,
+    @SerializedName("apiKeyOrigin")
+    val apiKeyOrigin: String? = null,
+    @SerializedName("catalogRevision")
+    val catalogRevision: String? = null,
+    @SerializedName("catalogRefreshRequired")
+    val catalogRefreshRequired: Boolean = false,
+    @SerializedName("catalogLoaded")
+    val catalogLoaded: Boolean = false,
+    @SerializedName("unlistedModelEdits")
+    val unlistedModelEdits: List<AiModel>? = null,
+    @SerializedName("useResponsesApi")
+    val useResponsesApi: Boolean? = null,
+    @SerializedName("responsesApiPath")
+    val responsesApiPath: String? = null,
 )
 
 enum class AiProviderType(val prefValue: String, val displayName: String) {

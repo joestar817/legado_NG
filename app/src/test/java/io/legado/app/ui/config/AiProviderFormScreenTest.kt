@@ -1,5 +1,6 @@
 package io.legado.app.ui.config
 
+import io.legado.app.help.ai.AiDefaultProviders
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderType
 import org.junit.Assert.assertEquals
@@ -8,6 +9,41 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AiProviderFormScreenTest {
+
+    @Test
+    fun `built in provider switches its displayed read only API path`() {
+        val source = AiDefaultProviders.all().first { it.id == "zhipu" }
+        val form = source.toProviderFormScreenState("OpenAI 兼容")
+        assertTrue(form.responsesApiAvailable)
+        assertFalse(form.responsesApiActive)
+        assertEquals("/chat/completions", form.apiPathValue)
+        assertEquals(form, form.withField(AiProviderFormField.CHAT_PATH, "/changed"))
+
+        val saved = form.withToggle(AiProviderFormToggle.RESPONSES_API, true).applyTo(source)
+        val switched = saved.toProviderFormScreenState("OpenAI 兼容")
+        assertTrue(switched.responsesApiActive)
+        assertEquals("/api/v1/responses", switched.apiPathValue)
+        assertEquals(switched, switched.withField(AiProviderFormField.RESPONSES_PATH, "/changed"))
+        assertEquals(source.chatCompletionsPath, saved.chatCompletionsPath)
+        assertEquals(source.streamResponseEnabled, saved.streamResponseEnabled)
+    }
+
+    @Test
+    fun `custom Responses path can be edited independently of the normal path`() {
+        val source = provider(
+            name = "Custom",
+            baseUrl = "https://example.com/v1",
+            timeoutSeconds = 180,
+            chatPath = "/custom/chat",
+        )
+        val form = source.copy(useResponsesApi = true).toProviderFormScreenState("OpenAI 兼容")
+        val saved = form.withField(AiProviderFormField.RESPONSES_PATH, "/custom/response").applyTo(source)
+        val switchedOff = saved.toProviderFormScreenState("OpenAI 兼容")
+            .withToggle(AiProviderFormToggle.RESPONSES_API, false).applyTo(saved)
+        assertEquals("/custom/response", switchedOff.responsesApiPath)
+        assertEquals("/custom/chat", switchedOff.chatCompletionsPath)
+        assertEquals("/custom/chat", switchedOff.toProviderFormScreenState("OpenAI 兼容").apiPathValue)
+    }
 
     @Test
     fun `field update only changes requested value`() {

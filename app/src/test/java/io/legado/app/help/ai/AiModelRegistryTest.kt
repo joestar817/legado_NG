@@ -147,7 +147,7 @@ class AiModelRegistryTest {
     fun inferOcrAsVisionInputAndTextOutput() {
         val model = AiModelRegistry.enrich(AiModel(id = "deepseek-ai/DeepSeek-OCR"))
 
-        assertEquals(AiModelType.CHAT, model.type)
+        assertEquals(AiModelType.OCR, model.type)
         assertTrue(AiModelModality.TEXT in model.inputModalities)
         assertTrue(AiModelModality.IMAGE in model.inputModalities)
         assertEquals(listOf(AiModelModality.TEXT), model.outputModalities)

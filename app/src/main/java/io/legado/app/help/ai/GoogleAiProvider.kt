@@ -15,24 +15,37 @@ class GoogleAiProvider : AiProvider {
         val modelsUrl = buildAiApiEndpoint(setting.baseUrl, modelsApi)
         val request = Request.Builder()
             .url(modelsUrl)
-            .addHeader("x-goog-api-key", setting.apiKey)
+            .addHeader("x-goog-api-key", setting.apiKeyForRequest())
             .get()
             .build()
-        val json = aiHttpClient(setting.timeoutSeconds).executeJson(request)
-        return json.arrayOrNull("models")?.mapNotNull { item ->
-            val obj = item.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
-            val name = obj.stringOrNull("name")?.substringAfter("models/") ?: return@mapNotNull null
-            val methods = obj.arrayOrNull("supportedGenerationMethods")
-            if (methods != null && methods.none { it.asString == "generateContent" }) {
+        val modelKey = setting.modelConfigurationKey()
+        return aiHttpClient(setting.timeoutSeconds).readModelCatalogPages(
+            firstRequest = request,
+            cursorParameter = "pageToken",
+            additionalCursorParameter = "page_token",
+            nextCursor = { it.modelCatalogCursor("nextPageToken") },
+            readModels = { json, sourceId -> readModels(json, modelKey, sourceId) },
+        )
+    }
+
+    private fun readModels(json: JsonObject, modelKey: String, sourceId: String): List<AiModel> {
+        return json.modelCatalogEntries("models", "name").mapNotNull { (obj, id) ->
+            val name = id.substringAfter("models/").trim().takeIf { it.isNotEmpty() }
+                ?: error("Invalid Gemini model identifier")
+            val methods = if (obj.has("supportedGenerationMethods")) {
+                obj.catalogStrings("supportedGenerationMethods") ?: error("Invalid Gemini generation methods")
+            } else null
+            if (methods != null && "generateContent" !in methods) {
                 return@mapNotNull null
             }
             AiModel(
                 id = name,
                 name = name,
                 displayName = obj.stringOrNull("displayName").orEmpty(),
-                ownedBy = "Google"
+                ownedBy = "Google",
+                modelInfo = readModelInfo(obj, modelKey, AiModelCatalogFormat.GEMINI).copy(catalogSourceId = sourceId),
             )
-        } ?: emptyList()
+        }
     }
 
     override suspend fun generateText(
@@ -74,8 +87,8 @@ class GoogleAiProvider : AiProvider {
         }
 
         val request = Request.Builder()
-            .url("${setting.baseUrl.trimEndSlash()}/models/${setting.model}:generateContent")
-            .addHeader("x-goog-api-key", setting.apiKey)
+            .url(buildAiApiEndpoint(setting.baseUrl, "/models/${setting.model}:generateContent"))
+            .addHeader("x-goog-api-key", setting.apiKeyForRequest())
             .addHeader("Content-Type", "application/json")
             .post(jsonBody(requestBody))
             .build()

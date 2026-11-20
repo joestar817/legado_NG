@@ -3,8 +3,9 @@ package io.legado.app.help.ai
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
-import java.util.Locale
 
 data class AiBalanceInfo(
     val name: String,
@@ -24,16 +25,17 @@ data class AiBalanceResult(
 object AiBalanceProvider {
 
     suspend fun query(setting: AiProviderSetting): AiBalanceResult {
-        check(setting.apiKey.isNotBlank()) { "API key is empty" }
+        val apiKey = setting.apiKeyForRequest()
+        check(apiKey.isNotBlank()) { "API key is empty" }
         if (setting.useCustomBalanceUrl) {
-            return queryCustom(setting)
+            return queryCustom(setting, apiKey)
         }
         val detected = BalanceProvider.detect(setting.baseUrl)
             ?: error("Current provider does not support balance query")
         val client = aiHttpClient(setting.timeoutSeconds)
         val request = Request.Builder()
             .url(detected.endpoint)
-            .addHeader("Authorization", "Bearer ${setting.apiKey}")
+            .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Accept", "application/json")
             .get()
             .build()
@@ -50,12 +52,12 @@ object AiBalanceProvider {
         return AiBalanceResult(detected.displayName, items)
     }
 
-    private suspend fun queryCustom(setting: AiProviderSetting): AiBalanceResult {
+    private suspend fun queryCustom(setting: AiProviderSetting, apiKey: String): AiBalanceResult {
         val endpoint = buildAiApiEndpoint(setting.baseUrl, setting.balanceUrl)
         val client = aiHttpClient(setting.timeoutSeconds)
         val request = Request.Builder()
             .url(endpoint)
-            .addHeader("Authorization", "Bearer ${setting.apiKey}")
+            .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Accept", "application/json")
             .get()
             .build()
@@ -178,17 +180,9 @@ object AiBalanceProvider {
 
         companion object {
             fun detect(baseUrl: String): BalanceProvider? {
-                val url = baseUrl.lowercase(Locale.ROOT)
-                return when {
-                    "api.deepseek.com" in url -> DEEPSEEK
-                    "api.stepfun.ai" in url || "api.stepfun.com" in url -> STEPFUN
-                    "api.siliconflow.cn" in url -> SILICON_FLOW_CN
-                    "api.siliconflow.com" in url -> SILICON_FLOW_EN
-                    "openrouter.ai" in url -> OPEN_ROUTER
-                    "api.moonshot.cn" in url -> MOONSHOT
-                    "api.novita.ai" in url -> NOVITA
-                    else -> null
-                }
+                val url = baseUrl.trim().toHttpUrlOrNull()?.takeUnless { it.hasUserInfo() }
+                    ?: return null
+                return entries.firstOrNull { url.sameOriginAs(it.endpoint.toHttpUrl()) }
             }
 
             private fun parseSiliconFlow(

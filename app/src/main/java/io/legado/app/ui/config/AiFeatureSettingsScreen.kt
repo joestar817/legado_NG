@@ -166,10 +166,8 @@ internal fun AiReadAloudModelSettingsScreen(
 internal data class AiAssistantModelSettingsScreenState(
     val modelSummary: String = "",
     val reasoningSummary: String = "",
-    val compactionModelSummary: String = "",
     val contextWindowSummary: String = "",
     val compactionThresholdSummary: String = "",
-    val includeInterruptedReplies: Boolean = true,
     val internalMcpEnabled: Boolean = false,
     val internalMcpSummary: String = "",
     val memoryEnabled: Boolean = false,
@@ -181,10 +179,8 @@ internal data class AiAssistantModelSettingsScreenState(
 internal sealed interface AiAssistantModelSettingsAction {
     data object SelectModel : AiAssistantModelSettingsAction
     data object SelectReasoning : AiAssistantModelSettingsAction
-    data object SelectCompactionModel : AiAssistantModelSettingsAction
     data object SelectContextWindow : AiAssistantModelSettingsAction
     data object SelectCompactionThreshold : AiAssistantModelSettingsAction
-    data class IncludeInterruptedRepliesChanged(val enabled: Boolean) : AiAssistantModelSettingsAction
     data class InternalMcpChanged(val enabled: Boolean) : AiAssistantModelSettingsAction
     data class MemoryChanged(val enabled: Boolean) : AiAssistantModelSettingsAction
     data object OpenMemory : AiAssistantModelSettingsAction
@@ -213,27 +209,11 @@ internal fun AiAssistantModelSettingsScreen(
             onClick = { onAction(AiAssistantModelSettingsAction.SelectReasoning) },
         )
         AiSettingsEntry(
-            title = stringResource(R.string.ai_context_compaction_model),
-            summary = state.compactionModelSummary,
-            iconRes = R.drawable.ic_ai,
-            summaryMaxLines = 2,
-            onClick = { onAction(AiAssistantModelSettingsAction.SelectCompactionModel) },
-        )
-        AiSettingsEntry(
             title = stringResource(R.string.ai_assistant_context_window),
             summary = state.contextWindowSummary,
             iconRes = R.drawable.ic_ai_context_menu,
             summaryMaxLines = 2,
             onClick = { onAction(AiAssistantModelSettingsAction.SelectContextWindow) },
-        )
-        AiSettingsSwitchEntry(
-            title = stringResource(R.string.ai_assistant_include_interrupted_replies),
-            summary = stringResource(R.string.ai_assistant_include_interrupted_replies_summary),
-            iconRes = R.drawable.ic_ai_context_menu,
-            checked = state.includeInterruptedReplies,
-            onCheckedChange = {
-                onAction(AiAssistantModelSettingsAction.IncludeInterruptedRepliesChanged(it))
-            },
         )
         AiSettingsEntry(
             title = stringResource(R.string.ai_context_compaction_threshold),

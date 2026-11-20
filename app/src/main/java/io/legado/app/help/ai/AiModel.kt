@@ -18,8 +18,22 @@ data class AiModel(
     @SerializedName(value = "outputModalities", alternate = ["e"])
     val outputModalities: List<AiModelModality> = emptyList(),
     @SerializedName(value = "abilities", alternate = ["f"])
-    val abilities: List<AiModelAbility> = emptyList()
+    val abilities: List<AiModelAbility> = emptyList(),
+    @SerializedName(value = "modelInfo", alternate = ["deepSeekModelInfo"])
+    val modelInfo: AiModelInfo? = null,
+    @SerializedName(value = "modelSettings", alternate = ["deepSeekModelSettings"])
+    val modelSettings: AiModelSettings? = null,
+    @SerializedName("manualModelEndpoint")
+    val manualModelEndpoint: String? = null,
 )
+
+internal fun AiModel.safeInputModalities(): List<AiModelModality> = inputModalities.orEmpty()
+
+internal fun AiModel.safeOutputModalities(): List<AiModelModality> = outputModalities.orEmpty()
+
+internal fun AiModel.safeAbilities(): List<AiModelAbility> = abilities.orEmpty()
+
+internal fun AiModel.safeType(): AiModelType = runCatching { type }.getOrNull() ?: AiModelType.CHAT
 
 enum class AiModelType {
     @SerializedName("chat")
@@ -38,7 +52,10 @@ enum class AiModelType {
     ASR,
 
     @SerializedName("tts")
-    TTS
+    TTS,
+
+    @SerializedName("ocr")
+    OCR
 }
 
 enum class AiModelModality {
@@ -52,7 +69,10 @@ enum class AiModelModality {
     AUDIO,
 
     @SerializedName("video")
-    VIDEO
+    VIDEO,
+
+    @SerializedName("file")
+    FILE
 }
 
 enum class AiModelAbility {

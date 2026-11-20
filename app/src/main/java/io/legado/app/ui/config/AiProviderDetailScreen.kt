@@ -32,6 +32,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,20 +43,41 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
+import io.legado.app.help.ai.AiModelType
+import io.legado.app.ui.design.components.NgStatusTagStyle
+import io.legado.app.ui.design.components.NgStatusTagVariant
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgFloatingTabBar
 import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
 import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingTitleToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
+import io.legado.app.ui.design.components.compose.NgMenuSelectionStyle
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
 import io.legado.app.ui.design.components.compose.NgPullRefreshIndicatorVariant
+import io.legado.app.ui.design.components.compose.NgStatusTag
+import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.theme.NgTheme
+
+private const val PROVIDER_DETAIL_HELP = 1
+private const val PROVIDER_DETAIL_RESET = 2
+private const val MODEL_FILTER = 1
+private const val MODEL_TOGGLE_ALL = 2
+private const val MODEL_REFRESH = 3
+private const val MODEL_ADD = 4
+private const val MODEL_FILTER_ITEM_BASE = 100
 
 @Immutable
 internal data class AiProviderModelItemUiModel(
@@ -62,28 +86,37 @@ internal data class AiProviderModelItemUiModel(
     @param:DrawableRes val iconRes: Int,
     val capabilities: List<ModelCapabilityTag>,
     val selected: Boolean,
+    val type: AiModelType?,
+    val searchAliases: List<String> = emptyList(),
+    val contextWindowLabel: String? = null,
+    val isManual: Boolean = false,
 )
 
 @Immutable
 internal data class AiProviderDetailScreenState(
+    val providerId: String = "",
     val providerName: String = "",
     @param:DrawableRes val providerIconRes: Int = R.drawable.ic_cfg_web,
     val selectedTab: Int = 0,
     val modelQuery: String = "",
+    val modelFilter: AiProviderModelFilter = AiProviderModelFilter.ALL,
     val models: List<AiProviderModelItemUiModel> = emptyList(),
-    val modelSelectionActionText: String = "",
-    val modelSelectionActionEnabled: Boolean = false,
-    val allVisibleModelsSelected: Boolean = false,
+    val emptyModelNoticeRes: Int? = null,
     val isRefreshingModels: Boolean = false,
+    val revealModelId: String? = null,
 )
 
 internal sealed interface AiProviderDetailAction {
     data class TabSelected(val index: Int) : AiProviderDetailAction
     data class ModelQueryChanged(val query: String) : AiProviderDetailAction
+    data class ModelFilterChanged(val filter: AiProviderModelFilter) : AiProviderDetailAction
+    data object AddModelRequested : AiProviderDetailAction
     data object RefreshModels : AiProviderDetailAction
-    data object ToggleVisibleModelSelection : AiProviderDetailAction
+    data class SetModelsEnabled(val ids: Set<String>, val enabled: Boolean) : AiProviderDetailAction
     data object Back : AiProviderDetailAction
     data class EditModel(val modelId: String) : AiProviderDetailAction
+    data class DeleteModelRequested(val modelId: String) : AiProviderDetailAction
+    data class ModelRevealed(val modelId: String) : AiProviderDetailAction
     data class ToggleModel(val modelId: String, val selected: Boolean) : AiProviderDetailAction
 }
 
@@ -93,15 +126,20 @@ internal fun AiProviderDetailScreen(
     formState: AiProviderFormScreenState,
     onFormAction: (AiProviderFormScreenAction) -> Unit,
     onAction: (AiProviderDetailAction) -> Unit,
+    onHelp: (() -> Unit)?,
 ) {
     val configScrollState = rememberScrollState()
-    val modelListState = rememberLazyListState()
+    val modelListState = key(state.providerId) { rememberLazyListState() }
+    LaunchedEffect(state.providerId, state.modelFilter) {
+        if (state.revealModelId == null) modelListState.scrollToItem(0)
+    }
     Column(modifier = Modifier.fillMaxSize()) {
         when (state.selectedTab) {
             0 -> AiProviderConfigTab(
                 state = state,
                 formState = formState,
                 onFormAction = onFormAction,
+                onHelp = onHelp,
                 onBack = { onAction(AiProviderDetailAction.Back) },
                 scrollState = configScrollState,
                 modifier = Modifier.weight(1f),
@@ -138,11 +176,11 @@ private fun AiProviderConfigTab(
     state: AiProviderDetailScreenState,
     formState: AiProviderFormScreenState,
     onFormAction: (AiProviderFormScreenAction) -> Unit,
+    onHelp: (() -> Unit)?,
     onBack: () -> Unit,
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
-    val focusManager = LocalFocusManager.current
     Column(
         modifier = modifier
             .fillMaxWidth(),
@@ -157,13 +195,9 @@ private fun AiProviderConfigTab(
                 ProviderToolbarIcon(state.providerIconRes)
             },
             trailingContent = {
-                NgFloatingToolbarActionButton(
-                    iconRes = R.drawable.ic_restore,
-                    contentDescription = stringResource(R.string.ai_provider_reset),
-                    onClick = {
-                        focusManager.clearFocus()
-                        onFormAction(AiProviderFormScreenAction.ResetRequested)
-                    },
+                AiProviderConfigActions(
+                    onHelp = onHelp,
+                    onReset = { onFormAction(AiProviderFormScreenAction.ResetRequested) },
                 )
             },
         )
@@ -180,6 +214,58 @@ private fun AiProviderConfigTab(
                 onAction = onFormAction,
             )
         }
+    }
+}
+
+@Composable
+private fun AiProviderConfigActions(
+    onHelp: (() -> Unit)?,
+    onReset: () -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    if (onHelp == null) {
+        NgFloatingToolbarActionButton(
+            iconRes = R.drawable.ic_restore,
+            contentDescription = stringResource(R.string.ai_provider_reset),
+            onClick = {
+                focusManager.clearFocus()
+                onReset()
+            },
+        )
+        return
+    }
+
+    val menuState = remember { NgPopupToggleState() }
+    val menuItems = remember {
+        listOf(
+            NgExpandableActionMenuItem(PROVIDER_DETAIL_HELP, R.string.help, R.drawable.ic_help),
+            NgExpandableActionMenuItem(PROVIDER_DETAIL_RESET, R.string.ai_provider_reset, R.drawable.ic_restore),
+        )
+    }
+    Box {
+        NgFloatingToolbarActionButton(
+            iconRes = R.drawable.ic_grid_menu,
+            contentDescription = stringResource(R.string.more),
+            onClick = {
+                focusManager.clearFocus()
+                menuState.onAnchorClick()
+            },
+        )
+        NgExpandableActionMenu(
+            expanded = menuState.expanded,
+            onDismissRequest = menuState::onDismissRequest,
+            items = menuItems,
+            variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+            menuContainerColor = colorResource(R.color.ng_surface_card),
+            properties = PopupProperties(focusable = true, clippingEnabled = false),
+            onItemClick = { item ->
+                menuState.close()
+                when (item.itemId) {
+                    PROVIDER_DETAIL_HELP -> onHelp()
+                    PROVIDER_DETAIL_RESET -> onReset()
+                }
+            },
+        )
     }
 }
 
@@ -208,6 +294,23 @@ private fun AiProviderModelsTab(
     listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
+    val availableFilters = remember(state.models) { state.models.availableModelFilters() }
+    val models = remember(state.models, state.modelQuery, state.modelFilter) {
+        state.models.filterProviderModels(state.modelQuery, state.modelFilter)
+    }
+    val emptyNoticeRes = state.emptyModelNoticeRes ?: R.string.ai_model_search_empty.takeIf {
+        state.modelQuery.isNotBlank() || state.modelFilter != AiProviderModelFilter.ALL
+    }
+    val revealModelId = state.revealModelId
+    val revealIndex = remember(models, revealModelId) {
+        revealModelId?.let { id -> models.indexOfFirst { it.id == id } } ?: -1
+    }
+    LaunchedEffect(state.providerId, revealModelId, revealIndex) {
+        if (revealModelId != null && revealIndex >= 0) {
+            listState.scrollToItem(revealIndex)
+            onAction(AiProviderDetailAction.ModelRevealed(revealModelId))
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxWidth(),
@@ -219,17 +322,12 @@ private fun AiProviderModelsTab(
             onBack = { onAction(AiProviderDetailAction.Back) },
             modifier = Modifier.padding(horizontal = 16.dp),
         ) {
-            NgFloatingToolbarActionButton(
-                iconRes = if (state.allVisibleModelsSelected) {
-                    R.drawable.ic_block_outline
-                } else {
-                    R.drawable.ic_check_circle_outline
-                },
-                contentDescription = state.modelSelectionActionText,
-                enabled = state.modelSelectionActionEnabled,
-                onClick = {
-                    onAction(AiProviderDetailAction.ToggleVisibleModelSelection)
-                },
+            AiProviderModelActions(
+                filter = state.modelFilter,
+                availableFilters = availableFilters,
+                visibleModels = models,
+                isRefreshing = state.isRefreshingModels,
+                onAction = onAction,
             )
         }
         NgPullRefreshBox(
@@ -249,17 +347,143 @@ private fun AiProviderModelsTab(
                 contentPadding = PaddingValues(bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(state.models, key = AiProviderModelItemUiModel::id) { item ->
-                    AiProviderModelRow(
-                        item = item,
-                        onClick = { onAction(AiProviderDetailAction.EditModel(item.id)) },
-                        onSelectedChange = {
-                            onAction(AiProviderDetailAction.ToggleModel(item.id, it))
-                        },
-                    )
+                if (models.isEmpty() && !state.isRefreshingModels && emptyNoticeRes != null) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = stringResource(emptyNoticeRes),
+                                color = Color(NgTheme.colors.onSurfaceVariant),
+                                fontSize = 14.sp,
+                            )
+                        }
+                    }
+                }
+                items(models, key = AiProviderModelItemUiModel::id) { item ->
+                    val modelRow: @Composable () -> Unit = {
+                        AiProviderModelRow(
+                            item = item,
+                            onClick = { onAction(AiProviderDetailAction.EditModel(item.id)) },
+                            onSelectedChange = {
+                                onAction(AiProviderDetailAction.ToggleModel(item.id, it))
+                            },
+                        )
+                    }
+                    if (item.isManual) {
+                        NgSwipeToDelete(
+                            deletable = true,
+                            reordering = false,
+                            onDeleteRequested = { onAction(AiProviderDetailAction.DeleteModelRequested(item.id)) },
+                        ) {
+                            modelRow()
+                        }
+                    } else {
+                        modelRow()
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AiProviderModelActions(
+    filter: AiProviderModelFilter,
+    availableFilters: List<AiProviderModelFilter>,
+    visibleModels: List<AiProviderModelItemUiModel>,
+    isRefreshing: Boolean,
+    onAction: (AiProviderDetailAction) -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    val menuState = remember { NgPopupToggleState() }
+    val filterLabel = stringResource(filter.labelRes)
+    val bulkEnableTarget = remember(visibleModels) { visibleModels.bulkModelEnableTarget() }
+    val menuItems = remember(filter, availableFilters, bulkEnableTarget, isRefreshing) {
+        val disableAll = bulkEnableTarget == false
+        buildList {
+            add(NgExpandableActionMenuItem(MODEL_ADD, R.string.ai_model_add, R.drawable.ic_add))
+            add(
+                NgExpandableActionMenuItem(
+                    itemId = MODEL_REFRESH,
+                    titleRes = R.string.refresh_list,
+                    iconRes = R.drawable.ic_bgm_menu_refresh,
+                    enabled = !isRefreshing,
+                )
+            )
+            add(
+                NgExpandableActionMenuItem(
+                    itemId = MODEL_TOGGLE_ALL,
+                    titleRes = if (disableAll) R.string.ai_disable_all_models else R.string.ai_enable_all_models,
+                    iconRes = if (disableAll) R.drawable.ic_block_outline else R.drawable.ic_check_circle_outline,
+                    dividerBefore = true,
+                    enabled = bulkEnableTarget != null,
+                )
+            )
+            if (availableFilters.isNotEmpty()) {
+                add(
+                    NgExpandableActionMenuItem(
+                        itemId = MODEL_FILTER,
+                        titleRes = R.string.screen,
+                        iconRes = R.drawable.ic_screen,
+                        leadingIconSize = 18.dp,
+                        dividerBefore = true,
+                        children = availableFilters.map { entry ->
+                            NgExpandableActionMenuItem(
+                                itemId = MODEL_FILTER_ITEM_BASE + entry.ordinal,
+                                titleRes = entry.labelRes,
+                                iconRes = entry.iconRes,
+                                checked = entry == filter,
+                                selectionStyle = NgMenuSelectionStyle.COMPACT_CHECK,
+                                leadingIconSize = when (entry) {
+                                    AiProviderModelFilter.CHAT -> 19.dp
+                                    AiProviderModelFilter.OCR -> 18.dp
+                                    else -> 20.dp
+                                },
+                            )
+                        },
+                    )
+                )
+            }
+        }
+    }
+    Box {
+        NgFloatingToolbarActionButton(
+            iconRes = R.drawable.ic_grid_menu,
+            contentDescription = stringResource(R.string.more),
+            onClick = {
+                focusManager.clearFocus()
+                menuState.onAnchorClick()
+            },
+            modifier = Modifier.semantics { stateDescription = filterLabel },
+            tint = Color(NgTheme.colors.primary).takeUnless { filter == AiProviderModelFilter.ALL },
+        )
+        NgExpandableActionMenu(
+            expanded = menuState.expanded,
+            onDismissRequest = menuState::onDismissRequest,
+            items = menuItems,
+            variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+            menuContainerColor = colorResource(R.color.ng_surface_card),
+            properties = PopupProperties(focusable = true, clippingEnabled = false),
+            onItemClick = { item ->
+                menuState.close()
+                when (item.itemId) {
+                    MODEL_ADD -> onAction(AiProviderDetailAction.AddModelRequested)
+                    MODEL_TOGGLE_ALL -> bulkEnableTarget?.let { enabled ->
+                        onAction(
+                            AiProviderDetailAction.SetModelsEnabled(
+                                ids = visibleModels.mapTo(hashSetOf()) { it.id },
+                                enabled = enabled,
+                            )
+                        )
+                    }
+                    MODEL_REFRESH -> onAction(AiProviderDetailAction.RefreshModels)
+                    else -> AiProviderModelFilter.entries.getOrNull(item.itemId - MODEL_FILTER_ITEM_BASE)
+                        ?.let { onAction(AiProviderDetailAction.ModelFilterChanged(it)) }
+                }
+            },
+        )
     }
 }
 
@@ -314,19 +538,41 @@ private fun AiProviderModelRow(
             Text(
                 text = item.name,
                 color = colorResource(R.color.ng_on_surface),
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 lineHeight = 19.sp,
                 letterSpacing = 0.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (item.capabilities.isNotEmpty()) {
+            if (item.capabilities.isNotEmpty() || item.isManual || item.contextWindowLabel != null) {
                 Row(
                     modifier = Modifier.padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     item.capabilities.forEach { capability ->
                         AiModelCapabilityIcon(capability)
+                    }
+                    if (item.isManual) {
+                        NgStatusTag(
+                            text = stringResource(R.string.ai_model_manual),
+                            variant = NgStatusTagVariant.INFO,
+                            style = NgStatusTagStyle.COMPACT,
+                        )
+                    }
+                    item.contextWindowLabel?.let { label ->
+                        Text(
+                            text = label,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .padding(start = if (item.capabilities.isNotEmpty() || item.isManual) 6.dp else 0.dp),
+                            color = Color(NgTheme.colors.onSurfaceVariant),
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             } else {
@@ -348,7 +594,7 @@ private fun AiProviderModelRow(
 }
 
 @Composable
-private fun AiModelCapabilityIcon(capability: ModelCapabilityTag) {
+internal fun AiModelCapabilityIcon(capability: ModelCapabilityTag) {
     val tint = Color(capability.color)
     Box(
         modifier = Modifier

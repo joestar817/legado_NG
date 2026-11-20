@@ -25,17 +25,29 @@ import androidx.compose.runtime.setValue
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
+import io.legado.app.help.ai.AiAssistantReasoning
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiDefaultProviders
 import io.legado.app.help.ai.AiManager
 import io.legado.app.help.ai.AiModel
+import io.legado.app.help.ai.modelConfigurationKey
 import io.legado.app.help.ai.AiModelAbility
+import io.legado.app.help.ai.AiModelGenerationIssue
 import io.legado.app.help.ai.AiModelModality
 import io.legado.app.help.ai.AiModelType
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.AiReasoningLevel
+import io.legado.app.help.ai.ENABLE_REASONING_CHOICE
+import io.legado.app.help.ai.assistantModelChoice
+import io.legado.app.help.ai.assistantModelChoices
+import io.legado.app.help.ai.apiKeyNeedsReentry
+import io.legado.app.help.ai.catalogFetchRequired
+import io.legado.app.help.ai.isTextChatModel
+import io.legado.app.help.ai.missingCatalogModelName
+import io.legado.app.help.ai.reasoningBudgetChoice
+import io.legado.app.help.ai.resolveModelGenerationRoute
 import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
@@ -53,6 +65,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import splitties.init.appCtx
 
 object AiAssistantConfigUi {
 
@@ -68,14 +81,26 @@ object AiAssistantConfigUi {
             return null
         }
         val provider = AiProviderStore.provider(providerId)?.takeIf { it.enabled } ?: return null
-        val model = provider.assistantEligibleModels().firstOrNull { it.safeId() == modelId }
+        val model = provider.assistantModelChoice(modelId)?.model
             ?: return null
         return AssistantModelOption(provider, model)
     }
 
     fun selectedModelLabel(): String {
         return selectedModel()?.model?.displayName()
-            ?: AiConfig.assistantModelId.substringAfterLast('/').ifBlank { "未选择模型" }
+            ?: missingSelectedModelLabel()
+            ?: appCtx.getString(
+                if (AiConfig.assistantModelId.isBlank()) R.string.ai_assistant_model_not_selected
+                else R.string.ai_assistant_model_unavailable,
+            )
+    }
+
+    internal fun missingSelectedModelLabel(providers: List<AiProviderSetting>? = null): String? {
+        val providerId = AiConfig.assistantProviderId
+        val provider = if (providers == null) AiProviderStore.provider(providerId)
+            else providers.firstOrNull { it.id == providerId }
+        val modelName = provider?.missingCatalogModelName(AiConfig.assistantModelId) ?: return null
+        return appCtx.getString(R.string.ai_assistant_model_missing, modelName)
     }
 
     fun selectedModelIconRes(): Int {
@@ -85,7 +110,7 @@ object AiAssistantConfigUi {
     }
 
     fun selectedReasoningEnabled(): Boolean {
-        return AiConfig.assistantReasoningLevel != AiReasoningLevel.OFF
+        return selectedModel()?.assistantReasoning()?.active == true
     }
 
     fun showModelSelectSheet(
@@ -148,7 +173,7 @@ object AiAssistantConfigUi {
                                     if (dialog.isShowing) {
                                         Toast.makeText(
                                             context,
-                                            "刷新模型失败：${e.localizedMessage ?: e.javaClass.simpleName}",
+                                            R.string.ai_model_refresh_failed,
                                             Toast.LENGTH_SHORT,
                                         ).show()
                                     }
@@ -171,8 +196,12 @@ object AiAssistantConfigUi {
                             onChanged()
                         }
                     },
-                    onSelect = { providerId, modelId ->
-                        AiConfig.saveAssistantModel(providerId, modelId)
+                    onSelect = select@{ providerId, modelId ->
+                        if (!AiConfig.saveAssistantModel(providerId, modelId)) {
+                            Toast.makeText(context, R.string.ai_assistant_model_unavailable, Toast.LENGTH_SHORT).show()
+                            sheetState = sheetState.copy(providers = assistantModelSelectionProviders())
+                            return@select
+                        }
                         onChanged()
                         dialog.dismiss()
                     },
@@ -235,7 +264,8 @@ object AiAssistantConfigUi {
             ).show()
             return
         }
-        if (!selected.model.supportsReasoning()) {
+        val picker = selected.reasoningPicker()
+        if (!picker.available) {
             Toast.makeText(
                 context,
                 R.string.ai_assistant_reasoning_unsupported,
@@ -243,7 +273,7 @@ object AiAssistantConfigUi {
             ).show()
             return
         }
-        val levels = AiReasoningLevel.entries.toList()
+        val labels = picker.labels(context)
         val accentColor = context.accentColor
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -288,14 +318,14 @@ object AiAssistantConfigUi {
         }
         val currentLabel = TextView(context).apply {
             NgThemeRuntimeAssets.applyAppTypeface(context, this)
-            text = AiConfig.assistantReasoningLevel.displayName(context)
+            text = picker.selectedLabel(context)
             setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
             textSize = 18f
             gravity = Gravity.CENTER
         }
         val currentIcon = ImageView(context).apply {
             setImageResource(R.drawable.ic_ai_capability_reasoning)
-            imageTintList = if (selectedReasoningEnabled()) {
+            imageTintList = if (picker.tintIcon(picker.selectedIndex)) {
                 ColorStateList.valueOf(accentColor)
             } else {
                 null
@@ -313,14 +343,13 @@ object AiAssistantConfigUi {
             bottomMargin = 22.dpToPx(context)
         })
         val stepBar = ReasoningStepBar(context).apply {
-            stepCount = levels.size
-            selectedIndex = levels.indexOf(AiConfig.assistantReasoningLevel).coerceAtLeast(0)
+            stepCount = labels.size
+            selectedIndex = picker.selectedIndex
             stepColor = accentColor
             onSelectedIndexChanged = { index ->
-                val level = levels.getOrNull(index) ?: AiReasoningLevel.AUTO
-                AiConfig.assistantReasoningLevel = level
-                currentLabel.text = level.displayName(context)
-                currentIcon.imageTintList = if (level != AiReasoningLevel.OFF) {
+                picker.select(index)
+                currentLabel.text = labels[index]
+                currentIcon.imageTintList = if (picker.tintIcon(index)) {
                     ColorStateList.valueOf(accentColor)
                 } else {
                     null
@@ -334,10 +363,10 @@ object AiAssistantConfigUi {
         ))
         contentPanel.addView(LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            levels.forEach { level ->
+            labels.forEach { label ->
                 addView(TextView(context).apply {
                     NgThemeRuntimeAssets.applyAppTypeface(context, this)
-                    text = level.displayName(context)
+                    text = label
                     gravity = Gravity.CENTER
                     setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
                     textSize = 13f
@@ -625,9 +654,12 @@ object AiAssistantConfigUi {
             }
             setPadding(14.dpToPx(context), 12.dpToPx(context), 14.dpToPx(context), 12.dpToPx(context))
             setOnClickListener {
-                AiConfig.saveAssistantModel(provider.id, model.safeId())
-                onChanged()
-                dialog.dismiss()
+                if (AiConfig.saveAssistantModel(provider.id, model.safeId())) {
+                    onChanged()
+                    dialog.dismiss()
+                } else {
+                    Toast.makeText(context, R.string.ai_assistant_model_unavailable, Toast.LENGTH_SHORT).show()
+                }
             }
             addView(ImageView(context).apply {
                 setImageResource(model.iconRes(provider.iconRes()))
@@ -863,53 +895,65 @@ internal fun createModelCapabilityTag(
     return view
 }
 
-internal fun AiProviderSetting.assistantEligibleModels(): List<AiModel> {
-    val availableIds = effectiveAvailableModelIds().toSet()
-    if (availableIds.isEmpty()) {
-        return emptyList()
-    }
-    return displayModels()
-        .filter { it.safeId() in availableIds }
-        .filter { it.supportsChatText() }
-}
+internal fun AiProviderSetting.assistantEligibleModels(): List<AiModel> =
+    assistantModelChoices().map { it.model }
 
 internal fun List<AiProviderSetting>.modelSelectionEligibleProviders(): List<AiProviderSetting> {
-    return filter { it.enabled && it.apiKey.isNotBlank() }
+    return filter { it.enabled && it.apiKey.isNotBlank() && !it.apiKeyNeedsReentry() }
 }
 
 internal fun assistantModelSelectionProviders(): List<AiModelSelectionProviderUiModel> {
-    return AiProviderStore.providers().modelSelectionEligibleProviders().map { provider ->
-        provider.toModelSelectionProviderUiModel(provider.assistantEligibleModels())
-    }
+    return AiProviderStore.providers().modelSelectionEligibleProviders()
+        .map { it.toAssistantModelSelectionProviderUiModel() }
+}
+
+internal fun AiProviderSetting.toAssistantModelSelectionProviderUiModel(): AiModelSelectionProviderUiModel {
+    val choices = assistantModelChoices()
+    val textTrialIds = choices.filter { it.textTrial }.mapTo(mutableSetOf()) { it.model.id }
+    return toModelSelectionProviderUiModel(
+        choices.map { it.model },
+        textTrialIds,
+        showGenerationHints = true,
+    )
 }
 
 internal fun AiProviderSetting.toModelSelectionProviderUiModel(
     eligibleModels: List<AiModel>,
+    textTrialIds: Set<String> = emptySet(),
+    showGenerationHints: Boolean = false,
 ): AiModelSelectionProviderUiModel {
     return AiModelSelectionProviderUiModel(
         id = id,
         name = name,
         iconRes = iconRes(),
         models = eligibleModels.map { model ->
+            val route = if (showGenerationHints) resolveModelGenerationRoute(model) else null
             AiModelSelectionItemUiModel(
                 id = model.safeId(),
                 name = model.displayName(),
                 searchAliases = listOf(model.safeName()),
                 iconRes = model.iconRes(iconRes()),
                 capabilities = model.capabilityTags(),
+                textTrial = model.id in textTrialIds,
+                generationHintRes = when {
+                    route?.issue == AiModelGenerationIssue.UNSUPPORTED_PROTOCOL -> R.string.ai_model_interface_unavailable
+                    route?.requiresStreaming == true -> R.string.ai_model_streaming_only
+                    else -> null
+                },
             )
         },
-        needsFetch = apiKey.isNotBlank() && models.isEmpty(),
-        noEnabledModels = models.isNotEmpty() && effectiveAvailableModelIds().isEmpty(),
+        needsFetch = eligibleModels.isEmpty() && apiKey.isNotBlank() && !apiKeyNeedsReentry() && catalogFetchRequired(),
+        noEnabledModels = models.isNotEmpty() && !catalogFetchRequired() && effectiveAvailableModelIds().isEmpty(),
     )
 }
 
 internal fun AiProviderSetting.displayModels(): List<AiModel> {
-    if (apiKey.isBlank()) {
-        return emptyList()
-    }
+    val showCatalog = apiKey.isNotBlank() && !apiKeyNeedsReentry() && !catalogRefreshRequired
+    val configurationKey = modelConfigurationKey()
     return models
-        .filter { it.safeId().isNotBlank() }
+        .filter { model ->
+            model.safeId().isNotBlank() && (model.manualModelEndpoint?.let { it == configurationKey } ?: showCatalog)
+        }
         .distinctBy { it.safeId() }
 }
 
@@ -922,11 +966,7 @@ internal fun AiProviderSetting.effectiveAvailableModelIds(): List<String> {
     }
 }
 
-internal fun AiModel.supportsChatText(): Boolean {
-    return safeType() == AiModelType.CHAT &&
-        AiModelModality.TEXT in safeInputModalities() &&
-        AiModelModality.TEXT in safeOutputModalities()
-}
+internal fun AiModel.supportsChatText(): Boolean = isTextChatModel()
 
 internal fun AiModel.supportsReasoning(): Boolean {
     return AiModelAbility.REASONING in safeAbilities()
@@ -1057,6 +1097,62 @@ private fun resolveModelIconRes(modelName: String): Int? {
         Regex("mimo|xiaomi|小米").containsMatchIn(modelName) -> R.drawable.ic_provider_mimo
         Regex("longcat").containsMatchIn(modelName) -> R.drawable.ic_model_longcat
         else -> null
+    }
+}
+
+internal class AssistantReasoningPicker(
+    private val reasoning: AiAssistantReasoning,
+    private val onSelect: (String) -> Unit,
+) {
+    val available: Boolean get() = reasoning.hasControls
+    val selectedIndex: Int get() = reasoning.options.indexOf(reasoning.selected).coerceAtLeast(0)
+    val budgetRange: IntRange? get() = reasoning.budgetRange
+    val budgetTokens: Int? get() = reasoning.budgetTokens
+
+    fun labels(context: Context): List<String> = reasoning.options.map { value ->
+        if (budgetTokens != null && value == reasoning.selected) context.getString(R.string.ai_reasoning_budget)
+        else label(context, value)
+    }
+
+    fun currentLabels(context: Context): List<String> = reasoning.options.map { label(context, it) }
+
+    fun selectedLabel(context: Context): String = label(context, reasoning.selected)
+
+    fun description(context: Context): String? = if (reasoning.isTrial) {
+        context.getString(R.string.ai_assistant_reasoning_trial)
+    } else {
+        null
+    }
+
+    fun tintIcon(index: Int): Boolean = reasoning.isActive(reasoning.options[index])
+
+    fun select(index: Int) {
+        reasoning.options.getOrNull(index)?.let(onSelect)
+    }
+
+    fun selectBudget(tokens: Int) {
+        if (reasoning.budgetRange?.contains(tokens) == true) onSelect(reasoningBudgetChoice(tokens))
+    }
+
+    private fun label(context: Context, value: String): String {
+        reasoning.budgetTokens?.takeIf { value == reasoning.selected }?.let { tokens ->
+            return context.getString(R.string.ai_catalog_token_count, java.text.NumberFormat.getIntegerInstance().format(tokens))
+        }
+        return when (value) {
+            AiReasoningLevel.OFF.prefValue -> AiReasoningLevel.OFF.displayName(context)
+            AiReasoningLevel.AUTO.prefValue -> AiReasoningLevel.AUTO.displayName(context)
+            ENABLE_REASONING_CHOICE -> context.getString(R.string.ai_reasoning_level_on)
+            else -> value
+        }
+    }
+}
+
+internal fun AiAssistantConfigUi.AssistantModelOption.assistantReasoning(): AiAssistantReasoning =
+    AiConfig.assistantModelReasoning(provider, model)
+
+internal fun AiAssistantConfigUi.AssistantModelOption.reasoningPicker(): AssistantReasoningPicker {
+    return AssistantReasoningPicker(assistantReasoning()) {
+        AiConfig.saveAssistantModelReasoning(provider, model, it)
     }
 }
 

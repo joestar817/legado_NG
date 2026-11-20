@@ -23,6 +23,8 @@ import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.activity.ComponentDialog
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedVisibility
@@ -194,6 +196,8 @@ import io.legado.app.help.ai.AgentModeEntryContext
 import io.legado.app.help.ai.AgentModeEntryLaunchDecision
 import io.legado.app.help.ai.AgentModeEntryMemoryState
 import io.legado.app.help.ai.AgentModeRegistry
+import io.legado.app.help.ai.AiAssistantReplyEndException
+import io.legado.app.help.ai.AiAssistantReplyEndReason
 import io.legado.app.help.ai.AiChatClient
 import io.legado.app.help.ai.AiActiveSkillSnapshot
 import io.legado.app.help.ai.AiAvailableSkillSnapshot
@@ -220,8 +224,9 @@ import io.legado.app.help.ai.AiChatTurnResult
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiMemoryTraceItem
 import io.legado.app.help.ai.AiModelAbility
-import io.legado.app.help.ai.AiModelRegistry
+import io.legado.app.help.ai.AiModelGenerationIssue
 import io.legado.app.help.ai.AiPendingToolCall
+import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.ai.AiSkillCapabilityGrantStore
 import io.legado.app.help.ai.AiSkillPackageRegistry
@@ -229,6 +234,7 @@ import io.legado.app.help.ai.AiSkillPresentation
 import io.legado.app.help.ai.AiSkillScope
 import io.legado.app.help.ai.resolveAgentModeEntryLaunch
 import io.legado.app.help.ai.resolveAgentModeEntryMemoryProbeTarget
+import io.legado.app.help.ai.resolveModelGenerationRoute
 import io.legado.app.help.ai.runtime.AgentSkillRuntimeDeclaration
 import io.legado.app.help.ai.runtime.ToolExecutionReceipt
 import io.legado.app.help.config.NgThemeRuntimeAssets
@@ -244,7 +250,11 @@ import io.legado.app.ui.widget.compose.toggleNgExpandedKey
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.PhotoDialog
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDialog
+import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
+import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
+import io.legado.app.ui.design.components.compose.NgPaneDialog
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSideDrawerSurface
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
@@ -600,6 +610,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     var activeStreamMemoryTraceTarget by remember { mutableStateOf<List<AiMemoryTraceItem>>(emptyList()) }
     var selectedDrawerIndex by remember { mutableIntStateOf(2) }
     var configVersion by remember { mutableIntStateOf(0) }
+    var generationBlock by remember { mutableStateOf<Pair<String, AiModelGenerationIssue>?>(null) }
     var showModelSheet by remember { mutableStateOf(false) }
     var showReasoningSheet by remember { mutableStateOf(false) }
     var showInternalMcpSheet by remember { mutableStateOf(false) }
@@ -650,7 +661,6 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
     val selectedModelSupportsToolCalls = remember(configVersion) {
         AiAssistantConfigUi.selectedModel()?.model
-            ?.let(AiModelRegistry::enrich)
             ?.abilities
             ?.contains(AiModelAbility.TOOL) == true
     }
@@ -708,9 +718,26 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
     }
 
+    fun ensureSelectedModelInCatalog(): Boolean {
+        val missing = AiAssistantConfigUi.missingSelectedModelLabel() ?: return true
+        if (modelSheetLaunchGate.tryOpen(SystemClock.elapsedRealtime())) {
+            Toast.makeText(context, missing, Toast.LENGTH_LONG).show()
+            showModelSheet = true
+        }
+        return false
+    }
+
     fun ensureSkillToolSupport(): Boolean {
         val message = skillToolErrorText ?: return true
+        if (!ensureSelectedModelInCatalog()) return false
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        return false
+    }
+
+    fun ensureModelGenerationRoute(): Boolean {
+        val selection = AiAssistantConfigUi.selectedModel() ?: return ensureSelectedModelInCatalog()
+        val issue = selection.provider.resolveModelGenerationRoute(selection.model).issue ?: return true
+        generationBlock = selection.provider.id to issue
         return false
     }
 
@@ -977,8 +1004,13 @@ private fun AiChatRoute(onBack: () -> Unit) {
         Toast.makeText(context, "$label 后续接入", Toast.LENGTH_SHORT).show()
     }
 
+    val assistantSettingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        configVersion++
+        refreshContextUsage()
+    }
+
     fun openAssistantSettings() {
-        context.startActivity(Intent(context, ConfigActivity::class.java).apply {
+        assistantSettingsLauncher.launch(Intent(context, ConfigActivity::class.java).apply {
             putExtra("configTag", ConfigTag.AI_CONFIG)
             putExtra(AiConfigFragment.EXTRA_INITIAL_PAGE, AiConfigFragment.PAGE_ASSISTANT)
         })
@@ -1293,6 +1325,11 @@ private fun AiChatRoute(onBack: () -> Unit) {
             updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
             return
         }
+        if (!ensureModelGenerationRoute()) {
+            updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
+            persistActiveSession()
+            return
+        }
         syncModeEntryContext()
         syncActiveSkillContext()
         sending = true
@@ -1443,6 +1480,14 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 contextUsage = it.contextUsage
                 contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
             }.onFailure {
+                val replyEnd = it as? AiAssistantReplyEndException
+                val replyNotice = replyEnd?.let { end ->
+                    context.getString(when (end.reason) {
+                        AiAssistantReplyEndReason.TRUNCATED -> R.string.ai_assistant_reply_truncated
+                        AiAssistantReplyEndReason.INTERRUPTED -> R.string.ai_assistant_reply_interrupted
+                        AiAssistantReplyEndReason.REFUSED -> R.string.ai_assistant_reply_refused
+                    })
+                }
                 val durable = latestDurableUpdate
                 uploadMessages.clear()
                 uploadMessages.addAll(
@@ -1452,28 +1497,36 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 )
                 val savedContent = durable?.visibleContent
                     ?.takeIf { content -> content.isNotBlank() }
-                val partialContent = savedContent
-                    ?: activeStreamContentTarget.takeIf { content -> content.isNotBlank() }
-                if (partialContent != null) {
-                    val draft = if (savedContent == null) {
-                        AiChatContextManager.interruptedReplyContent(partialContent, it)
-                    } else {
-                        null
-                    }
+                val interruptedContent = replyEnd?.partialContent
+                    ?: activeStreamContentTarget.takeIf { savedContent == null }.orEmpty()
+                val draft = AiChatContextManager.interruptedReplyContent(interruptedContent, it)
+                val visibleInterruptedContent = interruptedContent.takeIf { content ->
+                    content.isNotBlank() && (replyEnd == null || draft != null)
+                }
+                val partialContent = listOfNotNull(savedContent, visibleInterruptedContent)
+                    .distinct().joinToString("\n\n").takeIf { content -> content.isNotBlank() }
+                if (partialContent != null || replyNotice != null) {
                     updateMessage(loadingId) { loading ->
                         if (draft != null) {
                             uploadMessages += AiChatContextManager.interruptedReplyMessage(loading.id, draft)
                         }
                         loading.copy(
-                            content = partialContent,
+                            content = partialContent ?: requireNotNull(replyNotice),
                             uploadContent = draft,
-                            reasoning = durable?.reasoning ?: activeStreamReasoningTarget.takeIf { reasoning ->
-                                reasoning.isNotBlank()
+                            reasoning = if (replyEnd != null) {
+                                replyEnd.partialReasoning ?: durable?.reasoning.takeIf { savedContent != null }
+                            } else {
+                                durable?.reasoning ?: activeStreamReasoningTarget.takeIf { it.isNotBlank() }
                             },
                             toolTrace = durable?.toolTrace ?: activeStreamToolTraceTarget,
                             toolReceipts = durable?.toolReceipts.orEmpty(),
                             loading = false,
-                            meta = if (canceled) "已中断，可恢复" else "执行中断，结果已保留"
+                            meta = when {
+                                partialContent == null -> "error"
+                                replyNotice != null -> replyNotice
+                                canceled -> "已中断，可恢复"
+                                else -> "执行中断，结果已保留"
+                            }
                         )
                     }
                 } else {
@@ -1482,9 +1535,13 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 contextStatusText = null
                 updateDeliveryState(
                     activeUserMessageIds,
-                    if (canceled) ChatDeliveryState.RECOVERABLE else ChatDeliveryState.FAILED
+                    when {
+                        canceled -> ChatDeliveryState.RECOVERABLE
+                        replyEnd != null -> ChatDeliveryState.SENT
+                        else -> ChatDeliveryState.FAILED
+                    }
                 )
-                if (it !is CancellationException) {
+                if (!canceled && replyEnd == null) {
                     messages += ChatUiMessage(
                         role = ChatRole.ASSISTANT,
                         content = it.localizedMessage ?: it.toString(),
@@ -1533,6 +1590,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
 
     fun manuallyCompressContext() {
         if (sending || manualContextCompacting) return
+        if (!ensureModelGenerationRoute()) return
         syncModeEntryContext()
         syncActiveSkillContext()
         manualContextCompacting = true
@@ -1645,6 +1703,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             Toast.makeText(context, R.string.ai_chat_empty, Toast.LENGTH_SHORT).show()
             return
         }
+        if (!ensureModelGenerationRoute()) return
         input = ""
         val uploadContent = uploadOverride
             ?.trim()
@@ -1707,7 +1766,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun submitInteraction(messageId: String, action: AiChatInteractionAction) {
-        if (!ensureSkillToolSupport()) {
+        if (!ensureSkillToolSupport() || !ensureModelGenerationRoute()) {
             action.onCompleted(false)
             return
         }
@@ -1780,7 +1839,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun regenerateMessage(message: ChatUiMessage) {
-        if (!ensureSkillToolSupport()) return
+        if (!ensureSkillToolSupport() || !ensureModelGenerationRoute()) return
         if (sending) {
             Toast.makeText(context, "正在生成中", Toast.LENGTH_SHORT).show()
             return
@@ -2118,7 +2177,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun startModeEntry(): Boolean {
-        if (!ensureSkillToolSupport()) return false
+        if (!ensureSkillToolSupport() || !ensureModelGenerationRoute()) return false
         if (sending || modeEntryStarted || messages.isNotEmpty()) {
             return false
         }
@@ -2492,7 +2551,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                             R.string.ai_assistant_reasoning_select_model_first,
                                             Toast.LENGTH_SHORT,
                                         ).show()
-                                        !model.model.supportsReasoning() -> Toast.makeText(
+                                        !model.assistantReasoning().hasControls -> Toast.makeText(
                                             context,
                                             R.string.ai_assistant_reasoning_unsupported,
                                             Toast.LENGTH_SHORT,
@@ -2731,11 +2790,56 @@ private fun AiChatRoute(onBack: () -> Unit) {
             onDismiss = { showMcpCapabilitySheet = false }
         )
     }
+    generationBlock?.let { (providerId, issue) ->
+        val needsStreaming = issue == AiModelGenerationIssue.STREAMING_REQUIRED
+        NgPaneDialog(onDismissRequest = { generationBlock = null }) {
+            NgDialog(
+                title = null,
+                variant = NgDialogVariant.CLASSIC_CONFIRMATION,
+                actions = {
+                    NgDialogTextActionButton(
+                        text = stringResource(if (needsStreaming) R.string.cancel else R.string.close),
+                        onClick = { generationBlock = null },
+                    )
+                    if (needsStreaming) {
+                        NgDialogTextActionButton(
+                            text = stringResource(R.string.ai_enable_streaming_response),
+                            onClick = {
+                                synchronized(AiProviderStore) {
+                                    val selection = AiAssistantConfigUi.selectedModel()
+                                    if (selection != null && selection.provider.id == providerId &&
+                                        selection.provider.resolveModelGenerationRoute(selection.model).issue ==
+                                        AiModelGenerationIssue.STREAMING_REQUIRED
+                                    ) {
+                                        AiProviderStore.saveProvider(selection.provider.copy(streamResponseEnabled = true))
+                                        configVersion++
+                                    }
+                                }
+                                generationBlock = null
+                            },
+                        )
+                    }
+                },
+            ) {
+                Text(
+                    text = stringResource(
+                        if (needsStreaming) R.string.ai_assistant_streaming_required
+                        else R.string.ai_model_interface_unsupported,
+                    ),
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                )
+            }
+        }
+    }
     if (showReasoningSheet) {
-        AiChatReasoningSheet(
-            onChanged = { configVersion++ },
-            onDismiss = { showReasoningSheet = false },
-        )
+        val selectedModel = remember(configVersion) { AiAssistantConfigUi.selectedModel() }
+        if (selectedModel != null) {
+            AiChatReasoningSheet(
+                model = selectedModel,
+                onChanged = { configVersion++ },
+                onDismiss = { showReasoningSheet = false },
+            )
+        }
     }
     if (showModelSheet) {
         AiChatModelSheet(
@@ -4238,7 +4342,7 @@ private fun RikkaMessageItem(
                     onToggleFavorite = onToggleFavorite,
                     onExport = onExport
                 )
-                if (!message.meta.isNullOrBlank()) {
+                if (!message.meta.isNullOrBlank() && message.meta != "error") {
                     Text(
                         text = message.meta,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),

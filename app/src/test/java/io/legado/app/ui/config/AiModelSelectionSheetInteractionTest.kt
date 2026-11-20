@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -75,7 +76,7 @@ class AiModelSelectionSheetInteractionTest {
         composeRule.onNode(hasSetTextAction()).performTextInput("Alpha")
         composeRule.onNodeWithText("No matching models").assertIsDisplayed()
         composeRule.onNodeWithText("Provider A").performClick().assertIsSelected()
-        composeRule.onNodeWithText("Alpha").assertIsDisplayed()
+        composeRule.onNode(hasText("Alpha") and !hasSetTextAction()).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(context.getString(R.string.ai_locate_selected_model)).performClick()
         composeRule.onNodeWithText("Provider B").assertIsSelected()
         composeRule.onNodeWithText("Beta").assertIsDisplayed()
@@ -176,46 +177,6 @@ class AiModelSelectionSheetInteractionTest {
         composeRule.runOnIdle { assertTrue(calls.isEmpty()) }
         composeRule.onRoot().performTouchInput { swipeLeft() }
         composeRule.runOnIdle { assertEquals(listOf("empty"), calls) }
-    }
-
-    @Test
-    fun searchOnAutomaticPageShowsNoMatchingModels() {
-        val state = AiModelSelectionSheetState(
-            title = "Models", emptyText = null, providers = providers,
-            followAssistantLabel = "Follow chat model",
-        )
-        composeRule.setContent {
-            NgAppTheme(snapshot = snapshot, updateSystemBars = false) {
-                AiModelSelectionSheet(
-                    state = state, isRefreshing = false, onRefresh = {},
-                    onSelect = { _, _ -> }, onFollowAssistant = {},
-                )
-            }
-        }
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        composeRule.onNodeWithContentDescription(context.getString(R.string.ai_search_model)).performClick()
-        composeRule.onNode(hasSetTextAction()).performTextInput("Beta")
-        composeRule.onNodeWithText("No matching models").assertIsDisplayed()
-    }
-
-    @Test
-    fun automaticPageKeepsFollowAssistantAction() {
-        var followed = false
-        val state = AiModelSelectionSheetState(
-            title = "Models", emptyText = null, providers = providers,
-            followAssistantLabel = "Follow chat model", followAssistantSelected = true,
-        )
-        composeRule.setContent {
-            NgAppTheme(snapshot = snapshot, updateSystemBars = false) {
-                AiModelSelectionSheet(
-                    state = state, isRefreshing = false, onRefresh = {}, onSelect = { _, _ -> },
-                    onFollowAssistant = { followed = true },
-                )
-            }
-        }
-        composeRule.onNodeWithText("Automatic").assertIsSelected()
-        composeRule.onNodeWithText("Follow chat model").performClick()
-        composeRule.runOnIdle { assertTrue(followed) }
     }
 
     private fun provider(id: String, name: String, modelName: String) = AiModelSelectionProviderUiModel(

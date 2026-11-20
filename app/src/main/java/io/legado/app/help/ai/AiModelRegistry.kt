@@ -27,6 +27,22 @@ object AiModelRegistry {
         toolAbility()
     }
 
+    private val OPENAI_TEXT_EMBEDDING_IDS = setOf(
+        "text-embedding-3-small",
+        "text-embedding-3-large",
+        "text-embedding-ada-002",
+    )
+
+    internal fun isOpenAiEmbedding(modelId: String): Boolean =
+        modelId.lowercase() in OPENAI_TEXT_EMBEDDING_IDS
+
+    private val OPENAI_TEXT_EMBEDDINGS = OPENAI_TEXT_EMBEDDING_IDS.map { id ->
+        defineAiModel {
+            exact(id)
+            textEmbedding()
+        }
+    }
+
     private val GPT_4_1 = defineAiModel {
         tokens("gpt", "4", "1")
         visionInput()
@@ -376,13 +392,14 @@ object AiModelRegistry {
     }
 
     private val OCR_MODEL = defineAiModel {
-        tokens("ocr")
+        tokens("ocr|paddleocr")
+        type(AiModelType.OCR)
         visionInput()
     }
 
-    private val PADDLE_OCR_MODEL = defineAiModel {
-        tokens("paddleocr")
-        visionInput()
+    internal fun isOcrModel(modelId: String): Boolean {
+        val id = modelId.substringAfterLast('/')
+        return id.contains("ocr", ignoreCase = true) && OCR_MODEL.match(id)
     }
 
     private val IMAGE_EDIT_MODEL = defineAiModel {
@@ -1143,8 +1160,6 @@ object AiModelRegistry {
         DEEPSEEK_V4_PRO,
         DEEPSEEK_FLASH,
         DEEPSEEK_V4_1_FLASH,
-        OCR_MODEL,
-        PADDLE_OCR_MODEL,
         IMAGE_EDIT_MODEL,
         IMAGE_GENERATION_MODEL,
         DEEPSEEK_V3_1,
@@ -1269,7 +1284,7 @@ object AiModelRegistry {
         HY_IMAGE_3_5,
         GROK_VOICE_TRANSCRIBE,
         GPT_TRANSCRIBE
-    )
+    ) + OPENAI_TEXT_EMBEDDINGS
 
     private val DEEPSEEK_REASONING_MODELS = setOf(
         DEEPSEEK_R1_MODEL,
@@ -1296,7 +1311,7 @@ object AiModelRegistry {
     )
 
     fun capabilities(modelId: String): AiModelCapabilities {
-        val matches = resolveModels(modelId)
+        val matches = if (isOcrModel(modelId)) listOf(OCR_MODEL) else resolveModels(modelId)
         val abilities = resolveAbilities(matches)
         return AiModelCapabilities(
             type = resolveType(matches, abilities),
@@ -1418,22 +1433,6 @@ object AiModelRegistry {
             AiModelAbility.TOOL,
             AiModelAbility.REASONING
         ).filter { it in values }
-    }
-
-    private fun AiModel.safeInputModalities(): List<AiModelModality> {
-        return runCatching { inputModalities }.getOrNull().orEmpty()
-    }
-
-    private fun AiModel.safeOutputModalities(): List<AiModelModality> {
-        return runCatching { outputModalities }.getOrNull().orEmpty()
-    }
-
-    private fun AiModel.safeAbilities(): List<AiModelAbility> {
-        return runCatching { abilities }.getOrNull().orEmpty()
-    }
-
-    private fun AiModel.safeType(): AiModelType {
-        return runCatching { type }.getOrNull() ?: AiModelType.CHAT
     }
 
     private fun AiModelDefinitionBuilder.visionInput() {

@@ -120,7 +120,7 @@ internal fun AiChatModelSheet(onChanged: () -> Unit, onDismiss: () -> Unit) {
                             } catch (e: Throwable) {
                                 Toast.makeText(
                                     context,
-                                    "刷新模型失败：${e.localizedMessage ?: e.javaClass.simpleName}",
+                                    R.string.ai_model_refresh_failed,
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             } finally {
@@ -139,8 +139,12 @@ internal fun AiChatModelSheet(onChanged: () -> Unit, onDismiss: () -> Unit) {
                     sheetState = sheetState.withUpdatedProvider(providerId, provider)
                     onChanged()
                 },
-                onSelect = { providerId, modelId ->
-                    AiConfig.saveAssistantModel(providerId, modelId)
+                onSelect = select@{ providerId, modelId ->
+                    if (!AiConfig.saveAssistantModel(providerId, modelId)) {
+                        Toast.makeText(context, R.string.ai_assistant_model_unavailable, Toast.LENGTH_SHORT).show()
+                        sheetState = sheetState.copy(providers = assistantModelSelectionProviders())
+                        return@select
+                    }
                     onChanged()
                     onDismiss()
                 },

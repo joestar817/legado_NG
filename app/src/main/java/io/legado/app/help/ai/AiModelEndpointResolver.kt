@@ -1,6 +1,11 @@
 package io.legado.app.help.ai
 
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
 object AiModelEndpointResolver {
+
+    private val deepSeekModels = "https://api.deepseek.com/models".toHttpUrl()
 
     private val knownCompatSuffixes = listOf(
         "/api/claudecode",
@@ -16,45 +21,42 @@ object AiModelEndpointResolver {
 
     fun candidates(setting: AiProviderSetting): List<String> {
         if (setting.useCustomModelsUrl) {
-            return runCatching {
-                listOf(buildAiApiEndpoint(setting.baseUrl, setting.modelsUrl))
-            }.getOrDefault(emptyList())
+            return listOf(buildAiApiEndpoint(setting.baseUrl, setting.modelsUrl))
         }
         return candidates(setting.baseUrl, setting.type)
     }
 
     fun candidates(baseUrl: String, type: AiProviderType = AiProviderType.OPENAI): List<String> {
-        val base = baseUrl.trimEndSlash()
-        if (base.isBlank()) {
-            return emptyList()
-        }
+        val parsedBase = baseUrl.trim().toHttpUrlOrNull()
+            ?.takeUnless { it.hasUserInfo() || it.query != null || it.fragment != null }
+            ?: return emptyList()
+        val path = parsedBase.encodedPath.trimEnd('/')
+        fun atPath(value: String) = parsedBase.newBuilder().encodedPath(value).build().toString()
 
         val candidates = linkedSetOf<String>()
         when {
             type == AiProviderType.CLAUDE -> {
-                candidates += "$base/models"
+                candidates += atPath("$path/models")
             }
-            base.contains("api.deepseek.com", ignoreCase = true) -> {
-                candidates += "https://api.deepseek.com/models"
+            parsedBase.sameOriginAs(deepSeekModels) -> {
+                candidates += deepSeekModels.toString()
             }
-            base.endsWithVersionSegment() -> {
-                candidates += "$base/models"
-                if (!base.endsWith("/v1", ignoreCase = true)) {
-                    candidates += "$base/v1/models"
+            path.endsWithVersionSegment() -> {
+                candidates += atPath("$path/models")
+                if (!path.endsWith("/v1", ignoreCase = true)) {
+                    candidates += atPath("$path/v1/models")
                 }
             }
             else -> {
-                candidates += "$base/v1/models"
+                candidates += atPath("$path/v1/models")
             }
         }
 
         knownCompatSuffixes.forEach { suffix ->
-            if (base.endsWith(suffix, ignoreCase = true)) {
-                val root = base.dropLast(suffix.length).trimEndSlash()
-                if (root.isNotBlank()) {
-                    candidates += "$root/v1/models"
-                    candidates += "$root/models"
-                }
+            if (path.endsWith(suffix, ignoreCase = true)) {
+                val root = path.dropLast(suffix.length).trimEnd('/')
+                candidates += atPath("$root/v1/models")
+                candidates += atPath("$root/models")
             }
         }
 

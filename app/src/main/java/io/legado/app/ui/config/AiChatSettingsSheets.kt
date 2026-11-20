@@ -35,17 +35,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.help.ai.AiConfig
-import io.legado.app.help.ai.AiReasoningLevel
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.theme.NgTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun AiChatReasoningSheet(onChanged: () -> Unit, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val levels = AiReasoningLevel.entries
-    val labels = levels.map { it.displayName(context) }
+internal fun AiChatReasoningSheet(
+    model: AiAssistantConfigUi.AssistantModelOption,
+    onChanged: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -66,20 +66,7 @@ internal fun AiChatReasoningSheet(onChanged: () -> Unit, onDismiss: () -> Unit) 
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 AiChatSheetHandle()
-                AiDiscreteScaleDialogContent(
-                    title = context.getString(R.string.ai_assistant_reasoning_title),
-                    description = null,
-                    iconRes = R.drawable.ic_ai_capability_reasoning,
-                    labels = labels,
-                    currentLabels = labels,
-                    initialSelectedIndex = levels.indexOf(AiConfig.assistantReasoningLevel)
-                        .coerceAtLeast(0),
-                    tintIcon = { index -> levels[index] != AiReasoningLevel.OFF },
-                    onSelectedIndexChanged = { index ->
-                        AiConfig.assistantReasoningLevel = levels[index]
-                        onChanged()
-                    },
-                )
+                AiAssistantReasoningControls(model, onChanged)
             }
         }
     }
