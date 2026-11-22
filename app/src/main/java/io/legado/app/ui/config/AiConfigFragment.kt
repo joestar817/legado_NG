@@ -19,6 +19,7 @@ import androidx.activity.ComponentDialog
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.isVisible
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -32,6 +33,7 @@ import io.legado.app.base.BaseFragment
 import io.legado.app.databinding.FragmentAiConfigBinding
 import io.legado.app.data.appDb
 import io.legado.app.help.ai.AiConfig
+import io.legado.app.help.ai.AiExternalSearchStore
 import io.legado.app.help.ai.AiManager
 import io.legado.app.help.ai.AiManualModelAddResult
 import io.legado.app.help.ai.AiModel
@@ -101,6 +103,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     companion object {
         const val EXTRA_INITIAL_PAGE = "initialPage"
         const val PAGE_PROVIDERS = "providers"
+        const val PAGE_SEARCH_SERVICES = "searchServices"
         const val PAGE_PROMPTS = "prompts"
         const val PAGE_PURIFY = "purify"
         const val PAGE_READ_ALOUD = "readAloud"
@@ -1056,8 +1059,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             )
             setContent {
                 NgAppTheme {
+                    val searchSettings by AiExternalSearchStore.changes.collectAsState()
                     AiAssistantModelSettingsScreen(
                         state = assistantModelSettingsScreenState,
+                        searchSettings = searchSettings,
                         onAction = ::handleAssistantModelSettingsAction,
                     )
                 }
@@ -1179,6 +1184,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun handleAiMainOpenPage(page: String) {
         when (page) {
             PAGE_PROVIDERS -> showProviderList()
+            PAGE_SEARCH_SERVICES -> (activity as? ConfigActivity)?.openAiConfigPage(page)
             PAGE_PROMPTS -> showPromptList()
             PAGE_PURIFY -> showPurifyModelSettings()
             PAGE_READ_ALOUD -> showReadAloudModelSettings()
@@ -1341,6 +1347,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             }
             AiAssistantModelSettingsAction.SelectCompactionThreshold -> {
                 showContextCompactionThresholdDialog()
+            }
+            AiAssistantModelSettingsAction.OpenWebSettings -> {
+                AiAssistantWebSettingsDialog.show(childFragmentManager)
             }
             is AiAssistantModelSettingsAction.InternalMcpChanged -> {
                 AiConfig.internalMcpEnabled = action.enabled

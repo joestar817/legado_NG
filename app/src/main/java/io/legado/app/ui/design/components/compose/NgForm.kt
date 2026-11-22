@@ -1,5 +1,6 @@
 package io.legado.app.ui.design.components.compose
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -76,6 +78,7 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -104,6 +107,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+private val formRowEndPadding = 10.dp
+private val formChoiceArrowSize = 20.dp
+private val formNumberStepWidth = 44.dp
 
 data class NgFormSelectOption(
     val label: String,
@@ -542,7 +549,7 @@ private fun NgFormChoiceRow(
                     contentDescription = if (filter) "类型筛选，$title" else title
                     stateDescription = selectedLabel
                 }
-                .padding(start = 14.dp, end = 10.dp),
+                .padding(start = 14.dp, end = formRowEndPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -566,7 +573,7 @@ private fun NgFormChoiceRow(
             Icon(
                 painter = arrowIcon,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(formChoiceArrowSize),
                 tint = Color(if (filter) colors.primary else colors.onSurfaceVariant).copy(alpha = contentAlpha),
             )
         }
@@ -672,7 +679,21 @@ private fun NgStepperButton(
     onClick: () -> Unit,
     onLongPressStep: (() -> Boolean)? = null,
     onLongPressFinished: (() -> Unit)? = null,
+    @DrawableRes chevronIcon: Int? = null,
+    modifier: Modifier = Modifier,
 ) {
+    if (chevronIcon != null) {
+        NgSliderStepButton(
+            iconRes = chevronIcon,
+            contentDescription = contentDescription,
+            enabled = enabled,
+            onClick = onClick,
+            modifier = modifier.width(formNumberStepWidth),
+            onLongPressStep = onLongPressStep,
+            onLongPressFinished = onLongPressFinished,
+        )
+        return
+    }
     val hapticFeedback = LocalHapticFeedback.current
     val currentEnabled by rememberUpdatedState(enabled)
     val currentOnClick by rememberUpdatedState(onClick)
@@ -680,7 +701,7 @@ private fun NgStepperButton(
     val currentOnLongPressFinished by rememberUpdatedState(onLongPressFinished)
     val repeatEnabled = onLongPressStep != null && onLongPressFinished != null
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(34.dp)
             .clip(RoundedCornerShape(8.dp))
             .then(
@@ -857,6 +878,11 @@ fun NgFormSwitchSettingRow(
     }
 }
 
+enum class NgFormNumberSettingRowVariant {
+    OUTLINED,
+    COMPACT_CHEVRONS,
+}
+
 /** 分组内左侧标题／摘要、右侧短输入框的紧凑数字设置行。 */
 @Composable
 fun NgFormNumberSettingRow(
@@ -876,8 +902,11 @@ fun NgFormNumberSettingRow(
     valueRange: IntRange? = null,
     onStepValueChange: ((Int) -> Unit)? = null,
     onStepValueChangeFinished: (() -> Unit)? = null,
+    variant: NgFormNumberSettingRowVariant = NgFormNumberSettingRowVariant.OUTLINED,
+    isError: Boolean = false,
 ) {
     val colors = NgTheme.colors
+    val compact = variant == NgFormNumberSettingRowVariant.COMPACT_CHEVRONS
     val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
@@ -891,7 +920,11 @@ fun NgFormNumberSettingRow(
         }
     }
     val contentAlpha = if (enabled) 1f else 0.45f
-    val borderColor = Color(if (focused) colors.primary else colors.outline)
+    val borderColor = Color(when {
+        isError -> colors.error
+        focused -> colors.primary
+        else -> colors.outline
+    })
     val stepControlsVisible = valueRange != null &&
         onStepValueChange != null &&
         onStepValueChangeFinished != null
@@ -925,12 +958,18 @@ fun NgFormNumberSettingRow(
         onStepValueChangeFinished?.invoke()
     }
 
+    val verticalPadding = if (compact) 2.dp else 7.dp
+    val endPadding = if (compact) 0.dp else formRowEndPadding
+    // Align the compact step button's center to the form choice arrow while keeping its touch width.
+    val countControlModifier = if (compact && stepControlsVisible) {
+        Modifier.offset(x = (formNumberStepWidth - formChoiceArrowSize) / 2 - formRowEndPadding)
+    } else Modifier
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = if (summary.isNullOrBlank()) 48.dp else 56.dp)
             .alpha(contentAlpha)
-            .padding(start = 14.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
+            .padding(start = 14.dp, end = endPadding, top = verticalPadding, bottom = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
@@ -948,10 +987,10 @@ fun NgFormNumberSettingRow(
             if (!summary.isNullOrBlank()) {
                 Text(
                     text = summary,
-                    color = Color(colors.onSurfaceVariant),
+                    color = Color(if (isError) colors.error else colors.onSurfaceVariant),
                     fontSize = 11.sp,
                     lineHeight = 14.sp,
-                    maxLines = 1,
+                    maxLines = if (isError) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -969,22 +1008,31 @@ fun NgFormNumberSettingRow(
                 },
                 onLongPressStep = { stepValue(delta = -1, repeat = true) },
                 onLongPressFinished = ::finishRepeatedValue,
+                chevronIcon = if (compact) R.drawable.ic_chevron_left_20 else null,
+                modifier = countControlModifier,
             )
-            Spacer(Modifier.width(4.dp))
+            if (!compact) Spacer(Modifier.width(4.dp))
         }
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier
-                .width(if (stepControlsVisible && valueWidth > 80.dp) 80.dp else valueWidth)
-                .height(34.dp)
-                .semantics { contentDescription = title },
+            modifier = countControlModifier
+                .width(when {
+                    compact -> 44.dp
+                    stepControlsVisible -> valueWidth.coerceAtMost(80.dp)
+                    else -> valueWidth
+                })
+                .height(if (compact) 44.dp else 34.dp)
+                .semantics {
+                    contentDescription = title
+                    if (isError && summary != null) error(summary)
+                },
             enabled = enabled,
             singleLine = true,
             textStyle = TextStyle(
                 fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface),
-                fontSize = 13.sp,
+                fontSize = if (compact) 14.sp else 13.sp,
                 lineHeight = 16.sp,
                 textAlign = TextAlign.Center,
             ),
@@ -993,26 +1041,43 @@ fun NgFormNumberSettingRow(
             cursorBrush = SolidColor(Color(colors.primary)),
             interactionSource = interactionSource,
             decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(34.dp)
-                        .clip(shape)
-                        .background(Color(colors.inputContainer))
-                        .border(
-                            width = if (focused) 1.5.dp else 1.dp,
-                            color = borderColor,
-                            shape = shape,
+                if (compact) {
+                    val chipShape = RoundedCornerShape(8.dp)
+                    Box(Modifier.fillMaxWidth().height(44.dp), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier.fillMaxWidth().height(24.dp)
+                                .background(Color(colors.onSurface).copy(alpha = 0.08f), chipShape)
+                                .then(
+                                    if (focused || isError) Modifier.border(1.dp, borderColor, chipShape)
+                                    else Modifier,
+                                ),
                         )
-                        .padding(horizontal = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    innerTextField()
+                        Box(Modifier.padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+                            innerTextField()
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                            .clip(shape)
+                            .background(Color(colors.inputContainer))
+                            .border(
+                                width = if (focused) 1.5.dp else 1.dp,
+                                color = borderColor,
+                                shape = shape,
+                            )
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        innerTextField()
+                    }
                 }
             },
         )
         if (stepControlsVisible) {
-            Spacer(Modifier.width(4.dp))
+            if (!compact) Spacer(Modifier.width(4.dp))
             NgStepperButton(
                 text = "+",
                 contentDescription = "${stringResource(R.string.plus)} $title",
@@ -1024,6 +1089,8 @@ fun NgFormNumberSettingRow(
                 },
                 onLongPressStep = { stepValue(delta = 1, repeat = true) },
                 onLongPressFinished = ::finishRepeatedValue,
+                chevronIcon = if (compact) R.drawable.ic_chevron_right_20 else null,
+                modifier = countControlModifier,
             )
         }
     }
@@ -1305,13 +1372,15 @@ enum class NgFormMultilineFieldVariant {
     OUTLINED,
     DIALOG_UNDERLINE,
     COMPACT_UNDERLINE,
+    INSET_ACTION,
 }
 
 /**
  * NG 多行编辑字段，供简介、说明等正文型表单复用。
  *
  * DIALOG_UNDERLINE 保留旧规则弹窗的浮动标签与底部输入线；
- * COMPACT_UNDERLINE 提供变量输入所需的紧凑下划线和尾部操作。
+ * COMPACT_UNDERLINE 提供变量输入所需的紧凑下划线和尾部操作；
+ * INSET_ACTION 将操作放在同一底板的行尾下方，随输入区一起增高。
  */
 @Composable
 fun NgFormMultilineField(
@@ -1328,16 +1397,23 @@ fun NgFormMultilineField(
     containerColor: Color? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     variant: NgFormMultilineFieldVariant = NgFormMultilineFieldVariant.OUTLINED,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val colors = NgTheme.colors
-    val shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp)
+    val insetAction = variant == NgFormMultilineFieldVariant.INSET_ACTION
+    val shape = RoundedCornerShape(
+        (if (insetAction) NgTheme.shapes.mediumDp else NgTheme.shapes.smallDp).dp,
+    )
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     val borderColor = Color(if (focused) colors.primary else colors.outline)
     val contentAlpha = if (enabled) 1f else 0.45f
     val compactUnderlined = variant == NgFormMultilineFieldVariant.COMPACT_UNDERLINE
     val underlined = variant == NgFormMultilineFieldVariant.DIALOG_UNDERLINE || compactUnderlined
+    val emptyHint = placeholder?.takeIf { value.isEmpty() && it.isNotBlank() }
+    val hideHint = insetAction && focused
     Column(modifier = modifier.fillMaxWidth()) {
         label?.takeIf { it.isNotBlank() }?.let {
             Text(
@@ -1357,7 +1433,12 @@ fun NgFormMultilineField(
             onValueChange = onValueChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = minHeight, max = maxHeight),
+                .heightIn(min = minHeight, max = maxHeight)
+                .then(
+                    if (hideHint && emptyHint != null) {
+                        Modifier.semantics { contentDescription = emptyHint }
+                    } else Modifier
+                ),
             enabled = enabled,
             textStyle = TextStyle(
                 fontFamily = NgTheme.fontFamily,
@@ -1370,11 +1451,12 @@ fun NgFormMultilineField(
             minLines = minLines,
             maxLines = maxLines,
             visualTransformation = visualTransformation,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             decorationBox = { innerTextField ->
+                val fieldModifier = Modifier.fillMaxWidth().heightIn(min = minHeight, max = maxHeight)
                 val decorationModifier = if (underlined) {
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = minHeight, max = maxHeight)
+                    fieldModifier
                         .drawBehind {
                             val strokeWidth = (if (focused) 1.5.dp else 1.dp).toPx()
                             val y = size.height - strokeWidth / 2f
@@ -1390,9 +1472,7 @@ fun NgFormMultilineField(
                             else Modifier.padding(horizontal = 2.dp, vertical = 8.dp)
                         )
                 } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = minHeight, max = maxHeight)
+                    fieldModifier
                         .clip(shape)
                         .background(
                             containerColor ?: Color(
@@ -1402,15 +1482,18 @@ fun NgFormMultilineField(
                         )
                         .border(
                             width = if (focused) 1.5.dp else 1.dp,
-                            color = borderColor.copy(alpha = contentAlpha),
+                            color = if (insetAction && !focused) {
+                                Color(colors.outlineVariant).copy(alpha = 0.55f * contentAlpha)
+                            } else {
+                                borderColor.copy(alpha = contentAlpha)
+                            },
                             shape = shape,
                         )
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
                 }
                 val fieldContent: @Composable () -> Unit = {
-                    if (value.isEmpty() && !placeholder.isNullOrBlank()) {
+                    if (!hideHint && emptyHint != null) {
                         Text(
-                            text = placeholder,
+                            text = emptyHint,
                             color = Color(colors.onSurfaceVariant).copy(alpha = 0.75f),
                             fontSize = 15.sp,
                             lineHeight = 22.sp,
@@ -1418,8 +1501,19 @@ fun NgFormMultilineField(
                     }
                     innerTextField()
                 }
-                if (compactUnderlined) {
-                    Row(
+                when {
+                    insetAction -> Row(
+                        modifier = decorationModifier.padding(start = 12.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        Box(
+                            modifier = Modifier.weight(1f).align(Alignment.CenterVertically)
+                                .padding(end = 5.dp, top = 10.dp, bottom = 10.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) { fieldContent() }
+                        trailingContent?.invoke()
+                    }
+                    compactUnderlined -> Row(
                         modifier = decorationModifier,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -1429,8 +1523,8 @@ fun NgFormMultilineField(
                         ) { fieldContent() }
                         if (trailingContent != null) trailingContent() else Spacer(Modifier.width(10.dp))
                     }
-                } else {
-                    Box(modifier = decorationModifier) { fieldContent() }
+                    underlined -> Box(decorationModifier) { fieldContent() }
+                    else -> Box(decorationModifier.padding(horizontal = 12.dp, vertical = 10.dp)) { fieldContent() }
                 }
             },
         )
@@ -1693,6 +1787,7 @@ fun NgFormSwitchRow(
     enabled: Boolean = true,
     density: NgFormDensity = NgFormDensity.REGULAR,
     variant: NgFormSwitchRowVariant = NgFormSwitchRowVariant.DEFAULT,
+    switchModifier: Modifier = Modifier,
 ) {
     val compact = density == NgFormDensity.COMPACT
     val grouped = variant == NgFormSwitchRowVariant.GROUPED
@@ -1730,7 +1825,8 @@ fun NgFormSwitchRow(
         NgSwitchControl(
             checked = checked,
             enabled = enabled,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = onCheckedChange,
+            modifier = switchModifier,
         )
     }
 }

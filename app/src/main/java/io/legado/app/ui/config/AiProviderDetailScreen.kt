@@ -195,7 +195,7 @@ private fun AiProviderConfigTab(
                 ProviderToolbarIcon(state.providerIconRes)
             },
             trailingContent = {
-                AiProviderConfigActions(
+                AiConfigHelpResetActions(
                     onHelp = onHelp,
                     onReset = { onFormAction(AiProviderFormScreenAction.ResetRequested) },
                 )
@@ -218,7 +218,7 @@ private fun AiProviderConfigTab(
 }
 
 @Composable
-private fun AiProviderConfigActions(
+internal fun AiConfigHelpResetActions(
     onHelp: (() -> Unit)?,
     onReset: () -> Unit,
 ) {

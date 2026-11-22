@@ -118,7 +118,10 @@ class AiProviderWorkflowTest {
         val first = assistant.send(
             messages = mutableListOf(assistant.newUserMessage("请读 https://example.org/book")),
             conversationId = "deepseek-web-fixture", turnId = "read", allowWeb = true,
-            onWebUpdate = { updates += it },
+            onWebUpdate = { update, access ->
+                assertEquals(AiWebAccess.Native, access)
+                updates += update
+            },
         )
         val (firstHost, firstBody) = requests.remove()
         assertEquals("api.deepseek.com", firstHost)
@@ -166,6 +169,224 @@ class AiProviderWorkflowTest {
             .map { it.stringOrNull("type") }.filter { it != "function" })
         assertFalse(responsesBody.toString().contains("read-signature"))
         assertEquals(listOf(AiWebSource("https://example.org/publisher", "Publisher")), switched.webActivity?.sources)
+    }
+
+    @Test
+    fun assistantUsesStandaloneSearchAndFetchWithoutMixingRoutesOrCredentials() = runBlocking {
+        ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
+        val model = AiModelRegistry.enrich(AiModel("deepseek-flash"))
+        val official = AiDefaultProviders.all().single { it.id == "deepseek" }
+            .copy(apiKey = "chat-official", streamResponseEnabled = false, useResponsesApi = true)
+            .withFetchedModels(listOf(model))
+        val senseTime = AiDefaultProviders.all().single { it.id == "sensenova" }
+            .copy(apiKey = "chat-sense", streamResponseEnabled = false).withFetchedModels(listOf(model))
+        AiProviderStore.saveProviders(listOf(official, senseTime))
+        assertTrue(AiConfig.saveAssistantModel(senseTime.id, model.id))
+        AiConfig.internalMcpEnabled = false
+        val auto = AiExternalSearchSettings(
+            deepSeek = AiExternalSearchService(apiKey = "standalone-key", enabled = true),
+            selectedService = AiExternalSearchProvider.DEEPSEEK.id,
+            backupEnabled = true,
+        )
+        val previous = AiExternalSearchStore.current()
+        val searchRequests = LinkedBlockingQueue<Pair<String, JsonObject>>()
+        val modelRequests = LinkedBlockingQueue<Pair<String, JsonObject>>()
+        val modelReplies = LinkedBlockingQueue<String>()
+        val fetchStatus = AtomicInteger(200)
+        val modelClient = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            assertEquals(if (request.url.host == "api.deepseek.com") "Bearer chat-official" else "Bearer chat-sense",
+                request.header("Authorization"))
+            modelRequests.add(request.url.encodedPath to JsonParser.parseString(
+                Buffer().apply { request.body!!.writeTo(this) }.readUtf8(),
+            ).asJsonObject)
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(modelReplies.remove().toResponseBody("application/json".toMediaType()))
+                .build()
+        }.build()
+        val searchClient = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            assertEquals("Bearer standalone-key", request.header("Authorization"))
+            assertEquals("api.deepseek.com", request.url.host)
+            val path = request.url.encodedPath
+            searchRequests.add(path to JsonParser.parseString(
+                Buffer().apply { request.body!!.writeTo(this) }.readUtf8(),
+            ).asJsonObject)
+            val search = path == "/v1/tools/search"
+            if (search) AiExternalSearchStore.update { it.copy(deepSeek = it.deepSeek.copy(enabled = false)) }
+            val status = if (search) 200 else fetchStatus.get()
+            val reply = when {
+                search -> """{"results":[{"url":"https://example.org/book","title":"Publisher","summary":"An update this week."}]}"""
+                status == 200 -> """{"title":"Chapter catalog","content":"Chapter 32 lists the launch date."}"""
+                else -> """{"error":{"message":"Balance required"}}"""
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(status).message("Fixture")
+                .body(reply.toResponseBody("application/json".toMediaType()))
+                .build()
+        }.build()
+        val client = AiChatClient(externalSearchClient = { AiExternalSearchClient(searchClient) }) { modelClient }
+        val updates = mutableListOf<AiWebActivity>()
+        var durable: AiChatDurableContextUpdate? = null
+        val functionNames = setOf("search_web", "read_web_url")
+        val link = "https://example.org/book"
+        val conversationId = "standalone-web-fixture"
+        try {
+            AiExternalSearchStore.update { auto }
+            modelReplies.add("""
+                {"choices":[{"message":{"role":"assistant","content":"","tool_calls":[
+                  {"id":"call_s1","type":"function","function":{"name":"search_web","arguments":"{\"query\":\"book update\"}"}},
+                  {"id":"call_s2","type":"function","function":{"name":"search_web","arguments":"{\"query\":\" book update \"}"}}
+                ]},"finish_reason":"tool_calls"}]}
+            """.trimIndent())
+            modelReplies.add("""{"choices":[{"message":{"role":"assistant","content":"Found the update."},"finish_reason":"stop"}]}""")
+            val search = client.send(
+                mutableListOf(client.newUserMessage("What is the latest update?")), conversationId, "search",
+                allowWeb = true,
+                onWebUpdate = { update, access ->
+                    assertEquals(AiWebAccess.External(auto.deepSeek), access)
+                    updates += update
+                },
+                onDurableContextUpdate = { durable = it },
+                onToolConfirmationRequired = { error("Web search must not need write approval") },
+            )
+            assertEquals("Found the update.", search.content)
+            assertEquals(listOf(AiWebSource(link, "Publisher")), search.webActivity?.sources)
+            assertTrue(search.webActivity?.providerLabel?.contains("DeepSeek") == true)
+            assertEquals(search.webActivity, durable?.webActivity)
+            assertTrue(updates.any { it.activeAction == AiWebActivityAction.SEARCH })
+            assertNull(updates.last().activeAction)
+            assertTrue(search.toolTrace.isEmpty())
+            assertEquals(2, search.toolReceipts.size)
+            val (searchPath, searchBody) = searchRequests.remove()
+            assertEquals("/v1/tools/search", searchPath)
+            assertEquals("book update", searchBody.stringOrNull("query"))
+            assertTrue(searchRequests.isEmpty())
+            repeat(2) { step ->
+                val (_, request) = modelRequests.remove()
+                val tools = request.arrayOrNull("tools").objectParts()
+                assertTrue(tools.all { it.stringOrNull("type") == "function" })
+                assertEquals(functionNames, tools.map { it.objectOrNull("function")?.stringOrNull("name") }.toSet())
+                assertFalse(request.toString().contains("standalone-key"))
+                if (step == 1) assertTrue(request.toString().contains("An update this week."))
+            }
+
+            AiExternalSearchStore.update { auto.copy(routing = AiWebRoutingMode.EXTERNAL) }
+            assertTrue(AiConfig.saveAssistantModel(official.id, model.id))
+            var followUp = (search.contextMessages + client.newUserMessage("Read $link")).toMutableList()
+            for (status in listOf(200, 402)) {
+                updates.clear()
+                fetchStatus.set(status)
+                modelReplies.add("""
+                    {"status":"completed","output":[{"type":"function_call","call_id":"call_r$status",
+                      "name":"read_web_url","arguments":"{\"url\":\"$link\"}","status":"completed"}]}
+                """.trimIndent())
+                modelReplies.add("""
+                    {"status":"completed","output":[{"type":"message","role":"assistant",
+                      "content":[{"type":"output_text","text":"Read result $status."}]}]}
+                """.trimIndent())
+                val read = client.send(
+                    followUp, conversationId, "read-$status", allowWeb = true,
+                    onWebUpdate = { update, access ->
+                        assertEquals(AiWebAccess.External(auto.deepSeek), access)
+                        updates += update
+                    },
+                )
+                assertEquals("Read result $status.", read.content)
+                assertTrue(updates.any { it.activeAction == AiWebActivityAction.READ })
+                assertNull(updates.last().activeAction)
+                val (fetchPath, fetchBody) = searchRequests.remove()
+                assertEquals("/v1/tools/fetch", fetchPath)
+                assertEquals(setOf("url"), fetchBody.keySet())
+                assertEquals(link, fetchBody.stringOrNull("url"))
+                assertTrue(searchRequests.isEmpty())
+                val firstRequest = modelRequests.remove()
+                val secondRequest = modelRequests.remove()
+                for ((path, request) in listOf(firstRequest, secondRequest)) {
+                    assertTrue(path.endsWith("/responses"))
+                    val tools = request.arrayOrNull("tools").objectParts()
+                    assertTrue(tools.all { it.stringOrNull("type") == "function" })
+                    assertEquals(functionNames, tools.map { it.stringOrNull("name") }.toSet())
+                    assertFalse(request.toString().contains("standalone-key"))
+                }
+                if (status == 200) {
+                    assertEquals(listOf(AiWebSource(link, "Chapter catalog")), read.webActivity?.sources)
+                    assertTrue(secondRequest.second.toString().contains("Chapter 32 lists the launch date."))
+                } else {
+                    assertTrue(read.webActivity?.externalError?.contains("402") == true)
+                    assertTrue(read.webActivity?.sources?.isEmpty() == true)
+                    assertTrue(secondRequest.second.toString().contains("HTTP 402"))
+                }
+                followUp = (read.contextMessages + client.newUserMessage("Read this again: $link")).toMutableList()
+            }
+
+            AiExternalSearchStore.update { it.copy(webEnabled = false) }
+            for (id in listOf(conversationId, "new-web-fixture")) {
+                modelReplies.add("""
+                    {"status":"completed","output":[{"type":"message","role":"assistant",
+                      "content":[{"type":"output_text","text":"Web disabled."}]}]}
+                """.trimIndent())
+                val disabled = client.send(
+                    mutableListOf(client.newUserMessage("Read $link")), id, "disabled", allowWeb = true,
+                    onWebUpdate = { _, _ -> error("The global switch is off") },
+                )
+                assertNull(disabled.webActivity)
+                assertTrue(modelRequests.remove().second.arrayOrNull("tools").objectParts().isEmpty())
+                assertTrue(searchRequests.isEmpty())
+            }
+        } finally {
+            AiExternalSearchStore.update { previous }
+        }
+    }
+
+    @Test
+    fun readingTheSameUrlUsesTheSelectedSearchProviderAndKeepsReceiptsSeparate() = runBlocking {
+        ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
+        val link = "https://example.org/book"
+        val arguments = JsonObject().apply { addProperty("url", link) }
+        val hosts = LinkedBlockingQueue<String>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            hosts += request.url.host
+            val reply = when (request.url.host) {
+                "open.feedcoopapi.com" -> """{"Result":{"Data":{"StatusCode":200,"Url":"$link","Title":"目录","ContentText":"豆包正文"}}}"""
+                "api.tavily.com" -> """{"results":[{"url":"$link","raw_content":"Tavily article"}],"failed_results":[]}"""
+                else -> error("Unexpected service: " + request.url.host)
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(reply.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val receipts = mutableListOf<String>()
+        for (provider in listOf(AiExternalSearchProvider.DOUBAO, AiExternalSearchProvider.TAVILY)) {
+            val service = AiExternalSearchService(provider, apiKey = "same-fixture-key", enabled = true)
+            val turn = AiExternalWebTurn(service, AiExternalSearchClient(client)) {}
+            val tool = requireNotNull(turn.tool("read_web_url"))
+            val receipt = turn.receiptArguments(tool, arguments)
+            assertEquals(provider.id, receipt.first().asString)
+            assertFalse(receipt.toString().contains(service.apiKey))
+            receipts += receipt.toString()
+            val alternative = when (provider) {
+                AiExternalSearchProvider.DOUBAO -> service.copy(doubaoMode = AiDoubaoSearchMode.GLOBAL)
+                AiExternalSearchProvider.TAVILY -> service.copy(tavilySearchDepth = AiTavilySearchDepth.ADVANCED)
+                else -> error("Unexpected provider: $provider")
+            }
+            val alternativeTurn = AiExternalWebTurn(alternative, AiExternalSearchClient(client)) {}
+            assertEquals(receipt, alternativeTurn.receiptArguments(tool, arguments))
+            val query = JsonObject().apply { addProperty("query", "book updates") }
+            val defaultSearch = turn.receiptArguments(AiExternalSearchTool.SEARCH, query)
+            val alternativeSearch = alternativeTurn.receiptArguments(AiExternalSearchTool.SEARCH, query)
+            assertEquals("book updates", defaultSearch[4].asString)
+            assertEquals(5, defaultSearch.size())
+            assertFalse(defaultSearch == alternativeSearch)
+            val result = turn.execute(tool, arguments)
+            assertEquals(result, turn.execute(tool, arguments))
+            val page = requireNotNull(result.arrayOrNull("results")).single().asJsonObject
+            assertEquals(if (provider == AiExternalSearchProvider.DOUBAO) "豆包正文" else "Tavily article", page["content"].asString)
+            turn.acceptResult(result)
+            assertTrue(turn.settled?.providerLabel?.contains(service.displayName) == true)
+            assertEquals(link, turn.settled?.sources?.single()?.url)
+        }
+        assertEquals(2, receipts.distinct().size)
+        assertEquals(listOf("open.feedcoopapi.com", "api.tavily.com"), hosts.toList())
     }
 
     @Test

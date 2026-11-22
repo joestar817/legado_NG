@@ -91,6 +91,7 @@ fun NgManagementListCard(
     val isCompactGrid = variant == NgManagementListCardVariant.COMPACT_GRID
     val isMultilineSummary = variant == NgManagementListCardVariant.MULTILINE_SUMMARY
     val isProviderTwoRow = variant == NgManagementListCardVariant.PROVIDER_TWO_ROW
+    val inlineSummaryTag = summaryTag?.takeIf { isProviderTwoRow && detailTags.isNotEmpty() }
     val compactLine = size == NgManagementListCardSize.COMPACT_SINGLE_LINE
     require(!compactLine || (summary.isNullOrEmpty() && headerTags.isEmpty() && detailTags.isEmpty() && summaryTag == null))
     val shape = RoundedCornerShape(
@@ -193,9 +194,14 @@ fun NgManagementListCard(
             }
             if (detailTags.isNotEmpty()) {
                 Spacer(Modifier.height(if (isCompactGrid) 3.dp else 6.dp))
-                NgStatusTagRow(tags = detailTags, header = false, providerRow = isProviderTwoRow)
+                NgStatusTagRow(
+                    tags = detailTags,
+                    header = false,
+                    providerRow = isProviderTwoRow,
+                    leadingTag = inlineSummaryTag,
+                )
             }
-            if (summaryTag != null) {
+            if (summaryTag != null && inlineSummaryTag == null) {
                 Spacer(Modifier.height(if (isProviderTwoRow) 6.dp else 4.dp))
                 NgStatusTag(spec = summaryTag)
             }
@@ -375,6 +381,7 @@ private fun NgStatusTagRow(
     header: Boolean,
     modifier: Modifier = Modifier,
     providerRow: Boolean = false,
+    leadingTag: NgStatusTagSpec? = null,
 ) {
     if (header) {
         require(tags.all { it.style == NgStatusTagStyle.COMPACT }) {
@@ -391,6 +398,10 @@ private fun NgStatusTagRow(
             .clipToBounds(),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (leadingTag != null) {
+            NgStatusTag(spec = leadingTag, modifier = Modifier.weight(1f, fill = false))
+            Spacer(Modifier.width(4.dp))
+        }
         tags.forEachIndexed { index, tag ->
             if (index > 0) {
                 Spacer(

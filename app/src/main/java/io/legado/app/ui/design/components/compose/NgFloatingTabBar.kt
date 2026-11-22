@@ -59,6 +59,8 @@ enum class NgFloatingTabBarVariant {
     DRAWER_SELECTION,
     /** 外观模式单选：图标和文字横排，沿用标准 Dock 的选中填充。 */
     APPEARANCE_SELECTION,
+    /** 表单行尾的单选控件，白色外框内用浅主题色表示选中。 */
+    FORM_SELECTION,
 }
 enum class NgFloatingTabBarSize { STANDARD, COMPACT }
 
@@ -82,8 +84,9 @@ fun NgFloatingTabBar(
     }
     val drawerSelection = variant == NgFloatingTabBarVariant.DRAWER_SELECTION
     val appearanceSelection = variant == NgFloatingTabBarVariant.APPEARANCE_SELECTION
+    val formSelection = variant == NgFloatingTabBarVariant.FORM_SELECTION
     val outerShape = RoundedCornerShape(if (drawerSelection) 14.dp else 12.dp)
-    val height = if (drawerSelection) 43.dp
+    val height = if (drawerSelection || formSelection) 43.dp
         else if (size == NgFloatingTabBarSize.COMPACT) 40.dp else 48.dp
     val tabs: @Composable RowScope.() -> Unit = {
         items.forEachIndexed { index, item ->
@@ -99,7 +102,8 @@ fun NgFloatingTabBar(
                 else -> Color(NgTheme.colors.primary)
             }
             val selectedContainerColor = when (variant) {
-                NgFloatingTabBarVariant.STANDARD -> Color(selectionColors?.container ?: NgTheme.colors.selectedContainer)
+                NgFloatingTabBarVariant.STANDARD,
+                NgFloatingTabBarVariant.FORM_SELECTION -> Color(selectionColors?.container ?: NgTheme.colors.selectedContainer)
                 NgFloatingTabBarVariant.APPEARANCE_SELECTION ->
                     Color(selectionColors?.container ?: NgTheme.colors.selectedContainer)
                 NgFloatingTabBarVariant.DRAWER_SELECTION -> ngDrawerContentCardColor()
@@ -133,13 +137,21 @@ fun NgFloatingTabBar(
                     .selectable(
                         selected = selected,
                         enabled = enabled,
-                        role = semanticRole ?: if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) Role.RadioButton else Role.Tab,
+                        role = semanticRole ?: if (formSelection || variant == NgFloatingTabBarVariant.MANGA_SETTINGS) {
+                            Role.RadioButton
+                        } else {
+                            Role.Tab
+                        },
                         onClick = { onTabSelected(index) }
                     )
                     .semantics(mergeDescendants = true) {
                         item.contentDescription?.let { contentDescription = it }
                     }
-                    .padding(horizontal = if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) 0.dp else 10.dp),
+                    .padding(horizontal = when {
+                        variant == NgFloatingTabBarVariant.MANGA_SETTINGS -> 0.dp
+                        formSelection -> 4.dp
+                        else -> 10.dp
+                    }),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -232,19 +244,18 @@ fun NgFloatingTabBar(
         )
 
         NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT,
-        NgFloatingTabBarVariant.SOLID_WHITE_CONTENT -> Row(
+        NgFloatingTabBarVariant.SOLID_WHITE_CONTENT,
+        NgFloatingTabBarVariant.FORM_SELECTION -> Row(
             modifier = modifier
                 .fillMaxWidth()
                 .height(height)
                 .clip(outerShape)
                 .background(
-                    colorResource(
-                        if (variant == NgFloatingTabBarVariant.SOLID_WHITE_CONTENT) {
-                            R.color.ng_surface_card
-                        } else {
-                            R.color.ng_neutral_container
-                        }
-                    )
+                    when (variant) {
+                        NgFloatingTabBarVariant.FORM_SELECTION -> ngDrawerContentCardColor()
+                        NgFloatingTabBarVariant.SOLID_WHITE_CONTENT -> colorResource(R.color.ng_surface_card)
+                        else -> colorResource(R.color.ng_neutral_container)
+                    },
                 )
                 .border(
                     0.6.dp,

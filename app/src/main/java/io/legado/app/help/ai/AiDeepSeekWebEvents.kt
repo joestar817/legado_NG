@@ -21,9 +21,11 @@ data class AiWebActivity(
     @SerializedName("failed_links") val failedLinks: List<String> = emptyList(),
     @SerializedName("search_failed") val searchFailed: Boolean = false,
     @SerializedName("active_action") val activeAction: AiWebActivityAction? = null,
+    @SerializedName("provider_label") val providerLabel: String? = null,
+    @SerializedName("external_error") val externalError: String? = null,
 ) {
     fun settledOrNull(): AiWebActivity? = copy(activeAction = null).takeIf {
-        it.sources.isNotEmpty() || it.failedLinks.isNotEmpty() || it.searchFailed
+        it.sources.isNotEmpty() || it.failedLinks.isNotEmpty() || it.searchFailed || it.externalError != null
     }
 }
 

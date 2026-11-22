@@ -706,12 +706,12 @@ private fun AiModelSelectionCard(
                 }
             }
         }
-        AiModelSelectionIndicator(selected)
+        AiSelectionCardIndicator(selected)
     }
 }
 
 @Composable
-private fun BoxScope.AiModelSelectionIndicator(selected: Boolean) {
+internal fun BoxScope.AiSelectionCardIndicator(selected: Boolean) {
     if (!selected) return
     Box(
         modifier = Modifier.matchParentSize(),

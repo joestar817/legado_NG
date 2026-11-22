@@ -4,11 +4,8 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,14 +16,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
-import io.legado.app.ui.design.components.NgManagementListCardVariant
 import io.legado.app.ui.design.components.NgManagementTrailing
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagStyle
@@ -38,8 +33,6 @@ import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
 import io.legado.app.ui.design.components.compose.NgListState
 import io.legado.app.ui.design.components.compose.NgListStateContent
-import io.legado.app.ui.design.components.compose.NgManagementLeadingIcon
-import io.legado.app.ui.design.components.compose.NgManagementListCard
 import io.legado.app.ui.design.components.compose.NgManagementTrailingIcon
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
@@ -48,7 +41,6 @@ import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.components.compose.ngDraggedItem
 import io.legado.app.ui.design.components.compose.ngReorderHandle
 import io.legado.app.ui.design.components.compose.rememberNgLazyReorderState
-import io.legado.app.ui.design.theme.NgTheme
 
 private const val PROVIDER_MENU_ADD_OPENAI = 0x4E470101
 private const val PROVIDER_MENU_ADD_CLAUDE = 0x4E470102
@@ -158,12 +150,7 @@ internal fun AiProviderListScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 state = reorderState.listState,
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    top = 12.dp,
-                    end = 16.dp,
-                    bottom = 24.dp
-                ),
+                contentPadding = aiServiceListPadding,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(
@@ -173,47 +160,6 @@ internal fun AiProviderListScreen(
                 ) { provider ->
                     val canReorder = state.canRequestReorder(provider)
                     val dragDescription = stringResource(R.string.ai_provider_drag_sort)
-                    val hasDomain = provider.summary.isNotBlank()
-                    val statusTags = buildList {
-                        add(
-                            NgStatusTagSpec(
-                                text = stringResource(
-                                    if (provider.enabled) {
-                                        R.string.enabled
-                                    } else {
-                                        R.string.disabled
-                                    }
-                                ),
-                                variant = if (provider.enabled) {
-                                    NgStatusTagVariant.SUCCESS
-                                } else {
-                                    NgStatusTagVariant.WARNING
-                                },
-                                style = NgStatusTagStyle.COMPACT,
-                            )
-                        )
-                        if (provider.keyConfigured) {
-                            add(
-                                NgStatusTagSpec(
-                                    text = provider.modelCountText,
-                                    variant = if (provider.modelCountWarning) {
-                                        NgStatusTagVariant.WARNING
-                                    } else {
-                                        NgStatusTagVariant.INFO
-                                    },
-                                    style = NgStatusTagStyle.COMPACT,
-                                )
-                            )
-                        } else {
-                            add(
-                                NgStatusTagSpec(
-                                    text = stringResource(R.string.ai_provider_no_api_key),
-                                    variant = NgStatusTagVariant.WARNING,
-                                    style = NgStatusTagStyle.COMPACT,
-                                )
-                            )
-                        }
-                    }
                     NgSwipeToDelete(
                         deletable = provider.deletable,
                         reordering = reorderState.isDragging,
@@ -224,25 +170,17 @@ internal fun AiProviderListScreen(
                             .ngDraggedItem(reorderState, provider.id)
                             .testTag("management_item_${provider.id}")
                     ) {
-                        NgManagementListCard(
+                        AiServiceListCard(
                             title = provider.name,
-                            variant = NgManagementListCardVariant.PROVIDER_TWO_ROW,
-                            summaryTag = provider.summary.takeIf { hasDomain }?.let {
-                                NgStatusTagSpec(
-                                    text = it,
-                                    variant = NgStatusTagVariant.INFO,
-                                    style = NgStatusTagStyle.COMPACT,
-                                )
-                            },
-                            containerColor = colorResource(
-                                R.color.ng_translucent_management_card_surface
+                            host = provider.summary,
+                            iconRes = provider.iconRes,
+                            enabled = provider.enabled,
+                            keyConfigured = provider.keyConfigured,
+                            infoTag = NgStatusTagSpec(
+                                text = provider.modelCountText,
+                                variant = if (provider.modelCountWarning) NgStatusTagVariant.WARNING else NgStatusTagVariant.INFO,
+                                style = NgStatusTagStyle.COMPACT,
                             ),
-                            borderColor = colorResource(
-                                R.color.ng_translucent_management_card_stroke
-                            ),
-                            borderWidth = 0.6.dp,
-                            headerTags = if (hasDomain) statusTags else emptyList(),
-                            detailTags = if (hasDomain) emptyList() else statusTags,
                             trailingContent = if (canReorder) {
                                 {
                                     NgManagementTrailingIcon(
@@ -264,16 +202,6 @@ internal fun AiProviderListScreen(
                                     AiProviderListScreenAction.ProviderClicked(provider.id)
                                 )
                             },
-                            leading = {
-                                NgManagementLeadingIcon(
-                                    iconRes = provider.iconRes,
-                                    contentDescription = null,
-                                    tint = Color.Unspecified,
-                                    containerColor = colorResource(
-                                        R.color.ng_translucent_management_avatar_surface
-                                    ),
-                                )
-                            }
                         )
                     }
                 }

@@ -20,19 +20,13 @@ import io.legado.app.help.ai.runtime.AgentHookRuntime
 import io.legado.app.help.ai.runtime.ToolApprovalStatus
 import io.legado.app.help.ai.runtime.ToolExecutionReceipt
 import io.legado.app.help.ai.runtime.ToolExecutionStatus
-import io.legado.app.help.http.await
 import io.legado.app.web.mcp.McpInternalChannel
 import io.legado.app.web.mcp.McpInternalToolCatalog
 import io.legado.app.web.mcp.McpToolSideEffect
 import io.legado.app.web.mcp.McpToolExecutionContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -47,9 +41,12 @@ internal class AiChatStreamResponseException(message: String) : IOException(mess
 
 private class AiChatHttpResponseException(val status: Int) : IOException()
 
-class AiChatClient internal constructor(private val clientForTimeout: (Int) -> OkHttpClient) {
+class AiChatClient internal constructor(
+    private val externalSearchClient: () -> AiExternalSearchClient = { AiExternalSearchClient() },
+    private val clientForTimeout: (Int) -> OkHttpClient,
+) {
 
-    constructor() : this(::aiHttpClient)
+    constructor() : this(clientForTimeout = ::aiHttpClient)
 
     internal suspend fun testModelGeneration(
         setting: AiProviderSetting,
@@ -222,7 +219,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
         )
     }
 
-    suspend fun send(
+    internal suspend fun send(
         messages: MutableList<JsonObject>,
         conversationId: String,
         turnId: String,
@@ -239,7 +236,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
         enabledMcpCapabilityIds: List<String> = emptyList(),
         allowWeb: Boolean = false,
         webUserText: String? = null,
-        onWebUpdate: (AiWebActivity) -> Unit = {},
+        onWebUpdate: (AiWebActivity, AiWebAccess) -> Unit = { _, _ -> },
         onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
     ): AiChatTurnResult {
         val selection = runCatching { AiConfig.requireAssistantModel() }.getOrElse {
@@ -257,15 +254,27 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
         ) ?: assistantParams
         val params = AiConfig.assistantModelReasoning(setting, model).applyTo(outputParams)
         val webRoute = setting.deepSeekWebRoute(model, AiModelGenerationRoute(protocol, null))
-        val webPlan = webRoute?.plan(
+        val webPlan = AiExternalSearchStore.current().resolveWebToolPlan(
+            nativeRoute = webRoute,
+            model = model,
             allowed = allowWeb,
             userText = webUserText ?: messages.lastOrNull { it.stringOrNull("role") == "user" }
                 ?.get("content").contentText(),
             thinkingOff = params.disableThinking && protocol != AiModelGenerationTestProtocol.CLAUDE_MESSAGES,
-        ) ?: AiWebToolPlan.Off
-        val webEvents = if (webPlan is AiWebToolPlan.Native) AiDeepSeekWebEvents(onWebUpdate) else null
+        )
+        val nativeWebLabel = appCtx.getString(R.string.ai_search_source_native)
+        val webEvents = if (webPlan is AiWebToolPlan.Native) AiDeepSeekWebEvents {
+            onWebUpdate(it.copy(providerLabel = nativeWebLabel), AiWebAccess.Native)
+        } else null
+        val externalWeb = (webPlan as? AiWebToolPlan.External)?.let { plan ->
+            val access = AiWebAccess.External(plan.service)
+            AiExternalWebTurn(plan.service, externalSearchClient()) { update ->
+                onWebUpdate(update, access)
+            }
+        }
+        fun settledWebActivity() = externalWeb?.settled ?: webEvents?.settled?.copy(providerLabel = nativeWebLabel)
         val activeSkill = AiChatContextManager.activeSkillSnapshot(messages)
-        val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
+        val localTools = if (model.abilities.contains(AiModelAbility.TOOL)) {
             loadModelTools(
                 skillId,
                 skillContentHash,
@@ -276,6 +285,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
         } else {
             emptyList()
         }
+        val tools = localTools + externalWeb?.definitions.orEmpty()
         val warnings = buildList {
             if (AiConfig.internalMcpEnabled && !model.abilities.contains(AiModelAbility.TOOL)) {
                 add("当前模型未声明工具能力，未附加 MCP tools")
@@ -483,7 +493,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                             lastReasoning,
                             toolTrace,
                             hookRuntime
-                        )
+                        ).copy(webActivity = settledWebActivity())
                     )
                     continue
                 }
@@ -517,7 +527,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                         toolTrace,
                         hookRuntime,
                         toolReceipts
-                    ).copy(webActivity = webEvents?.settled)
+                    ).copy(webActivity = settledWebActivity())
                 )
                 tokenCalibration = calibrationAfterModelResponse(
                     usage = completion.usage,
@@ -548,7 +558,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                         contextWindow,
                     ),
                     contextCalibration = tokenCalibration,
-                    webActivity = webEvents?.settled,
+                    webActivity = settledWebActivity(),
                     compactionCount = contextCompactions.size,
                     contextCompactions = contextCompactions.toList(),
                     contextMessages = contextMessages
@@ -579,7 +589,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                     toolTrace,
                     hookRuntime,
                     toolReceipts
-                )
+                ).copy(webActivity = settledWebActivity())
             )
             tokenCalibration = calibrationAfterModelResponse(
                 usage = completion.usage,
@@ -599,7 +609,8 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                     callId = callId,
                     functionName = functionName,
                     toolName = toolName,
-                    arguments = arguments
+                    arguments = arguments,
+                    externalTool = externalWeb?.tool(functionName),
                 )
             }
             require(parsedToolCalls.size == toolCalls.size()) {
@@ -607,13 +618,17 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
             }
             val preparedToolCalls = parsedToolCalls.map { call ->
                 require(call.callId.isNotBlank()) { "模型返回的 tool_call id 不能为空" }
-                require(call.functionName.startsWith(MCP_TOOL_PREFIX) && call.toolName.isNotBlank()) {
-                    "模型返回了非法的 MCP tool name"
+                require(call.externalTool != null ||
+                    (call.functionName.startsWith(MCP_TOOL_PREFIX) && call.toolName.isNotBlank())) {
+                    "模型返回了非法或未启用的工具名"
                 }
                 require(seenToolCallIds.add(call.callId)) {
                     "模型在同一轮重复使用 tool_call id：${call.callId}"
                 }
-                val argumentsHash = AgentToolResultStore.argumentsHash(call.arguments)
+                val executionArguments = call.externalTool?.let {
+                    requireNotNull(externalWeb).receiptArguments(it, call.arguments)
+                } ?: call.arguments
+                val argumentsHash = AgentToolResultStore.argumentsHash(executionArguments)
                 val receiptId = AgentToolResultStore.deterministicReceiptId(
                     conversationId = conversationId,
                     turnId = turnId,
@@ -664,7 +679,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                     .filter { prepared -> prepared.reusableArtifact == null }
                     .map { prepared -> prepared.call }
                     .filter { call ->
-                        call.toolName.requiresPerCallConfirmation(
+                        call.externalTool == null && call.toolName.requiresPerCallConfirmation(
                             arguments = call.arguments
                         )
                     }
@@ -741,7 +756,9 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
 
                         is AgentToolExecutionBeginOutcome.Started -> {
                             startedIntent = begin.intent
-                            runCatching {
+                            if (call.externalTool != null) {
+                                requireNotNull(externalWeb).execute(call.externalTool, call.arguments)
+                            } else runCatching {
                                 AiAgentSkillTools.call(
                                     name = call.toolName,
                                     arguments = call.arguments,
@@ -773,14 +790,16 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                         }
                     }
                 }
-                toolTrace.add(
-                    buildString {
+                if (call.externalTool != null) {
+                    requireNotNull(externalWeb).acceptResult(result)
+                } else {
+                    toolTrace.add(buildString {
                         append(call.toolName)
                         append('(').append(call.arguments.toString().take(120)).append(')')
                         if (resolvedArtifact != null) append(" [replay]")
                         if (indeterminateIntent != null) append(" [indeterminate]")
-                    }
-                )
+                    })
+                }
                 onStreamUpdate(
                     AiChatStreamUpdate(
                         content = durableAssistantContent,
@@ -907,7 +926,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                     toolTrace,
                     hookRuntime,
                     toolReceipts
-                )
+                ).copy(webActivity = settledWebActivity())
             )
             compactIfNeeded(
                     setting,
@@ -944,7 +963,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                         toolTrace,
                         hookRuntime,
                         toolReceipts
-                    )
+                    ).copy(webActivity = settledWebActivity())
                 )
             }
             }
@@ -972,7 +991,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
                         toolTrace,
                         hookRuntime,
                         toolReceipts
-                    )
+                    ).copy(webActivity = settledWebActivity())
                 )
             }
             throw error
@@ -1296,7 +1315,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
         }
         if (codec != null) {
             val providerMessages = AiChatContextManager
-                .providerMessages(messages, nativeWeb?.systemInstruction)
+                .providerMessages(messages, webPlan.systemInstruction)
                 .map { it.asJsonObject }
             val request = codec.request(providerMessages, tools, params, stream, conversationId)
             var partialContent = ""
@@ -1348,7 +1367,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
             .addOpenCodeProviderHeaders(setting, conversationId)
             .addHeader("Content-Type", "application/json")
             .post(jsonBody(
-                buildRequestBody(setting, model, messages, tools, params, stream, nativeWeb, deepSeekHistory),
+                buildRequestBody(setting, model, messages, tools, params, stream, webPlan, deepSeekHistory),
             ))
             .build()
         val reasoningKey = setting.reasoningOptions(model.id).reasoningOutputField.ifBlank { "reasoning_content" }
@@ -1376,7 +1395,7 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
         tools: List<JsonObject>,
         params: AiTextParams,
         stream: Boolean,
-        nativeWeb: AiWebToolPlan.Native? = null,
+        webPlan: AiWebToolPlan = AiWebToolPlan.Off,
         deepSeekHistory: AiNativeChatHistory? = null,
     ): JsonObject {
         val reasoningOptions = if (params.assistantReasoningProtocol == AiReasoningProtocol.CONFIGURED) {
@@ -1385,12 +1404,12 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
             setting.reasoningOptions(model.id)
         }
         val openRouterHistory = setting.openRouterChatHistory(model.id)
-        val nativeTools = nativeWeb?.definitions.orEmpty()
+        val nativeTools = (webPlan as? AiWebToolPlan.Native)?.definitions.orEmpty()
         return JsonObject().apply {
             addProperty("model", model.id)
             add(
                 "messages",
-                AiChatContextManager.providerMessages(messages, nativeWeb?.systemInstruction).apply {
+                AiChatContextManager.providerMessages(messages, webPlan.systemInstruction).apply {
                     forEach { item ->
                         val message = item.asJsonObject
                         val parts = openRouterHistory?.parts(message)
@@ -1688,17 +1707,6 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
         throw AiAssistantReplyEndException(AiAssistantReplyEndReason.INTERRUPTED, preview, reasoning, cause = error)
     }
 
-    private suspend fun <T> Call.readCancellableStream(read: suspend (Response) -> T): T =
-        coroutineScope {
-            suspendCancellableCoroutine { continuation ->
-                // await() covers the headers. Keep cancellation connected during body reads too.
-                continuation.invokeOnCancellation { cancel() }
-                launch(IO) {
-                    continuation.resumeWith(runCatching { read(await()) })
-                }
-            }
-        }
-
     private fun loadModelTools(
         skillId: String,
         skillContentHash: String,
@@ -1987,7 +1995,8 @@ class AiChatClient internal constructor(private val clientForTimeout: (Int) -> O
         val callId: String,
         val functionName: String,
         val toolName: String,
-        val arguments: JsonObject
+        val arguments: JsonObject,
+        val externalTool: AiExternalSearchTool?,
     ) {
         fun toPendingToolCall(sideEffect: McpToolSideEffect): AiPendingToolCall {
             return AiPendingToolCall(

@@ -73,10 +73,10 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
             ConfigTag.RULE_CONFIG -> replaceFragment<RuleConfigMenuFragment>(configTag)
             ConfigTag.SERVICE_CONFIG -> replaceFragment<ServiceConfigFragment>(configTag)
             ConfigTag.AI_CONFIG -> {
-                if (intent.hasExtra(AiConfigFragment.EXTRA_INITIAL_PAGE)) {
-                    replaceFragment<AiConfigFragment>(configTag)
-                } else {
-                    replaceFragment<AiConfigMenuFragment>(configTag)
+                when (intent.getStringExtra(AiConfigFragment.EXTRA_INITIAL_PAGE)) {
+                    AiConfigFragment.PAGE_SEARCH_SERVICES -> replaceFragment<AiSearchServiceFragment>(configTag)
+                    null -> replaceFragment<AiConfigMenuFragment>(configTag)
+                    else -> replaceFragment<AiConfigFragment>(configTag)
                 }
             }
             ConfigTag.READ_ALOUD_CONFIG -> replaceFragment<ReadAloudConfigFragment>(configTag)
@@ -150,7 +150,9 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
             else -> false
         }
         binding.floatingTitleBar.isVisible = floating
-        if (floating || fragment is ThemeConfigFragment) {
+        if (fragment is AiSearchServiceFragment) {
+            binding.titleBar.isVisible = false
+        } else if (floating || fragment is ThemeConfigFragment) {
             binding.titleBar.isVisible = !floating
         }
     }
@@ -170,10 +172,15 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
     }
 
     fun openAiConfigPage(page: String) {
+        val fragment = if (page == AiConfigFragment.PAGE_SEARCH_SERVICES) {
+            AiSearchServiceFragment()
+        } else {
+            AiConfigFragment.newMenuPageInstance(page)
+        }
         supportFragmentManager.beginTransaction()
             .replace(
                 R.id.configFrameLayout,
-                AiConfigFragment.newMenuPageInstance(page),
+                fragment,
                 "${ConfigTag.AI_CONFIG}:$page"
             )
             .addToBackStack(page)

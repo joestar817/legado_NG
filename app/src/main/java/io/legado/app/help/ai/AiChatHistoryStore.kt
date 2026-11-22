@@ -212,7 +212,6 @@ object AiChatHistoryStore {
             loadedSkillIds = GSON.toJson(loadedSkillIds),
             enabledMcpCapabilityIds = GSON.toJson(enabledMcpCapabilityIds),
             uploadMessages = GSON.toJson(uploadMessages),
-            webEnabled = webEnabled != false,
         )
     }
 
@@ -245,7 +244,6 @@ object AiChatHistoryStore {
             loadedSkillIds = loadedSkillIds.toStringList(),
             enabledMcpCapabilityIds = enabledMcpCapabilityIds.toStringList(),
             uploadMessages = uploadMessages.toUploadMessages(),
-            webEnabled = webEnabled,
         ).sanitize()
     }
 
@@ -264,7 +262,6 @@ object AiChatHistoryStore {
             loadedSkillIds = loadedSkillIds.toStringList(),
             enabledMcpCapabilityIds = enabledMcpCapabilityIds.toStringList(),
             uploadMessages = emptyList(),
-            webEnabled = webEnabled,
         ).sanitize()
     }
 
@@ -429,8 +426,6 @@ data class AiChatSessionSnapshot(
     val enabledMcpCapabilityIds: List<String> = emptyList(),
     @SerializedName("upload_messages")
     val uploadMessages: List<JsonObject> = emptyList(),
-    @SerializedName("web_enabled")
-    val webEnabled: Boolean? = null,
 ) {
     fun normalizedAgentModeIdentity(): AgentModeIdentity {
         return AgentModeRegistry.normalizePersistedIdentity(modeId, modeRevision)

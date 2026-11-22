@@ -6,7 +6,11 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import io.legado.app.help.http.await
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -62,6 +66,17 @@ internal fun aiHttpClient(timeoutSeconds: Int): OkHttpClient {
         .callTimeout(timeout, TimeUnit.SECONDS)
         .build()
 }
+
+internal suspend fun <T> Call.readCancellableStream(read: suspend (Response) -> T): T =
+    coroutineScope {
+        suspendCancellableCoroutine { continuation ->
+            // Keep cancellation connected after await() hands off the response body.
+            continuation.invokeOnCancellation { cancel() }
+            launch(IO) {
+                continuation.resumeWith(runCatching { read(await()) })
+            }
+        }
+    }
 
 internal fun String.trimEndSlash(): String = trim().trimEnd('/')
 

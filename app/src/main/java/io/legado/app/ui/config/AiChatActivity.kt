@@ -132,6 +132,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -146,11 +147,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.asImageBitmap
@@ -160,11 +164,14 @@ import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -223,9 +230,11 @@ import io.legado.app.help.ai.AiChatStreamUpdate
 import io.legado.app.help.ai.AiChatTurnResult
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiMemoryTraceItem
+import io.legado.app.help.ai.AiWebAccess
 import io.legado.app.help.ai.AiWebActivity
 import io.legado.app.help.ai.AiWebActivityAction
-import io.legado.app.help.ai.deepSeekWebRoute
+import io.legado.app.help.ai.AiExternalSearchStore
+import io.legado.app.help.ai.webAccess
 import io.legado.app.help.ai.webUrl
 import io.legado.app.help.ai.AiModelAbility
 import io.legado.app.help.ai.AiModelGenerationIssue
@@ -327,7 +336,8 @@ class AiChatActivity : AppCompatActivity() {
         setContent {
             NgAppTheme {
                 AiChatRoute(
-                    onBack = { finish() }
+                    onBack = { finish() },
+                    onOpenWebSettings = { AiAssistantWebSettingsDialog.show(supportFragmentManager) },
                 )
             }
         }
@@ -500,7 +510,7 @@ private fun ChatBackgroundImage(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AiChatRoute(onBack: () -> Unit) {
+private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val modelSheetLaunchGate = remember { AiModelSheetLaunchGate() }
@@ -613,7 +623,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     var activeStreamToolTraceTarget by remember { mutableStateOf<List<String>>(emptyList()) }
     var activeStreamMemoryTraceTarget by remember { mutableStateOf<List<AiMemoryTraceItem>>(emptyList()) }
     var activeWebActivity by remember { mutableStateOf<AiWebActivity?>(null) }
-    var webEnabled by remember { mutableStateOf(true) }
+    var activeWebAccess by remember { mutableStateOf<AiWebAccess?>(null) }
     var selectedDrawerIndex by remember { mutableIntStateOf(2) }
     var configVersion by remember { mutableIntStateOf(0) }
     var generationBlock by remember { mutableStateOf<Pair<String, AiModelGenerationIssue>?>(null) }
@@ -665,12 +675,13 @@ private fun AiChatRoute(onBack: () -> Unit) {
     val selectedReasoningEnabled = remember(configVersion) {
         AiAssistantConfigUi.selectedReasoningEnabled()
     }
-    val selectedModelCanUseWeb = remember(configVersion) {
-        AiAssistantConfigUi.selectedModel()?.let { selection ->
-            selection.provider.deepSeekWebRoute(selection.model)?.enabled?.isNotEmpty()
-        } == true
-    }
-    val webControlVisible = activeAgentMode.id == AgentModeRegistry.GENERAL_ID && selectedModelCanUseWeb
+    val searchSettings by AiExternalSearchStore.changes.collectAsState()
+    val webAccess = if (activeAgentMode.id == AgentModeRegistry.GENERAL_ID) {
+        remember(configVersion, searchSettings, activeWebAccess) {
+            val selection = AiAssistantConfigUi.selectedModel()
+            searchSettings.webAccess(selection?.provider, selection?.model, activeWebAccess)
+        }
+    } else null
     val selectedModelSupportsToolCalls = remember(configVersion) {
         AiAssistantConfigUi.selectedModel()?.model
             ?.abilities
@@ -1073,7 +1084,6 @@ private fun AiChatRoute(onBack: () -> Unit) {
             loadedSkillIds = inputAttachments.loadedSkillIds(),
             enabledMcpCapabilityIds = enabledMcpCapabilityIds.toList(),
             uploadMessages = uploadMessages.map { it.deepCopy().asJsonObject },
-            webEnabled = webEnabled,
         )
         sessions.removeAll { it.id == sessionId }
         sessions.add(0, snapshot)
@@ -1131,7 +1141,6 @@ private fun AiChatRoute(onBack: () -> Unit) {
     fun startNewChat() {
         persistActiveSession()
         activeSessionId = UUID.randomUUID().toString()
-        webEnabled = true
         activeAgentMode = initialAgentMode
         activeModeEntryContext = initialModeEntryContext
         modeEntryStarted = false
@@ -1161,7 +1170,6 @@ private fun AiChatRoute(onBack: () -> Unit) {
             return
         }
         activeSessionId = session.id
-        webEnabled = session.webEnabled != false
         activeAgentMode = restoredMode
         activeModeEntryContext = session.modeEntryContext
         modeEntryStarted = session.modeEntryStarted
@@ -1367,9 +1375,10 @@ private fun AiChatRoute(onBack: () -> Unit) {
         activeStreamToolTraceTarget = emptyList()
         activeStreamMemoryTraceTarget = emptyList()
         activeWebActivity = null
+        activeWebAccess = null
         val uploadMessagesBeforeSend = uploadMessages.map { it.deepCopy().asJsonObject }
         val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
-        val allowWebForTurn = activeAgentMode.id == AgentModeRegistry.GENERAL_ID && webEnabled
+        val allowWebForTurn = activeAgentMode.id == AgentModeRegistry.GENERAL_ID
         val webUserText = messages.lastOrNull { it.role == ChatRole.USER }?.content.orEmpty()
         messages += ChatUiMessage(
             id = loadingId,
@@ -1399,7 +1408,6 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 .map { it.id.removePrefix("skill.") },
             enabledMcpCapabilityIds = mcpCapabilityIds,
             uploadMessages = uploadMessagesBeforeSend,
-            webEnabled = webEnabled,
         )
         scope.launch {
             listState.scrollToItem(messages.lastIndex)
@@ -1431,9 +1439,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
                         promptUsageAnchor = promptUsageAnchor,
                         allowWeb = allowWebForTurn,
                         webUserText = webUserText,
-                        onWebUpdate = { update ->
+                        onWebUpdate = { update, access ->
                             scope.launch {
-                                if (activeLoadingMessageId == loadingId) activeWebActivity = update
+                                if (activeLoadingMessageId == loadingId) {
+                                    activeWebActivity = update
+                                    activeWebAccess = access
+                                }
                             }
                         },
                         onStreamUpdate = { update: AiChatStreamUpdate ->
@@ -1587,6 +1598,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             activeStreamToolTraceTarget = emptyList()
             activeStreamMemoryTraceTarget = emptyList()
             activeWebActivity = null
+            activeWebAccess = null
             refreshContextUsage()
             if (canceled) {
                 contextStatusText = null
@@ -2089,7 +2101,6 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 openSession(nextSession)
             } else {
                 activeSessionId = UUID.randomUUID().toString()
-                webEnabled = true
                 activeAgentMode = initialAgentMode
                 activeModeEntryContext = initialModeEntryContext
                 modeEntryStarted = false
@@ -2549,8 +2560,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 sending = sending,
                                 modelIconRes = selectedModelIconRes,
                                 reasoningEnabled = selectedReasoningEnabled,
-                                webEnabled = webEnabled,
-                                webControlVisible = webControlVisible,
+                                webAccess = webAccess,
                                 mcpEnabled = internalMcpEnabled && enabledMcpCapabilityIds.isNotEmpty(),
                                 skillEnabled = inputAttachments.any {
                                     it.type == AiChatInputAttachmentType.SKILL
@@ -2570,10 +2580,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 skillErrorText = skillToolErrorText,
                                 onSend = ::sendMessage,
                                 onStop = ::stopSending,
-                                onWebToggle = {
-                                    webEnabled = !webEnabled
-                                    if (!sending) persistActiveSession()
-                                },
+                                onWebSettingsClick = onOpenWebSettings,
                                 onModelClick = {
                                     if (modelSheetLaunchGate.tryOpen(SystemClock.elapsedRealtime())) {
                                         showModelSheet = true
@@ -6504,6 +6511,9 @@ private fun AgentModeEntryContext?.payloadInt(key: String): Int? {
 
 @Composable
 private fun WebSources(activity: AiWebActivity) {
+    activity.externalError?.let { error ->
+        Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
     if (activity.searchFailed) {
         Text(
             text = stringResource(R.string.ai_chat_web_search_failed),
@@ -6531,6 +6541,9 @@ private fun WebSources(activity: AiWebActivity) {
     )
     AnimatedVisibility(visible = expanded) {
         Column(Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 6.dp)) {
+            activity.providerLabel?.let { label ->
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             activity.sources.forEach { source ->
                 val url = source.url.webUrl() ?: return@forEach
                 Text(
@@ -7311,8 +7324,7 @@ private fun RikkaChatInput(
     sending: Boolean,
     @DrawableRes modelIconRes: Int,
     reasoningEnabled: Boolean,
-    webEnabled: Boolean,
-    webControlVisible: Boolean,
+    webAccess: AiWebAccess?,
     mcpEnabled: Boolean,
     skillEnabled: Boolean,
     mcpControlVisible: Boolean,
@@ -7327,7 +7339,7 @@ private fun RikkaChatInput(
     skillErrorText: String?,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    onWebToggle: () -> Unit,
+    onWebSettingsClick: () -> Unit,
     onModelClick: () -> Unit,
     onReasoningClick: () -> Unit,
     onMcpClick: () -> Unit,
@@ -7340,6 +7352,7 @@ private fun RikkaChatInput(
     onRemoveSkill: (AiChatInputAttachment) -> Unit
 ) {
     var inputFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     Surface(color = Color.Transparent) {
         Column(
             modifier = Modifier
@@ -7415,15 +7428,11 @@ private fun RikkaChatInput(
                                 active = reasoningEnabled,
                                 onClick = onReasoningClick
                             )
-                            if (webControlVisible) {
-                                InputDrawableIcon(
-                                    iconRes = R.drawable.ic_cfg_web,
-                                    active = webEnabled,
-                                    inactiveTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    description = stringResource(if (webEnabled) R.string.ai_chat_web_enabled
-                                        else R.string.ai_chat_web_disabled),
-                                    onClick = onWebToggle,
-                                )
+                            if (webAccess != null) {
+                                AiChatWebButton(webAccess) {
+                                    focusManager.clearFocus()
+                                    onWebSettingsClick()
+                                }
                             }
                             if (mcpControlVisible) {
                                 InputDrawableIcon(
@@ -8132,6 +8141,8 @@ private fun FloatingSkillSuggestionPanel(
     }
 }
 
+private val ChatInputIconSize = 22.dp
+
 @Composable
 private fun InputModelIcon(
     @DrawableRes iconRes: Int,
@@ -8147,7 +8158,7 @@ private fun InputModelIcon(
             Image(
                 painter = painterResource(iconRes),
                 contentDescription = stringResource(R.string.ai_model_select),
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(ChatInputIconSize)
             )
         }
     }
@@ -8158,7 +8169,6 @@ private fun InputDrawableIcon(
     @DrawableRes iconRes: Int,
     active: Boolean,
     description: String? = null,
-    inactiveTint: Color = Color.Unspecified,
     onClick: () -> Unit
 ) {
     Surface(
@@ -8171,9 +8181,69 @@ private fun InputDrawableIcon(
             Icon(
                 painter = painterResource(iconRes),
                 contentDescription = description,
-                modifier = Modifier.size(22.dp),
-                tint = if (active) MaterialTheme.colorScheme.primary else inactiveTint
+                modifier = Modifier.size(ChatInputIconSize),
+                tint = if (active) MaterialTheme.colorScheme.primary else Color.Unspecified
             )
+        }
+    }
+}
+
+@Composable
+internal fun AiChatWebButton(access: AiWebAccess, onClick: () -> Unit) {
+    val description = when (access) {
+        AiWebAccess.Disabled -> stringResource(R.string.ai_chat_web_disabled)
+        AiWebAccess.Unavailable -> stringResource(R.string.ai_chat_web_unavailable)
+        AiWebAccess.Native -> stringResource(R.string.ai_chat_web_native)
+        is AiWebAccess.External -> stringResource(R.string.ai_chat_web_external, access.name)
+    }
+    val accent = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val background = aiChatContentCardColor()
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(34.dp).semantics { contentDescription = description },
+        shape = CircleShape,
+        color = Color.Transparent,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (access is AiWebAccess.External) {
+                Box(Modifier.size(ChatInputIconSize)) {
+                    Image(
+                        painter = painterResource(access.provider.iconRes),
+                        contentDescription = null,
+                        modifier = Modifier.matchParentSize(),
+                    )
+                    Box(
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                            .padding(bottom = 2.dp)
+                            .size(12.dp)
+                            .background(background, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_cfg_web),
+                            contentDescription = null,
+                            modifier = Modifier.size(10.dp),
+                            tint = accent,
+                        )
+                    }
+                }
+            } else {
+                Icon(
+                    painter = painterResource(R.drawable.ic_cfg_web),
+                    contentDescription = null,
+                    modifier = Modifier.size(ChatInputIconSize).drawWithContent {
+                        drawContent()
+                        if (access == AiWebAccess.Disabled) {
+                            val start = Offset(size.width * 0.18f, size.height * 0.18f)
+                            val end = Offset(size.width * 0.82f, size.height * 0.82f)
+                            drawLine(background, start, end, 3.5.dp.toPx(), StrokeCap.Round)
+                            drawLine(muted, start, end, 1.5.dp.toPx(), StrokeCap.Round)
+                        }
+                    },
+                    tint = if (access == AiWebAccess.Native) accent else muted,
+                )
+            }
         }
     }
 }

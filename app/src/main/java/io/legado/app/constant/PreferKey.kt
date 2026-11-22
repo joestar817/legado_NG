@@ -115,6 +115,7 @@ object PreferKey {
     const val mcpPort = "mcpPort"
     const val aiEnabled = "aiEnabled"
     const val aiProvidersJson = "aiProvidersJson"
+    const val aiExternalSearchJson = "aiExternalSearchJson"
     const val aiActiveProviderId = "aiActiveProviderId"
     const val aiProviderType = "aiProviderType"
     const val aiProviderName = "aiProviderName"

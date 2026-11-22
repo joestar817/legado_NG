@@ -162,8 +162,9 @@ class AiDeepSeekWebToolsTest {
     @Test
     fun oldHistoryAndNewSourcesUseStableJsonFields() {
         val gson = Gson()
-        val old = gson.fromJson("""{"id":"1","title":"test","messages":[]}""", AiChatSessionSnapshot::class.java)
-        assertTrue(old.webEnabled != false)
+        val old = gson.fromJson("""{"id":"1","title":"test","messages":[],"web_enabled":false}""", AiChatSessionSnapshot::class.java)
+        assertEquals("1", old.id)
+        assertFalse(JsonParser.parseString(gson.toJson(old)).asJsonObject.has("web_enabled"))
         val activity = AiWebActivity(sources = listOf(AiWebSource("https://example.com/a", "Page")))
         val snapshot = AiChatMessageSnapshot("1", "assistant", "Reply", webActivity = activity)
         val json = gson.toJson(snapshot)
