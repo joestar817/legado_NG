@@ -10,6 +10,12 @@ internal fun AiProviderSetting.catalogFetchRequired(): Boolean =
 internal fun AiProviderSetting.apiKeyNeedsReentry(): Boolean =
     apiKey.isNotBlank() && apiKeyOrigin != null && apiKeyOrigin != baseOrigin()
 
+internal fun AiProviderSetting.hasRequestCredentials(): Boolean = if (isChatGptSubscription()) {
+    AiChatGptSessions.account(chatGptAccountId)?.let { !it.needsReauthorization() && it.tokens?.allowsPlan == true } == true
+} else {
+    apiKey.isNotBlank() && !apiKeyNeedsReentry()
+}
+
 internal fun AiProviderSetting.apiKeyForRequest(): String {
     if (apiKeyNeedsReentry()) throw AiEndpointException("Re-enter the API Key for the current Base URL")
     return apiKey
@@ -37,6 +43,7 @@ internal fun AiProviderSetting.matchesCatalogRequest(requested: AiProviderSettin
 
 private fun AiProviderSetting.hasSameCatalogConfiguration(other: AiProviderSetting): Boolean =
     id == other.id && type == other.type && apiKey == other.apiKey &&
+        chatGptAccountId == other.chatGptAccountId &&
         baseUrl == other.baseUrl && chatCompletionsPath == other.chatCompletionsPath &&
         useCustomModelsUrl == other.useCustomModelsUrl &&
         (!useCustomModelsUrl || modelsUrl == other.modelsUrl)

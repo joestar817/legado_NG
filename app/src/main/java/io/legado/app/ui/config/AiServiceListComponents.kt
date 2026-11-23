@@ -1,6 +1,7 @@
 package io.legado.app.ui.config
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -30,6 +31,7 @@ internal fun AiServiceListCard(
     infoTag: NgStatusTagSpec? = null,
     capabilityTags: List<NgStatusTagSpec> = emptyList(),
     trailingContent: (@Composable () -> Unit)? = null,
+    @StringRes missingCredentialRes: Int = R.string.ai_provider_no_api_key,
 ) {
     val statusTags = buildList {
         add(NgStatusTagSpec(
@@ -39,7 +41,7 @@ internal fun AiServiceListCard(
         ))
         if (!keyConfigured) {
             add(NgStatusTagSpec(
-                text = stringResource(R.string.ai_provider_no_api_key),
+                text = stringResource(missingCredentialRes),
                 variant = NgStatusTagVariant.WARNING,
                 style = NgStatusTagStyle.COMPACT,
             ))

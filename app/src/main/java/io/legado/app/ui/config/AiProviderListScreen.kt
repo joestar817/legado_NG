@@ -1,6 +1,7 @@
 package io.legado.app.ui.config
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,6 +72,7 @@ internal data class AiProviderListItemUiModel(
     val modelCountText: String,
     val modelCountWarning: Boolean = false,
     val keyConfigured: Boolean = true,
+    @param:StringRes val missingCredentialRes: Int = R.string.ai_provider_no_api_key,
     val reorderable: Boolean = true,
     val deletable: Boolean = false
 )
@@ -176,6 +178,7 @@ internal fun AiProviderListScreen(
                             iconRes = provider.iconRes,
                             enabled = provider.enabled,
                             keyConfigured = provider.keyConfigured,
+                            missingCredentialRes = provider.missingCredentialRes,
                             infoTag = NgStatusTagSpec(
                                 text = provider.modelCountText,
                                 variant = if (provider.modelCountWarning) NgStatusTagVariant.WARNING else NgStatusTagVariant.INFO,

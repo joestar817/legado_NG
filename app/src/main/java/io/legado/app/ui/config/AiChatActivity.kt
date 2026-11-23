@@ -235,6 +235,8 @@ import io.legado.app.help.ai.AgentModeEntryLaunchDecision
 import io.legado.app.help.ai.AgentModeEntryMemoryState
 import io.legado.app.help.ai.AgentModeRegistry
 import io.legado.app.help.ai.AiAssistantReplyEndException
+import io.legado.app.help.ai.AiChatGptException
+import io.legado.app.help.ai.CHATGPT_USAGE_URL
 import io.legado.app.help.ai.AiAssistantReplyEndReason
 import io.legado.app.help.ai.AiChatClient
 import io.legado.app.help.ai.AiActiveSkillSnapshot
@@ -268,6 +270,7 @@ import io.legado.app.help.ai.AiWebActivityAction
 import io.legado.app.help.ai.AiExternalSearchStore
 import io.legado.app.help.ai.webAccess
 import io.legado.app.help.ai.webUrl
+import io.legado.app.help.ai.withInlineLinks
 import io.legado.app.help.ai.AiModelAbility
 import io.legado.app.help.ai.AiModelGenerationIssue
 import io.legado.app.help.ai.AiPendingToolCall
@@ -1610,6 +1613,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
             }.onFailure {
                 val replyEnd = it as? AiAssistantReplyEndException
+                val chatGptError = (replyEnd?.cause ?: it) as? AiChatGptException
                 val replyNotice = replyEnd?.let { end ->
                     context.getString(when (end.reason) {
                         AiAssistantReplyEndReason.TRUNCATED -> R.string.ai_assistant_reply_truncated
@@ -1671,10 +1675,14 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                         else -> ChatDeliveryState.FAILED
                     }
                 )
-                if (!canceled && replyEnd == null) {
+                if (!canceled && (replyEnd == null || chatGptError != null)) {
+                    val message = if (chatGptError?.messageRes == R.string.ai_chatgpt_usage_limit) {
+                        val label = context.getString(R.string.ai_chatgpt_manage_usage)
+                        "${chatGptError.message}\n\n[$label]($CHATGPT_USAGE_URL)"
+                    } else chatGptError?.message ?: it.localizedMessage ?: it.toString()
                     messages += ChatUiMessage(
                         role = ChatRole.ASSISTANT,
-                        content = it.localizedMessage ?: it.toString(),
+                        content = message,
                         meta = "error"
                     )
                 }
@@ -4735,8 +4743,12 @@ private fun RikkaMessageItem(
                 }
                 val displayContent = interactionRender.displayContent(message.content)
                 if (displayContent.isNotBlank()) {
+                    val markdown = remember(displayContent, message.webActivity, searchLocation) {
+                        message.webActivity?.takeIf { searchLocation == null }?.withInlineLinks(displayContent)
+                            ?: displayContent
+                    }
                     MarkdownMessageText(
-                        content = displayContent,
+                        content = markdown,
                         modifier = Modifier
                             .fillMaxWidth()
                             .animateContentSize()

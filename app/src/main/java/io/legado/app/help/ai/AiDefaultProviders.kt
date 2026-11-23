@@ -3,6 +3,7 @@ package io.legado.app.help.ai
 object AiDefaultProviders {
 
     const val OPENCODE_ID = "opencode"
+    internal const val CHATGPT_ID = "chatgpt_subscription"
 
     fun all(): List<AiProviderSetting> = listOf(
         AiProviderSetting(
@@ -14,6 +15,17 @@ object AiDefaultProviders {
             modelsUrl = "/models",
             supportsStreamUsage = true,
             enabled = true
+        ),
+        AiProviderSetting(
+            id = CHATGPT_ID,
+            type = AiProviderType.OPENAI,
+            name = "ChatGPT",
+            baseUrl = CHATGPT_API,
+            modelsUrl = "/models",
+            responsesApiPath = "/responses",
+            useResponsesApi = true,
+            streamResponseEnabled = true,
+            supportsStreamUsage = true,
         ),
         AiProviderSetting(
             id = OPENCODE_ID,

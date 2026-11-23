@@ -19,7 +19,8 @@ internal class AiNativeChatHistory(
     endpoint: String = setting.baseUrl.trimEndSlash()
 ) {
     private val route = MessageDigest.getInstance("SHA-256")
-        .digest(listOf(setting.id, setting.type.prefValue, endpoint, modelId, setting.apiKey)
+        .digest(listOf(setting.id, setting.type.prefValue, endpoint, modelId,
+            if (setting.isChatGptSubscription()) setting.chatGptAccountId.orEmpty() else setting.apiKey)
             .joinToString("\n").toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
 

@@ -13,9 +13,13 @@ internal class AiOpenAiResponsesCodec(
     endpoint: String,
     private val deepSeekWeb: Boolean = false,
     private val nativeTools: List<JsonObject> = emptyList(),
-    private val webEvents: AiDeepSeekWebEvents? = null,
+    private val webEvents: AiNativeWebEvents? = null,
+    private val chatGptAccessToken: String? = null,
 ) : AiChatCodec {
-    private val url = buildAiApiEndpoint(setting.baseUrl, endpoint).toHttpUrl()
+    private val subscription = setting.isChatGptSubscription()
+    private val url = (if (subscription) "$CHATGPT_API/responses" else buildAiApiEndpoint(setting.baseUrl, endpoint))
+        .toHttpUrl()
+    private val chatGptWeb = subscription && nativeTools.any { it.stringOrNull("type") == "web_search" }
     private val history = AiNativeChatHistory(setting, modelId, url.toString())
     private val officialDeepSeek = url.isHttps && url.port == 443 && url.host == "api.deepseek.com"
     private val officialOpenAi = url.isHttps && url.port == 443 && url.host == "api.openai.com"
@@ -35,27 +39,41 @@ internal class AiOpenAiResponsesCodec(
             params.disableThinking -> "none"
             params.enableThinking -> params.reasoningEffort
             else -> null
-        }
+        }?.takeIf { value -> !subscription || setting.models.firstOrNull { it.id == modelId }
+            ?.modelInfo?.effortLevels?.value?.contains(value) == true }
         val body = JsonObject().apply {
             addProperty("model", modelId)
-            addProperty("stream", stream)
+            addProperty("stream", stream || subscription)
             addProperty("store", false)
             add("input", inputItems(messages, tools.isNotEmpty()))
-            params.maxTokens?.let { addProperty("max_output_tokens", it) }
-            if (officialDeepSeek || !openAiReasoningModel && !params.enableThinking) {
-                params.temperature?.let { addProperty("temperature", it) }
+            if (!subscription) {
+                params.maxTokens?.let { addProperty("max_output_tokens", it) }
+                if (officialDeepSeek || !openAiReasoningModel && !params.enableThinking) {
+                    params.temperature?.let { addProperty("temperature", it) }
+                }
             }
             if (officialOpenRouter && (params.enableThinking || params.disableThinking)) {
                 add("reasoning", openRouterReasoningRequest(params))
             } else if (effort != null) {
                 add("reasoning", JsonObject().apply { addProperty("effort", effort) })
             }
-            if (officialOpenAi && openAiReasoningModel) {
-                add("include", JsonArray().apply { add("reasoning.encrypted_content") })
+            val encryptedReasoning = officialOpenAi && openAiReasoningModel
+            if (encryptedReasoning || chatGptWeb) {
+                add("include", JsonArray().apply {
+                    if (encryptedReasoning) add("reasoning.encrypted_content")
+                    if (chatGptWeb) add("web_search_call.action.sources")
+                })
             }
             if (tools.isNotEmpty() || nativeTools.isNotEmpty()) {
                 add("tools", JsonArray().apply {
-                    tools.forEach { definition -> add(functionDefinition(definition)) }
+                    if (subscription && tools.isNotEmpty()) {
+                        add(JsonObject().apply {
+                            addProperty("type", "namespace")
+                            addProperty("name", CHATGPT_TOOL_NAMESPACE)
+                            addProperty("description", "Tools provided by Reading NG for this conversation")
+                            add("tools", JsonArray().apply { tools.forEach { add(functionDefinition(it)) } })
+                        })
+                    } else tools.forEach { add(functionDefinition(it)) }
                     nativeTools.forEach { add(it.deepCopy()) }
                 })
             } else if (params.jsonResponse) {
@@ -64,9 +82,10 @@ internal class AiOpenAiResponsesCodec(
                 })
             }
         }
+        val token = if (subscription) requireNotNull(chatGptAccessToken) else setting.apiKeyForRequest()
         return Request.Builder()
             .url(url)
-            .header("Authorization", "Bearer ${setting.apiKeyForRequest()}")
+            .header("Authorization", "Bearer $token")
             .addOpenCodeProviderHeaders(setting, conversationId)
             .post(jsonBody(body))
             .build()
@@ -132,6 +151,7 @@ internal class AiOpenAiResponsesCodec(
                     addProperty("type", "function_call")
                     addProperty("call_id", call.stringOrNull("id"))
                     addProperty("name", function.stringOrNull("name"))
+                    if (subscription) addProperty("namespace", CHATGPT_TOOL_NAMESPACE)
                     addProperty("arguments", function.stringOrNull("arguments"))
                 })
             }
@@ -151,7 +171,7 @@ internal class AiOpenAiResponsesCodec(
 
     private fun textItem(role: String, text: String): JsonObject = JsonObject().apply {
         addProperty("type", "message")
-        addProperty("role", role)
+        addProperty("role", if (subscription && role == "system") "developer" else role)
         addProperty("content", text)
     }
 
@@ -165,6 +185,9 @@ internal class AiOpenAiResponsesCodec(
     override fun readJson(json: JsonObject): AiChatReply = readResponse(json)
 
     private fun readResponse(json: JsonObject, terminalStatus: String? = null): AiChatReply {
+        if (subscription && (terminalStatus == "failed" || json.objectOrNull("error") != null)) {
+            throw chatGptRequestError(null, json)
+        }
         json.requireNoAiError()
         val status = when (terminalStatus) {
             "failed", "incomplete", "cancelled" -> terminalStatus
@@ -184,7 +207,7 @@ internal class AiOpenAiResponsesCodec(
         }
         val outputs = json.arrayOrNull("output")?.objectParts()
             ?: if (finish != null) emptyList() else error("Responses 未返回 output")
-        webEvents?.responsesResult(outputs)
+        webEvents?.responsesResult(outputs, inline = chatGptWeb)
         val calls = JsonArray()
         val replayItems = JsonArray()
         val callIds = hashSetOf<String>()
@@ -209,10 +232,12 @@ internal class AiOpenAiResponsesCodec(
                 "function_call" -> if (finish == null) {
                     val callId = item.stringOrNull("call_id").orEmpty()
                     val name = item.stringOrNull("name").orEmpty()
+                    val namespace = item.stringOrNull("namespace")
                     val arguments = item.stringOrNull("arguments").orEmpty()
                     val callStatus = item.stringOrNull("status")
                     check((callStatus == null || callStatus == "completed") &&
-                        callId.isNotBlank() && callIds.add(callId) && name.isNotBlank() && arguments.isNotBlank()
+                        callId.isNotBlank() && callIds.add(callId) && name.isNotBlank() && arguments.isNotBlank() &&
+                        (!subscription || namespace == null || namespace == CHATGPT_TOOL_NAMESPACE)
                     ) {
                         "Responses 返回了无效的函数调用"
                     }
@@ -221,8 +246,8 @@ internal class AiOpenAiResponsesCodec(
                     replayItems.add(item.replayItem())
                 }
                 "web_search_call" -> {
-                    check(deepSeekWeb) { "Responses 返回了未支持的网页工具" }
-                    replayItems.add(item.replayItem())
+                    check(deepSeekWeb || chatGptWeb) { "Responses 返回了未支持的网页工具" }
+                    if (deepSeekWeb) replayItems.add(item.replayItem())
                 }
                 else -> error("Responses 返回了不支持的输出项：$type")
             }
@@ -263,17 +288,20 @@ internal class AiOpenAiResponsesCodec(
     override fun readStream(reader: BufferedReader, onUpdate: (String, String?) -> Unit): AiChatReply {
         val text = StringBuilder()
         val reasoning = StringBuilder()
+        val finishedItems = sortedMapOf<Int, JsonObject>()
         var reply: AiChatReply? = null
         reader.readAiSseFrames { event, data ->
             if (data == "[DONE]") return@readAiSseFrames true
             val frame = JsonParser.parseString(data).asJsonObject
             val type = frame.stringOrNull("type") ?: event
             if (type == "error" || type == "response.error") {
+                if (subscription) throw chatGptRequestError(null, frame)
                 val detail = frame.stringOrNull("message") ?: frame.stringOrNull("code")
                 if (!detail.isNullOrBlank()) error(detail.take(500))
                 frame.requireNoAiError()
                 error("Responses 流式请求失败")
             }
+            if (subscription && frame.objectOrNull("error") != null) throw chatGptRequestError(null, frame)
             frame.requireNoAiError(event)
             webEvents?.responsesProgress(type, frame)
             when (type) {
@@ -283,14 +311,32 @@ internal class AiOpenAiResponsesCodec(
                     onUpdate(text.toString(), reasoning.toString().takeIf { it.isNotBlank() })
                     false
                 }
+                "response.output_item.done" -> {
+                    val index = frame.intOrNull("output_index")
+                    val item = frame.objectOrNull("item")
+                    if (index != null && index >= 0 && item != null) finishedItems[index] = item
+                    false
+                }
                 "response.completed", "response.incomplete", "response.failed", "response.cancelled" -> {
                     val response = frame.objectOrNull("response") ?: error("Responses 结束事件缺少响应")
-                    reply = readResponse(response, type.substringAfter('.')).let { completed ->
+                    val succeeded = type == "response.completed" &&
+                        (response.stringOrNull("status") ?: "completed") == "completed"
+                    // A completed stream may report usage without repeating its output items.
+                    if (succeeded && response.arrayOrNull("output")?.isEmpty != false &&
+                        (finishedItems.isNotEmpty() || text.isNotBlank())
+                    ) {
+                        response.add("output", JsonArray().apply { finishedItems.values.forEach(::add) })
+                    }
+                    reply = readResponse(response, type.substringAfter('.')).also { completed ->
+                        if (succeeded && completed.finishReason == "stop" && completed.content.isBlank() &&
+                            text.isNotBlank()
+                        ) {
+                            completed.message.addProperty("content", text.toString())
+                        }
                         if (completed.reasoning == null && reasoning.isNotEmpty()) {
                             completed.message.addProperty("reasoning_content", reasoning.toString())
                         }
                         if (completed.content.isNotBlank()) onUpdate(completed.content, completed.reasoning)
-                        completed
                     }
                     true
                 }
@@ -301,6 +347,7 @@ internal class AiOpenAiResponsesCodec(
     }
 
     private companion object {
+        const val CHATGPT_TOOL_NAMESPACE = "reading_ng"
         val OPENAI_REASONING_MODEL = Regex("^(?:gpt-[56](?:[.-]|$)|o[134](?:-|$))")
     }
 }

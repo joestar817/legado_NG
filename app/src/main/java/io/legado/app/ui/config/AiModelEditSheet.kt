@@ -63,6 +63,7 @@ import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.effectiveModelCapabilities
 import io.legado.app.help.ai.AiWebTool
 import io.legado.app.help.ai.deepSeekWebRoute
+import io.legado.app.help.ai.isChatGptSubscription
 import io.legado.app.help.ai.knownModalities
 import io.legado.app.help.ai.AiModelValue
 import io.legado.app.help.ai.modelGenerationTestProtocols
@@ -123,6 +124,7 @@ internal fun AiModelEditSheet(
     var contextInput by remember(initial) { mutableStateOf<String?>(null) }
     var outputInput by remember(initial) { mutableStateOf<String?>(null) }
     val settings = requireNotNull(draft.modelSettings)
+    val subscription = provider.isChatGptSubscription()
     val catalogContext = info.contextWindow
     val catalogOutput = info.maxOutputTokens
     val enteredContext = contextInput.positiveTokenCount()
@@ -158,7 +160,7 @@ internal fun AiModelEditSheet(
     val interfacePreference = settings.interfacePreference ?: AiModelInterfacePreference.PROVIDER_DEFAULT
     val usesProviderInterface = interfacePreference == AiModelInterfacePreference.PROVIDER_DEFAULT
     val providerProtocols = remember(provider) { provider.modelGenerationTestProtocols() }
-    val showInterfaceType = showChatSettings && provider.type == AiProviderType.OPENAI &&
+    val showInterfaceType = showChatSettings && !subscription && provider.type == AiProviderType.OPENAI &&
         (providerProtocols.size > 1 || !usesProviderInterface)
     val unsupportedInterface = showInterfaceType && remember(provider, draftModel) {
         provider.resolveModelGenerationRoute(draftModel).issue == AiModelGenerationIssue.UNSUPPORTED_PROTOCOL
@@ -367,15 +369,17 @@ internal fun AiModelEditSheet(
                         invalid = invalidContext,
                         onValueChange = { contextInput = it },
                     )
-                    NgFormGroupDivider()
-                    ModelTokenSpecificationField(
-                        label = R.string.ai_model_max_output,
-                        input = outputInput,
-                        reference = referenceSettings.referenceMaxOutput(info),
-                        catalog = catalogOutput,
-                        invalid = invalidOutput,
-                        onValueChange = { outputInput = it },
-                    )
+                    if (!subscription) {
+                        NgFormGroupDivider()
+                        ModelTokenSpecificationField(
+                            label = R.string.ai_model_max_output,
+                            input = outputInput,
+                            reference = referenceSettings.referenceMaxOutput(info),
+                            catalog = catalogOutput,
+                            invalid = invalidOutput,
+                            onValueChange = { outputInput = it },
+                        )
+                    }
                 }
             } else {
                 NgFormPanel {

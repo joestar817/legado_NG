@@ -1,6 +1,7 @@
 package io.legado.app.ui.config
 
 import io.legado.app.R
+import io.legado.app.help.ai.AiDefaultProviders
 import io.legado.app.help.ai.AiModel
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderType
@@ -31,6 +32,22 @@ class AiModelSelectionTabsTest {
             listOf("empty-catalog", "cached"),
             settings.modelSelectionEligibleProviders().map { it.id },
         )
+    }
+
+    @Test
+    fun streamingHintIsOnlyShownWhereStreamingCanBeConfigured() {
+        val defaults = AiDefaultProviders.all()
+        val subscription = defaults.first { it.id == AiDefaultProviders.CHATGPT_ID }
+        val bailian = defaults.first { it.id == "aliyun_bailian" }
+        val chatGptItem = subscription.toModelSelectionProviderUiModel(
+            listOf(AiModel("gpt-6.2-sol")), showGenerationHints = true,
+        ).models.single()
+        val bailianItem = bailian.toModelSelectionProviderUiModel(
+            listOf(AiModel("qwen3-235b-a22b")), showGenerationHints = true,
+        ).models.single()
+
+        assertNull(chatGptItem.generationHintRes)
+        assertEquals(R.string.ai_model_streaming_only, bailianItem.generationHintRes)
     }
 
     @Test

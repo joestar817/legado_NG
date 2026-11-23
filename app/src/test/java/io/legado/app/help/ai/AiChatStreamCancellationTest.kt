@@ -226,7 +226,7 @@ class AiChatStreamCancellationTest {
     private val executeStreamChat = AiChatClient::class.java.getDeclaredMethod(
         "executeStreamChat", OkHttpClient::class.java, Request::class.java, String::class.java,
         AiNativeChatHistory::class.java, Function1::class.java, Boolean::class.javaPrimitiveType,
-        Boolean::class.javaPrimitiveType, AiNativeChatHistory::class.java, AiDeepSeekWebEvents::class.java,
+        Boolean::class.javaPrimitiveType, AiNativeChatHistory::class.java, AiNativeWebEvents::class.java,
         Continuation::class.java
     ).apply { isAccessible = true }
 }

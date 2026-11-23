@@ -108,6 +108,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+private val formRowStartPadding = 14.dp
 private val formRowEndPadding = 10.dp
 private val formChoiceArrowSize = 20.dp
 private val formNumberStepWidth = 44.dp
@@ -446,6 +447,7 @@ fun NgFormSelectRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     menuVariant: NgFormSelectMenuVariant = NgFormSelectMenuVariant.MATCH_ROW,
+    contentStartPadding: Dp = formRowStartPadding,
 ) {
     NgFormChoiceRow(
         title = title,
@@ -458,6 +460,7 @@ fun NgFormSelectRow(
         enabled = enabled,
         menuVariant = menuVariant,
         multiple = false,
+        contentStartPadding = contentStartPadding,
     )
 }
 
@@ -486,6 +489,31 @@ internal fun NgFormMultiSelectRow(
 }
 
 @Composable
+private fun ngFormSelectMenuWidth(
+    variant: NgFormSelectMenuVariant,
+    anchorWidth: Dp,
+    options: List<NgFormSelectOption>,
+    optionStyle: TextStyle,
+    optionPadding: Dp,
+    extraItemWidth: Dp = 0.dp,
+): Dp = when (variant) {
+    NgFormSelectMenuVariant.MATCH_ROW -> anchorWidth
+    NgFormSelectMenuVariant.END_ANCHORED_CONTENT -> {
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val labelWidth = remember(options, optionStyle, measurer, density) {
+            val pixels = options.maxOfOrNull {
+                measurer.measure(it.label, style = optionStyle, maxLines = 1).size.width
+            } ?: 0
+            with(density) { pixels.toDp() }
+        }
+        (labelWidth + optionPadding * 2 + extraItemWidth).coerceAtLeast(48.dp).coerceAtMost(anchorWidth)
+    }
+    NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
+    NgFormSelectMenuVariant.END_ANCHORED_FILTER -> minOf(anchorWidth, 156.dp)
+}
+
+@Composable
 private fun NgFormChoiceRow(
     title: String,
     selectedLabel: String,
@@ -497,6 +525,7 @@ private fun NgFormChoiceRow(
     enabled: Boolean,
     menuVariant: NgFormSelectMenuVariant,
     multiple: Boolean,
+    contentStartPadding: Dp = formRowStartPadding,
 ) {
     val colors = NgTheme.colors
     val layoutDensity = LocalDensity.current
@@ -508,31 +537,11 @@ private fun NgFormChoiceRow(
     val contentWidth = menuVariant == NgFormSelectMenuVariant.END_ANCHORED_CONTENT
     val optionPadding = if (contentWidth) 12.dp else 18.dp
     val optionStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp)
-    val menuWidth = when (menuVariant) {
-        NgFormSelectMenuVariant.MATCH_ROW -> rowWidth
-        NgFormSelectMenuVariant.END_ANCHORED_CONTENT -> {
-            val measurer = rememberTextMeasurer()
-            val labelWidth = remember(options, optionStyle, measurer, layoutDensity) {
-                val pixels = options.maxOfOrNull {
-                    measurer.measure(it.label, style = optionStyle, maxLines = 1).size.width
-                } ?: 0
-                with(layoutDensity) { pixels.toDp() }
-            }
-            val checkWidth = if (multiple) 32.dp else 0.dp
-            (labelWidth + optionPadding * 2 + checkWidth).coerceAtLeast(48.dp).coerceAtMost(rowWidth)
-        }
-        NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
-        NgFormSelectMenuVariant.END_ANCHORED_FILTER -> minOf(rowWidth, 156.dp)
-    }
-    val menuOffset = when (menuVariant) {
-        NgFormSelectMenuVariant.MATCH_ROW -> DpOffset.Zero
-        NgFormSelectMenuVariant.END_ANCHORED_CONTENT,
-        NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
-        NgFormSelectMenuVariant.END_ANCHORED_FILTER -> DpOffset(
-            x = (rowWidth - menuWidth).coerceAtLeast(0.dp),
-            y = 0.dp,
-        )
-    }
+    val menuWidth = ngFormSelectMenuWidth(
+        menuVariant, rowWidth, options, optionStyle, optionPadding,
+        extraItemWidth = if (multiple) 32.dp else 0.dp,
+    )
+    val menuOffset = DpOffset(x = (rowWidth - menuWidth).coerceAtLeast(0.dp), y = 0.dp)
 
     Box(
         modifier = modifier
@@ -549,7 +558,7 @@ private fun NgFormChoiceRow(
                     contentDescription = if (filter) "类型筛选，$title" else title
                     stateDescription = selectedLabel
                 }
-                .padding(start = 14.dp, end = formRowEndPadding),
+                .padding(start = contentStartPadding, end = formRowEndPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -1604,6 +1613,7 @@ fun NgFormSelectField(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     density: NgFormDensity = NgFormDensity.REGULAR,
+    menuVariant: NgFormSelectMenuVariant = NgFormSelectMenuVariant.MATCH_ROW,
 ) {
     val colors = NgTheme.colors
     val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
@@ -1617,6 +1627,11 @@ fun NgFormSelectField(
     val fieldHeight = if (compact) 32.dp else 34.dp
     val labelFontSize = if (compact) 12.sp else 13.sp
     val topSpacing = if (compact) 4.dp else 6.dp
+    val fieldWidth = with(layoutDensity) { fieldWidthPx.toDp() }
+    val contentWidth = menuVariant == NgFormSelectMenuVariant.END_ANCHORED_CONTENT
+    val optionPadding = if (contentWidth) 12.dp else 18.dp
+    val optionStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp)
+    val menuWidth = ngFormSelectMenuWidth(menuVariant, fieldWidth, options, optionStyle, optionPadding)
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
@@ -1676,9 +1691,8 @@ fun NgFormSelectField(
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
-                modifier = Modifier.width(
-                    with(layoutDensity) { fieldWidthPx.toDp() }
-                ),
+                modifier = Modifier.width(menuWidth),
+                offset = DpOffset(x = (fieldWidth - menuWidth).coerceAtLeast(0.dp), y = 0.dp),
                 shape = shape,
                 containerColor = ngDrawerContentCardColor(),
                 tonalElevation = 0.dp,
@@ -1686,6 +1700,7 @@ fun NgFormSelectField(
             ) {
                 options.forEach { option ->
                     DropdownMenuItem(
+                        enabled = option.enabled,
                         modifier = Modifier
                             .height(44.dp)
                             .semantics {
@@ -1694,7 +1709,8 @@ fun NgFormSelectField(
                         text = {
                             Text(
                                 text = option.label,
-                                color = Color(colors.onSurface),
+                                color = Color(colors.onSurface).copy(alpha = if (option.enabled) 1f else 0.45f),
+                                style = if (contentWidth) optionStyle else LocalTextStyle.current,
                                 fontSize = 15.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -1704,7 +1720,7 @@ fun NgFormSelectField(
                             expanded = false
                             onValueChange(option.value)
                         },
-                        contentPadding = PaddingValues(horizontal = 18.dp)
+                        contentPadding = PaddingValues(horizontal = optionPadding)
                     )
                 }
             }
@@ -1869,7 +1885,7 @@ enum class NgFormActionButtonAppearance {
     COLOR_PICKER_CONFIRM,
     /** 阅读夜间浮窗使用浅色 Tonal 确认按钮，保持主次层级。 */
     READING_NIGHT_CONFIRM,
-    /** 无底色、无描边的主题色文字操作，图标与文字使用紧凑间距。 */
+    /** 无底色、无描边的文字操作，默认主题色，危险操作使用错误色。 */
     TEXT,
 }
 
@@ -1885,6 +1901,10 @@ fun NgFormActionButton(
     minimumWidth: Dp = 76.dp,
     textSize: TextUnit = 14.sp,
     textLineHeight: TextUnit = 17.sp,
+    contentPadding: PaddingValues = PaddingValues(
+        horizontal = if (appearance == NgFormActionButtonAppearance.TEXT) 8.dp else 12.dp,
+    ),
+    trailingIcon: (@Composable () -> Unit)? = null,
     leadingIcon: (@Composable () -> Unit)? = null,
 ) {
     val colors = NgTheme.colors
@@ -1925,7 +1945,9 @@ fun NgFormActionButton(
             Color(colors.surface)
         }
     }
-    val contentColor = if (textAppearance) primary else when (variant) {
+    val contentColor = if (textAppearance) {
+        if (variant == NgButtonVariant.DANGER) Color(colors.error) else primary
+    } else when (variant) {
         NgButtonVariant.PRIMARY,
         NgButtonVariant.PRIMARY_LIGHT_CONTENT -> Color(primaryColors.content)
         NgButtonVariant.TONAL -> Color(readingConfirmColors?.content ?: colors.onSurface)
@@ -1934,6 +1956,7 @@ fun NgFormActionButton(
         NgButtonVariant.ON_IMAGE -> Color.White
         NgButtonVariant.OUTLINE -> primary
     }
+    val iconSpacing = if (textAppearance) 4.dp else 6.dp
     Button(
         onClick = onClick,
         modifier = modifier
@@ -1959,11 +1982,11 @@ fun NgFormActionButton(
             hoveredElevation = 0.dp,
             disabledElevation = 0.dp
         ),
-        contentPadding = PaddingValues(horizontal = if (textAppearance) 8.dp else 12.dp)
+        contentPadding = contentPadding,
     ) {
         leadingIcon?.let { icon ->
             icon()
-            Spacer(Modifier.width(if (textAppearance) 4.dp else 6.dp))
+            Spacer(Modifier.width(iconSpacing))
         }
         Text(
             text = text,
@@ -1974,5 +1997,9 @@ fun NgFormActionButton(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+        trailingIcon?.let { icon ->
+            Spacer(Modifier.width(iconSpacing))
+            icon()
+        }
     }
 }

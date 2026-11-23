@@ -46,6 +46,29 @@ object AiProviderStore {
     }
 
     @Synchronized
+    internal fun selectChatGptAccount(clientId: String, refresh: Boolean = false, onlyIfSelected: Boolean = false) {
+        val providers = providers()
+        val current = providers.first { it.isChatGptSubscription() }
+        val sameAccount = current.chatGptAccountId == clientId
+        if (sameAccount && !refresh || onlyIfSelected && !sameAccount) return
+        val updated = if (sameAccount) current else current.copy(
+            chatGptAccountId = clientId,
+            model = "",
+            models = emptyList(),
+            availableModelIds = emptyList(),
+            availableModelSelectionInitialized = false,
+            catalogLoaded = false,
+            unlistedModelEdits = null,
+        )
+        saveProviders(providers.map {
+            if (it.id == current.id) updated.copy(
+                catalogRevision = UUID.randomUUID().toString(),
+                catalogRefreshRequired = true,
+            ) else it
+        })
+    }
+
+    @Synchronized
     fun saveProvider(provider: AiProviderSetting, useExistingKeyHere: Boolean = false): AiProviderSetting {
         val providers = providers()
         val previous = providers.firstOrNull { it.id == provider.id }
@@ -68,6 +91,7 @@ object AiProviderStore {
         val id = modelId.trim()
         if (id.isEmpty()) return AiManualModelAddResult.UNAVAILABLE
         val current = provider(providerId) ?: return AiManualModelAddResult.UNAVAILABLE
+        if (current.isChatGptSubscription()) return AiManualModelAddResult.UNAVAILABLE
         val source = current.modelConfigurationKey()
         if (expectedModelConfigurationKey != null && expectedModelConfigurationKey != source) {
             return AiManualModelAddResult.UNAVAILABLE
@@ -129,6 +153,7 @@ object AiProviderStore {
         val reset = defaults.copy(
             name = if (current.builtIn || autoName) defaults.name else current.name,
             apiKey = current.apiKey,
+            chatGptAccountId = current.chatGptAccountId,
             enabled = current.enabled,
             model = current.model,
             models = current.models,
@@ -238,6 +263,18 @@ object AiProviderStore {
         default: AiProviderSetting,
         savedProvider: AiProviderSetting
     ): AiProviderSetting {
+        if (default.isChatGptSubscription()) return default.copy(
+            enabled = savedProvider.enabled,
+            chatGptAccountId = savedProvider.chatGptAccountId,
+            catalogRevision = savedProvider.catalogRevision,
+            catalogRefreshRequired = savedProvider.catalogRefreshRequired,
+            catalogLoaded = savedProvider.catalogLoaded,
+            model = savedProvider.model,
+            models = savedProvider.models,
+            availableModelIds = savedProvider.availableModelIds,
+            availableModelSelectionInitialized = savedProvider.availableModelSelectionInitialized,
+            unlistedModelEdits = savedProvider.unlistedModelEdits,
+        )
         val baseUrl = savedProvider.baseUrl.ifBlank { default.baseUrl }
         return default.copy(
             enabled = savedProvider.enabled,
@@ -314,9 +351,10 @@ object AiProviderStore {
     }
 
     private fun normalize(provider: AiProviderSetting): AiProviderSetting {
+        val isSubscription = provider.isChatGptSubscription()
         return provider.copy(
             timeoutSeconds = provider.timeoutSeconds.coerceIn(5, 600),
-            models = normalizeModels(provider.models),
+            models = normalizeModels(provider.models, sort = !isSubscription),
             availableModelIds = normalizeModelIds(provider.availableModelIds),
             modelsUrl = normalizeAiApiPath(provider.baseUrl, provider.modelsUrl),
             balanceUrl = normalizeAiApiPath(provider.baseUrl, provider.balanceUrl)
@@ -352,7 +390,7 @@ object AiProviderStore {
                 apiKey = nullableString(provider.apiKey),
                 baseUrl = baseUrl,
                 model = nullableString(provider.model),
-                models = normalizeModels(nullableModels(provider.models)),
+                models = normalizeModels(nullableModels(provider.models), sort = id != AiDefaultProviders.CHATGPT_ID),
                 availableModelIds = normalizeModelIds(provider.availableModelIds),
                 availableModelSelectionInitialized =
                     provider.availableModelSelectionInitialized,
@@ -416,8 +454,8 @@ object AiProviderStore {
             .distinct()
     }
 
-    private fun normalizeModels(models: List<*>): List<AiModel> {
-        return models.mapNotNull { model ->
+    private fun normalizeModels(models: List<*>, sort: Boolean = true): List<AiModel> {
+        val normalized = models.mapNotNull { model ->
             when (model) {
                 is AiModel -> model.normalizedModel()
                 is Map<*, *> -> model.toAiModel()
@@ -428,7 +466,7 @@ object AiProviderStore {
         }.filter { it.id.isNotBlank() }
             .map { it.withClearedCapabilitiesIfNeeded() }
             .distinctBy { it.id }
-            .sortedBy { it.id.lowercase() }
+        return if (sort) normalized.sortedBy { it.id.lowercase() } else normalized
     }
 
     private fun AiModel.withClearedCapabilitiesIfNeeded(): AiModel {

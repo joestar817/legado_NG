@@ -71,7 +71,7 @@ class AiDeepSeekWebToolsTest {
     @Test
     fun sourceDisplayKeepsCitationsAndActualReadFailuresWithSafeLinks() {
         val updates = mutableListOf<AiWebActivity>()
-        val events = AiDeepSeekWebEvents(updates::add)
+        val events = AiNativeWebEvents(updates::add)
         events.chatProgress(obj("""{"type":"call_started","call":{"id":"rl","kind":"read_link",
             "action":{"type":"read_link","url":"https://example.com/unavailable"}}}"""))
         assertEquals(AiWebActivityAction.READ, updates.last().activeAction)
@@ -91,7 +91,7 @@ class AiDeepSeekWebToolsTest {
     @Test
     fun responsesCodecStreamsAndReplaysReadSignatureWithoutRequiringToolsOnNextTurn() {
         val active = mutableListOf<AiWebActivity>()
-        val events = AiDeepSeekWebEvents(active::add)
+        val events = AiNativeWebEvents(active::add)
         val tool = obj("""{"type":"deepseek_read_url"}""")
         val codec = AiOpenAiResponsesCodec(
             official, "deepseek-flash", "/responses", deepSeekWeb = true, nativeTools = listOf(tool), webEvents = events,
@@ -132,7 +132,7 @@ class AiDeepSeekWebToolsTest {
         )
         val route = provider.deepSeekWebRoute(AiModel("deepseek-flash"))!!
         val plan = route.plan(true, "https://example.com/page", false) as AiWebToolPlan.Native
-        val events = AiDeepSeekWebEvents { }
+        val events = AiNativeWebEvents { }
         val codec = AiClaudeMessagesCodec(
             provider, "deepseek-flash", deepSeekWeb = true, nativeTools = plan.definitions, webEvents = events,
         )

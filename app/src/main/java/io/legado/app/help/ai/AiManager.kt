@@ -35,6 +35,7 @@ object AiManager {
         modelId: String? = null
     ): AiTextResult {
         val setting = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
+        check(!setting.isChatGptSubscription()) { "ChatGPT plan models are used in the AI assistant" }
         val requestModel = modelId ?: setting.model
         check(setting.enabled) { "AI provider is disabled" }
         check(requestModel.isNotBlank()) { "AI model is empty" }
@@ -52,6 +53,7 @@ object AiManager {
     }
 
     private suspend fun listModels(setting: AiProviderSetting): List<AiModel> {
+        if (setting.isChatGptSubscription()) return setting.fetchChatGptModels()
         return providerFor(setting).listModels(setting)
             .filter { it.id.isNotBlank() }
             .map { AiModelRegistry.enrich(it).withCatalogCapabilities(it.modelInfo) }
@@ -87,7 +89,7 @@ object AiManager {
             val (requested, token) = synchronized(AiProviderStore) {
                 val provider = AiProviderStore.provider(providerId)
                     ?: error("AI provider not found: $providerId")
-                check(provider.enabled && provider.apiKey.isNotBlank() && !provider.apiKeyNeedsReentry()) {
+                check(provider.enabled && provider.hasRequestCredentials()) {
                     "AI provider is not ready"
                 }
                 if (!provider.catalogFetchRequired()) return@withLock provider.models
@@ -111,7 +113,7 @@ object AiManager {
     suspend fun refreshEnabledProviderModels(): AiModelBatchRefreshResult {
         val (ready, missingKey, tokens) = synchronized(AiProviderStore) {
             val enabled = AiProviderStore.enabledProviders()
-            val missing = enabled.filter { it.apiKey.isBlank() || it.apiKeyNeedsReentry() }
+            val missing = enabled.filterNot { it.hasRequestCredentials() }
             val configured = enabled - missing.toSet()
             Triple(configured, missing.map { it.name }, configured.associate { it.id to beginCatalogRequest(it.id) })
         }
@@ -208,6 +210,7 @@ object AiManager {
 
     suspend fun testConnectivity(providerId: String): Int {
         val setting = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
+        if (setting.isChatGptSubscription()) return setting.fetchChatGptModels().size
         check(setting.apiKey.isNotBlank()) { "API key is empty" }
         return providerFor(setting).listModels(setting)
             .filter { it.id.isNotBlank() }

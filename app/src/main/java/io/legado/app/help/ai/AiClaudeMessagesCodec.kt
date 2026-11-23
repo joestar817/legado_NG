@@ -13,7 +13,7 @@ internal class AiClaudeMessagesCodec(
     modelInfo: AiModelInfo? = null,
     private val deepSeekWeb: Boolean = false,
     private val nativeTools: List<JsonObject> = emptyList(),
-    private val webEvents: AiDeepSeekWebEvents? = null,
+    private val webEvents: AiNativeWebEvents? = null,
 ) : AiChatCodec {
     private val endpoint = buildAiApiEndpoint(setting.baseUrl, "/messages")
     private val history = AiNativeChatHistory(setting, modelId, endpoint)

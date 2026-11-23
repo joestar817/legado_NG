@@ -280,6 +280,14 @@ private val geminiSynchronousPresets = listOf(
 private val modelPresets = mapOf(
     "deepseek" to deepSeekOfficialPresets,
     "openai" to documentedOpenAiModelPresets(),
+    // These model pages document function calling on Responses, the route used by ChatGPT plans.
+    // https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
+    AiDefaultProviders.CHATGPT_ID to listOf(
+        "gpt-6.2-sol", "gpt-6.2-astra",
+        "gpt-6.1-terra", "gpt-6.1-sol",
+        "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+        "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+    ).associateWith { AiModelPreset(toolCalling = true) },
     "gemini" to geminiSynchronousPresets,
     "aliyun_bailian" to bailianChannelPresets,
     "xiaomi_mimo" to listOf(

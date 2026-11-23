@@ -2,6 +2,7 @@ package io.legado.app.ui.config
 
 import android.app.Activity
 import android.app.Dialog
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.graphics.Color
@@ -25,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -33,6 +35,9 @@ import io.legado.app.base.BaseFragment
 import io.legado.app.databinding.FragmentAiConfigBinding
 import io.legado.app.data.appDb
 import io.legado.app.help.ai.AiConfig
+import io.legado.app.help.ai.AiChatGptException
+import io.legado.app.help.ai.AiChatGptSessions
+import io.legado.app.help.ai.CHATGPT_USAGE_URL
 import io.legado.app.help.ai.AiExternalSearchStore
 import io.legado.app.help.ai.AiManager
 import io.legado.app.help.ai.AiManualModelAddResult
@@ -60,6 +65,8 @@ import io.legado.app.help.ai.capAssistantContextWindow
 import io.legado.app.help.ai.catalogFetchRequired
 import io.legado.app.help.ai.effectiveModelCapabilities
 import io.legado.app.help.ai.effectiveModelInfo
+import io.legado.app.help.ai.hasRequestCredentials
+import io.legado.app.help.ai.isChatGptSubscription
 import io.legado.app.help.ai.isManualModel
 import io.legado.app.help.ai.modelConfigurationKey
 import io.legado.app.help.ai.modelPresetProviderId
@@ -210,6 +217,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var providerDetailTab = ProviderDetailTab.CONFIG
     private val autoFetchedModelProviderRevisions = hashMapOf<String, String?>()
     private var requestJob: Job? = null
+    private var chatGptJob: Job? = null
+    private var chatGptSigningIn = false
+    private var chatGptSigningOut = false
+    private var chatGptNotice: Int? = null
     private var modelRefreshJob: Job? = null
     private var isRefreshingAllModels by mutableStateOf(false)
     private var skillSummaryJob: Job? = null
@@ -424,6 +435,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun showProviderList() {
+        if (chatGptSigningIn) chatGptJob?.cancel()
         addModelTarget = null
         currentPage = Page.PROVIDERS
         setFeatureComposePage(Page.PROVIDERS)
@@ -772,6 +784,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 providers.map { provider ->
                     val modelCount = provider.visibleModelCount()
                     val providerHost = aiProviderHost(provider.baseUrl)
+                    val chatGptAccount = AiChatGptSessions.account(provider.chatGptAccountId)
                     AiProviderListItemUiModel(
                         id = provider.id,
                         name = provider.name,
@@ -784,7 +797,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                             getString(R.string.ai_provider_model_count, modelCount.toString())
                         },
                         modelCountWarning = modelCount == 0,
-                        keyConfigured = provider.apiKey.isNotBlank() && !provider.apiKeyNeedsReentry(),
+                        keyConfigured = provider.hasRequestCredentials(),
+                        missingCredentialRes = when {
+                            !provider.isChatGptSubscription() -> R.string.ai_provider_no_api_key
+                            chatGptAccount?.needsReauthorization() == true -> R.string.ai_chatgpt_session_expired
+                            chatGptAccount?.tokens == null -> R.string.ai_chatgpt_not_signed_in
+                            else -> R.string.ai_chatgpt_plan_not_authorized
+                        },
                         reorderable = true,
                         deletable = !provider.builtIn
                     )
@@ -984,6 +1003,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             providerName = provider.name,
             providerIconRes = provider.iconRes(),
             selectedTab = providerDetailTab.ordinal,
+            chatGpt = if (provider.isChatGptSubscription()) chatGptUiState(provider) else null,
         )
         refreshModelList(provider)
         showProviderDetailTab(providerDetailTab)
@@ -1219,6 +1239,33 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun handleProviderDetailAction(action: AiProviderDetailAction) {
         when (action) {
+            is AiProviderDetailAction.ChatGptSignIn -> signInToChatGpt(action.addAccount)
+            AiProviderDetailAction.ChatGptCancelSignIn -> if (chatGptSigningIn) chatGptJob?.cancel()
+            AiProviderDetailAction.ChatGptSignOut -> signOutOfChatGpt()
+            AiProviderDetailAction.ChatGptOpenUsage -> {
+                try {
+                    openChatGptBrowser(CHATGPT_USAGE_URL)
+                } catch (_: AiChatGptException) {
+                    toastOnUi(R.string.ai_chatgpt_browser_unavailable)
+                }
+            }
+            is AiProviderDetailAction.ChatGptSelectAccount -> {
+                if (chatGptJob?.isActive == true) return
+                val account = AiChatGptSessions.account(action.accountId) ?: return
+                if (account.tokens == null || account.needsReauthorization()) {
+                    signInToChatGpt(addAccount = false, registeredAccountId = account.clientId)
+                    return
+                }
+                chatGptNotice = null
+                AiProviderStore.selectChatGptAccount(action.accountId)
+                refreshChatGptDetail(fetch = true)
+            }
+            is AiProviderDetailAction.ChatGptEnabled -> {
+                val provider = currentProviderId?.let(AiProviderStore::provider)
+                    ?.takeIf { it.isChatGptSubscription() } ?: return
+                AiProviderStore.saveProvider(provider.copy(enabled = action.enabled))
+                refreshChatGptDetail(fetch = action.enabled)
+            }
             is AiProviderDetailAction.TabSelected -> {
                 val tab = ProviderDetailTab.entries[action.index]
                 showProviderDetailTab(tab)
@@ -1251,6 +1298,86 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 setModelsEnabled(setOf(action.modelId), action.selected)
             }
         }
+    }
+
+    private fun chatGptUiState(provider: AiProviderSetting): AiChatGptProviderUiState =
+        AiChatGptProviderUiState.fromAccounts(
+            registeredAccounts = AiChatGptSessions.accounts(),
+            registeredAccountId = provider.chatGptAccountId,
+            defaultLabel = getString(R.string.ai_chatgpt_account),
+        ).copy(
+            signingIn = chatGptSigningIn,
+            signingOut = chatGptSigningOut,
+            noticeRes = chatGptNotice,
+        )
+
+    private fun openChatGptBrowser(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+        } catch (_: ActivityNotFoundException) {
+            throw AiChatGptException(R.string.ai_chatgpt_browser_unavailable)
+        }
+    }
+
+    private fun signInToChatGpt(addAccount: Boolean, registeredAccountId: String? = null) {
+        if (chatGptJob?.isActive == true) return
+        val provider = currentProviderId?.let(AiProviderStore::provider)
+            ?.takeIf { it.isChatGptSubscription() } ?: return
+        chatGptSigningIn = true
+        chatGptNotice = null
+        refreshChatGptDetail()
+        chatGptJob = viewLifecycleOwner.lifecycleScope.launch {
+            var fetch = false
+            try {
+                val account = AiChatGptSessions.signIn(
+                    clientId = (registeredAccountId ?: provider.chatGptAccountId).takeUnless { addAccount },
+                    openBrowser = ::openChatGptBrowser,
+                )
+                AiProviderStore.selectChatGptAccount(account.clientId, refresh = true)
+                fetch = account.tokens?.allowsPlan == true
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                chatGptNotice = (error as? AiChatGptException)?.messageRes ?: R.string.ai_chatgpt_sign_in_failed
+            } finally {
+                chatGptSigningIn = false
+                if (isAdded && view != null && viewLifecycleOwner.lifecycle.currentState != Lifecycle.State.DESTROYED) {
+                    refreshChatGptDetail(fetch && isActive)
+                }
+            }
+        }
+    }
+
+    private fun signOutOfChatGpt() {
+        if (chatGptJob?.isActive == true) return
+        val provider = currentProviderId?.let(AiProviderStore::provider)
+            ?.takeIf { it.isChatGptSubscription() } ?: return
+        val clientId = provider.chatGptAccountId ?: return
+        chatGptSigningOut = true
+        chatGptNotice = null
+        refreshChatGptDetail()
+        chatGptJob = viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val confirmed = AiChatGptSessions.signOut(clientId)
+                if (!confirmed) chatGptNotice = R.string.ai_chatgpt_revoke_unconfirmed
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                chatGptNotice = (error as? AiChatGptException)?.messageRes ?: R.string.ai_chatgpt_sign_out_failed
+            } finally {
+                chatGptSigningOut = false
+                if (isActive && isAdded && view != null) refreshChatGptDetail()
+            }
+        }
+    }
+
+    private fun refreshChatGptDetail(fetch: Boolean = false) {
+        if (currentPage == Page.PROVIDERS) refreshProviders()
+        if (currentPage != Page.DETAIL) return
+        val provider = currentProviderId?.let(AiProviderStore::provider)
+            ?.takeIf { it.isChatGptSubscription() } ?: return
+        refreshCurrentDetail()
+        if (fetch) maybeAutoFetchModels(provider)
     }
 
     private fun addProviderModel(target: AddModelTarget, id: String, type: AiModelType) {
@@ -2516,10 +2643,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun maybeAutoFetchModels(provider: AiProviderSetting) {
         if (providerDetailScreenState.isRefreshingModels) return
+        if (provider.isChatGptSubscription() && !provider.enabled) return
         val hasInitializedModels = !provider.catalogFetchRequired() &&
             (provider.catalogLoaded || provider.availableModelSelectionInitialized)
         if (
-            provider.apiKey.isBlank() || provider.apiKeyNeedsReentry() ||
+            !provider.hasRequestCredentials() ||
             hasInitializedModels ||
             (provider.id in autoFetchedModelProviderRevisions &&
                 autoFetchedModelProviderRevisions[provider.id] == provider.catalogRevision)
@@ -2533,17 +2661,22 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun fetchModels() {
         if (providerDetailScreenState.isRefreshingModels) return
         providerDetailScreenState = providerDetailScreenState.copy(isRefreshingModels = true)
-        val provider = saveCurrentProvider()
+        val provider = currentProviderId?.let(AiProviderStore::provider)?.takeIf { it.isChatGptSubscription() }
+            ?: saveCurrentProvider()
         if (provider == null) {
             providerDetailScreenState = providerDetailScreenState.copy(isRefreshingModels = false)
             return
         }
-        if (provider.apiKey.isBlank() || provider.apiKeyNeedsReentry()) {
+        if (!provider.hasRequestCredentials()) {
             providerDetailScreenState = providerDetailScreenState.copy(isRefreshingModels = false)
             showAiClassicDialog(
                 title = getString(R.string.ai_fetch_models),
                 message = getString(
-                    if (provider.apiKeyNeedsReentry()) R.string.ai_api_key_wrong_origin else R.string.ai_api_key_required,
+                    when {
+                        provider.isChatGptSubscription() -> R.string.ai_chatgpt_sign_in_required
+                        provider.apiKeyNeedsReentry() -> R.string.ai_api_key_wrong_origin
+                        else -> R.string.ai_api_key_required
+                    },
                 ),
             )
             return
@@ -2556,6 +2689,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 if (current == null || current.id != provider.id || current.catalogRevision != provider.catalogRevision) {
                     return@launch
                 }
+                if (current.isChatGptSubscription()) chatGptNotice = null
                 refreshCurrentDetail()
                 val missing = AiAssistantConfigUi.missingSelectedModelLabel(listOf(current))
                 val currentIds = models.mapTo(HashSet()) { it.id }
@@ -2574,13 +2708,22 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 ).show()
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
                 val current = currentProviderId?.let(AiProviderStore::provider)
                 if (current == null || current.id != provider.id || current.catalogRevision != provider.catalogRevision) {
                     return@launch
                 }
                 if (addModelTarget?.providerId == provider.id) {
                     toastOnUi(R.string.ai_model_refresh_failed)
+                    return@launch
+                }
+                if (current.isChatGptSubscription() && error is AiChatGptException) {
+                    chatGptNotice = error.messageRes
+                    refreshChatGptDetail()
+                    showAiClassicDialog(
+                        title = getString(R.string.ai_model_refresh_failed),
+                        message = error.message,
+                    )
                     return@launch
                 }
                 showAiClassicDialog(
@@ -2599,9 +2742,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 providerDetailScreenState = providerDetailScreenState.copy(
                     isRefreshingModels = false,
                 )
-                if (isActive && isAdded && currentPage == Page.DETAIL && providerDetailTab == ProviderDetailTab.MODELS) {
+                if (isActive && isAdded && currentPage == Page.DETAIL) {
                     val current = currentProviderId?.let(AiProviderStore::provider)
-                    if (current != null && (current.id != provider.id || current.catalogRevision != provider.catalogRevision)) {
+                    if (current != null && (providerDetailTab == ProviderDetailTab.MODELS || current.isChatGptSubscription()) &&
+                        (current.id != provider.id || current.catalogRevision != provider.catalogRevision)) {
                         maybeAutoFetchModels(current)
                     }
                 }
@@ -2799,9 +2943,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             modelFilter = providerDetailScreenState.modelFilter.orAllFor(models),
             emptyModelNoticeRes = when {
                 provider?.apiKeyNeedsReentry() == true -> R.string.ai_api_key_wrong_origin
-                provider?.catalogRefreshRequired == true && provider.apiKey.isNotBlank() ->
+                provider?.isChatGptSubscription() == true && !provider.hasRequestCredentials() ->
+                    R.string.ai_chatgpt_sign_in_required
+                provider?.catalogRefreshRequired == true && provider.hasRequestCredentials() ->
                     R.string.ai_model_catalog_refresh_required
-                provider?.catalogLoaded == true && provider.models.isEmpty() && provider.apiKey.isNotBlank() ->
+                provider?.catalogLoaded == true && provider.models.isEmpty() && provider.hasRequestCredentials() ->
                     R.string.ai_model_catalog_empty
                 else -> null
             },
@@ -2936,7 +3082,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun AiProviderSetting.visibleModelCount(): Int {
-        return if (apiKey.isBlank()) 0 else displayModels().size
+        return if (!hasRequestCredentials()) 0 else displayModels().size
     }
 
     private fun AiProviderType.localizedDisplayName(): String {

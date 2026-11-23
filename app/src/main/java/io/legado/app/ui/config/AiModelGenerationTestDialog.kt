@@ -51,6 +51,7 @@ import io.legado.app.help.ai.AiModelGenerationTestResult
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.modelGenerationTestProtocols
 import io.legado.app.help.ai.resolveModelGenerationRoute
+import io.legado.app.help.ai.isChatGptSubscription
 import io.legado.app.ui.design.components.compose.LocalNgDialogColorMode
 import io.legado.app.ui.design.components.compose.LocalNgPaneBounds
 import io.legado.app.ui.design.components.compose.NgDialogColorMode
@@ -74,12 +75,13 @@ internal fun AiModelGenerationTestDialog(
     onDismissRequest: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val subscription = provider.isChatGptSubscription()
     val modelRoute = remember(provider, model) { provider.resolveModelGenerationRoute(model) }
     val protocols = remember(provider, modelRoute.protocol) {
         (provider.modelGenerationTestProtocols() + modelRoute.protocol).distinct()
     }
     var protocol by remember(provider, model) { mutableStateOf(modelRoute.protocol) }
-    var streaming by remember(provider, model) { mutableStateOf(provider.streamResponseEnabled) }
+    var streaming by remember(provider, model) { mutableStateOf(provider.streamResponseEnabled || subscription) }
     var result by remember(provider, model) { mutableStateOf<AiModelGenerationTestResult?>(null) }
     var job by remember(provider, model) { mutableStateOf<Job?>(null) }
     val issue = remember(provider, model, protocol, streaming) {
@@ -154,17 +156,21 @@ internal fun AiModelGenerationTestDialog(
                             }
                         }
                         GenerationTestRow(label = stringResource(R.string.ai_model_test_response_mode)) {
-                            GenerationTestSelector(
-                                current = streaming,
-                                options = listOf(
-                                    true to stringResource(R.string.ai_model_test_streaming),
-                                    false to stringResource(R.string.ai_model_test_non_streaming),
-                                ),
-                                enabled = !running,
-                            ) { value ->
-                                if (value != streaming) {
-                                    streaming = value
-                                    result = null
+                            if (subscription) {
+                                GenerationTestText(stringResource(R.string.ai_model_test_streaming))
+                            } else {
+                                GenerationTestSelector(
+                                    current = streaming,
+                                    options = listOf(
+                                        true to stringResource(R.string.ai_model_test_streaming),
+                                        false to stringResource(R.string.ai_model_test_non_streaming),
+                                    ),
+                                    enabled = !running,
+                                ) { value ->
+                                    if (value != streaming) {
+                                        streaming = value
+                                        result = null
+                                    }
                                 }
                             }
                         }

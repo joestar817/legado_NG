@@ -104,6 +104,7 @@ internal data class AiProviderDetailScreenState(
     val emptyModelNoticeRes: Int? = null,
     val isRefreshingModels: Boolean = false,
     val revealModelId: String? = null,
+    val chatGpt: AiChatGptProviderUiState? = null,
 )
 
 internal sealed interface AiProviderDetailAction {
@@ -118,6 +119,12 @@ internal sealed interface AiProviderDetailAction {
     data class DeleteModelRequested(val modelId: String) : AiProviderDetailAction
     data class ModelRevealed(val modelId: String) : AiProviderDetailAction
     data class ToggleModel(val modelId: String, val selected: Boolean) : AiProviderDetailAction
+    data class ChatGptSignIn(val addAccount: Boolean) : AiProviderDetailAction
+    data class ChatGptSelectAccount(val accountId: String) : AiProviderDetailAction
+    data class ChatGptEnabled(val enabled: Boolean) : AiProviderDetailAction
+    data object ChatGptCancelSignIn : AiProviderDetailAction
+    data object ChatGptSignOut : AiProviderDetailAction
+    data object ChatGptOpenUsage : AiProviderDetailAction
 }
 
 @Composable
@@ -139,6 +146,7 @@ internal fun AiProviderDetailScreen(
                 state = state,
                 formState = formState,
                 onFormAction = onFormAction,
+                onAction = onAction,
                 onHelp = onHelp,
                 onBack = { onAction(AiProviderDetailAction.Back) },
                 scrollState = configScrollState,
@@ -176,6 +184,7 @@ private fun AiProviderConfigTab(
     state: AiProviderDetailScreenState,
     formState: AiProviderFormScreenState,
     onFormAction: (AiProviderFormScreenAction) -> Unit,
+    onAction: (AiProviderDetailAction) -> Unit,
     onHelp: (() -> Unit)?,
     onBack: () -> Unit,
     scrollState: ScrollState,
@@ -195,10 +204,12 @@ private fun AiProviderConfigTab(
                 ProviderToolbarIcon(state.providerIconRes)
             },
             trailingContent = {
-                AiConfigHelpResetActions(
-                    onHelp = onHelp,
-                    onReset = { onFormAction(AiProviderFormScreenAction.ResetRequested) },
-                )
+                if (state.chatGpt == null) {
+                    AiConfigHelpResetActions(
+                        onHelp = onHelp,
+                        onReset = { onFormAction(AiProviderFormScreenAction.ResetRequested) },
+                    )
+                }
             },
         )
         Column(
@@ -209,10 +220,8 @@ private fun AiProviderConfigTab(
                 .padding(horizontal = 16.dp)
                 .padding(top = 6.dp, bottom = 24.dp),
         ) {
-            AiProviderFormScreen(
-                state = formState,
-                onAction = onFormAction,
-            )
+            if (state.chatGpt != null) AiChatGptProviderForm(state.chatGpt, formState.enabled, onAction)
+            else AiProviderFormScreen(state = formState, onAction = onFormAction)
         }
     }
 }
@@ -326,6 +335,7 @@ private fun AiProviderModelsTab(
                 filter = state.modelFilter,
                 availableFilters = availableFilters,
                 visibleModels = models,
+                allowManualModels = state.chatGpt == null,
                 isRefreshing = state.isRefreshingModels,
                 onAction = onAction,
             )
@@ -393,6 +403,7 @@ private fun AiProviderModelActions(
     filter: AiProviderModelFilter,
     availableFilters: List<AiProviderModelFilter>,
     visibleModels: List<AiProviderModelItemUiModel>,
+    allowManualModels: Boolean,
     isRefreshing: Boolean,
     onAction: (AiProviderDetailAction) -> Unit,
 ) {
@@ -400,10 +411,10 @@ private fun AiProviderModelActions(
     val menuState = remember { NgPopupToggleState() }
     val filterLabel = stringResource(filter.labelRes)
     val bulkEnableTarget = remember(visibleModels) { visibleModels.bulkModelEnableTarget() }
-    val menuItems = remember(filter, availableFilters, bulkEnableTarget, isRefreshing) {
+    val menuItems = remember(filter, availableFilters, bulkEnableTarget, isRefreshing, allowManualModels) {
         val disableAll = bulkEnableTarget == false
         buildList {
-            add(NgExpandableActionMenuItem(MODEL_ADD, R.string.ai_model_add, R.drawable.ic_add))
+            if (allowManualModels) add(NgExpandableActionMenuItem(MODEL_ADD, R.string.ai_model_add, R.drawable.ic_add))
             add(
                 NgExpandableActionMenuItem(
                     itemId = MODEL_REFRESH,

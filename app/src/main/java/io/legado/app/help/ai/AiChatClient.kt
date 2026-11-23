@@ -55,7 +55,7 @@ class AiChatClient internal constructor(
         protocol: AiModelGenerationTestProtocol = setting.resolveModelGenerationRoute(model, stream = stream).protocol,
     ): AiModelGenerationTestResult {
         currentCoroutineContext().ensureActive()
-        if (setting.apiKey.isBlank() || setting.apiKeyNeedsReentry()) {
+        if (!setting.hasRequestCredentials()) {
             return AiModelGenerationTestResult.Failure(AiModelGenerationTestFailure.MISSING_API_KEY)
         }
         when (setting.resolveModelGenerationRoute(model, protocolOverride = protocol, stream = stream).issue) {
@@ -253,7 +253,7 @@ class AiChatClient internal constructor(
             assistantParams, model.catalogInfo(modelSettings), contextWindow,
         ) ?: assistantParams
         val params = AiConfig.assistantModelReasoning(setting, model).applyTo(outputParams)
-        val webRoute = setting.deepSeekWebRoute(model, AiModelGenerationRoute(protocol, null))
+        val webRoute = setting.nativeWebRoute(model, AiModelGenerationRoute(protocol, null))
         val webPlan = AiExternalSearchStore.current().resolveWebToolPlan(
             nativeRoute = webRoute,
             model = model,
@@ -263,7 +263,7 @@ class AiChatClient internal constructor(
             thinkingOff = params.disableThinking && protocol != AiModelGenerationTestProtocol.CLAUDE_MESSAGES,
         )
         val nativeWebLabel = appCtx.getString(R.string.ai_search_source_native)
-        val webEvents = if (webPlan is AiWebToolPlan.Native) AiDeepSeekWebEvents {
+        val webEvents = if (webPlan is AiWebToolPlan.Native) AiNativeWebEvents {
             onWebUpdate(it.copy(providerLabel = nativeWebLabel), AiWebAccess.Native)
         } else null
         val externalWeb = (webPlan as? AiWebToolPlan.External)?.let { plan ->
@@ -1135,7 +1135,9 @@ class AiChatClient internal constructor(
     }
 
     private fun Throwable.isContextWindowExceeded(): Boolean {
-        val text = generateSequence(this) { it.cause }
+        val errors = generateSequence(this) { it.cause }.toList()
+        if (errors.any { (it as? AiChatGptException)?.providerCode == "context_length_exceeded" }) return true
+        val text = errors.asSequence()
             .mapNotNull { it.message }
             .joinToString("\n")
             .lowercase()
@@ -1293,23 +1295,29 @@ class AiChatClient internal constructor(
         generationTest: Boolean = false,
         assistantTurn: Boolean = false,
         protocol: AiModelGenerationTestProtocol = setting.requireModelGenerationProtocol(model),
-        webRoute: AiDeepSeekWebRoute? = null,
+        webRoute: AiNativeWebRoute? = null,
         webPlan: AiWebToolPlan = AiWebToolPlan.Off,
-        webEvents: AiDeepSeekWebEvents? = null,
+        webEvents: AiNativeWebEvents? = null,
     ): ChatCompletionSnapshot {
-        val stream = setting.streamResponseEnabled
+        val subscription = setting.isChatGptSubscription()
+        val stream = setting.streamResponseEnabled || subscription
         val apiPath = setting.generationApiPath(protocol)
+        val chatGptAccessToken = if (subscription && protocol == AiModelGenerationTestProtocol.RESPONSES && apiPath != null) {
+            AiChatGptSessions.accessToken(setting, forInference = true)
+        } else null
         val nativeWeb = webPlan as? AiWebToolPlan.Native
         val nativeTools = nativeWeb?.definitions.orEmpty()
+        val deepSeekRoute = webRoute as? AiDeepSeekWebRoute
         val codec = when (protocol) {
             AiModelGenerationTestProtocol.CLAUDE_MESSAGES ->
                 AiClaudeMessagesCodec(setting, model.id, setting.reasoningCatalogInfo(model),
-                    webRoute != null, nativeTools, webEvents)
+                    deepSeekRoute != null, nativeTools, webEvents)
             AiModelGenerationTestProtocol.GEMINI_GENERATE_CONTENT ->
                 AiGeminiContentCodec(setting, model.id, setting.reasoningCatalogInfo(model))
             AiModelGenerationTestProtocol.RESPONSES -> {
                 if (apiPath == null) throw AiEndpointException("Responses API endpoint is not configured")
-                AiOpenAiResponsesCodec(setting, model.id, apiPath, webRoute != null, nativeTools, webEvents)
+                AiOpenAiResponsesCodec(setting, model.id, apiPath, deepSeekRoute != null,
+                    nativeTools, webEvents, chatGptAccessToken = chatGptAccessToken)
             }
             AiModelGenerationTestProtocol.CHAT_COMPLETIONS -> null
         }
@@ -1320,8 +1328,14 @@ class AiChatClient internal constructor(
             val request = codec.request(providerMessages, tools, params, stream, conversationId)
             var partialContent = ""
             var partialReasoning: String? = null
-            val reply = newCall(request).readCancellableStream { response ->
+            val client = if (subscription) chatGptHttpClient(setting.timeoutSeconds) else this
+            val reply = client.newCall(request).readCancellableStream { response ->
                 response.use {
+                    if (chatGptAccessToken != null && !it.isSuccessful) {
+                        val error = chatGptRequestError(it.code, it.chatGptJson())
+                        val resolved = AiChatGptSessions.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
+                        if (!generationTest) throw resolved
+                    }
                     it.requireChatHttpSuccess(generationTest)
                     if (stream) {
                         it.body.charStream().buffered().use { reader ->
@@ -1340,8 +1354,11 @@ class AiChatClient internal constructor(
                                     ))
                                 }
                             } catch (error: Exception) {
-                                if (!assistantTurn) throw error
-                                throwInterruptedStream(error, partialContent, partialReasoning)
+                                val resolved = if (chatGptAccessToken != null && error is AiChatGptException) {
+                                    AiChatGptSessions.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
+                                } else error
+                                if (!assistantTurn) throw resolved
+                                throwInterruptedStream(resolved, partialContent, partialReasoning)
                             }
                         }
                     } else {
@@ -1360,7 +1377,7 @@ class AiChatClient internal constructor(
             return completion
         }
         if (apiPath == null) throw AiEndpointException("Chat Completions API endpoint is not configured")
-        val deepSeekHistory = webRoute?.let { AiNativeChatHistory(setting, model.id, it.endpoint) }
+        val deepSeekHistory = deepSeekRoute?.let { AiNativeChatHistory(setting, model.id, it.endpoint) }
         val request = Request.Builder()
             .url(buildAiApiEndpoint(setting.baseUrl, apiPath))
             .addHeader("Authorization", "Bearer ${setting.apiKeyForRequest()}")
@@ -1449,7 +1466,7 @@ class AiChatClient internal constructor(
         openRouterHistory: AiNativeChatHistory?,
         generationTest: Boolean,
         deepSeekHistory: AiNativeChatHistory?,
-        webEvents: AiDeepSeekWebEvents?,
+        webEvents: AiNativeWebEvents?,
     ): ChatCompletionSnapshot {
         val responseBody = if (generationTest) {
             newCall(request).readCancellableStream { response ->
@@ -1511,7 +1528,7 @@ class AiChatClient internal constructor(
         generationTest: Boolean,
         assistantTurn: Boolean,
         deepSeekHistory: AiNativeChatHistory?,
-        webEvents: AiDeepSeekWebEvents?,
+        webEvents: AiNativeWebEvents?,
     ): ChatCompletionSnapshot {
         return newCall(request).readCancellableStream { response ->
             response.use {

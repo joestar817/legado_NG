@@ -22,7 +22,7 @@ internal fun AiProviderSetting.modelGenerationTestProtocol(): AiModelGenerationT
 
 internal fun AiProviderSetting.modelGenerationTestProtocols(): List<AiModelGenerationTestProtocol> {
     val current = modelGenerationTestProtocol()
-    if (type != AiProviderType.OPENAI) return listOf(current)
+    if (type != AiProviderType.OPENAI || isChatGptSubscription()) return listOf(current)
     return if (current == AiModelGenerationTestProtocol.RESPONSES ||
         generationApiPath(AiModelGenerationTestProtocol.RESPONSES) != null
     ) {
@@ -35,6 +35,9 @@ internal fun AiProviderSetting.modelGenerationTestProtocols(): List<AiModelGener
 private val generationPresets by lazy { AiDefaultProviders.all().associateBy { it.id } }
 
 internal fun AiProviderSetting.generationApiPath(protocol: AiModelGenerationTestProtocol): String? {
+    if (isChatGptSubscription()) return "$CHATGPT_API/responses".takeIf {
+        protocol == AiModelGenerationTestProtocol.RESPONSES
+    }
     if (type != AiProviderType.OPENAI) return null
     return when (protocol) {
         AiModelGenerationTestProtocol.CHAT_COMPLETIONS ->

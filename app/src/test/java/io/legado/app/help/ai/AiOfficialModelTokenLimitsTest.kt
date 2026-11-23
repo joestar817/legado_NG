@@ -6,6 +6,22 @@ import org.junit.Test
 
 class AiOfficialModelTokenLimitsTest {
     @Test
+    fun chatGptSubscriptionUsesItsOwnCatalogContext() {
+        val defaults = AiDefaultProviders.all()
+        val subscription = defaults.first { it.isChatGptSubscription() }
+        val openAi = defaults.first { it.id == "openai" }
+        val model = AiModel("gpt-5.6-sol")
+        val listed = model.copy(modelInfo = AiModelInfo(
+            endpoint = subscription.modelConfigurationKey(),
+            contextWindow = AiModelValue(272_000),
+        ))
+
+        assertEquals(272_000, subscription.assistantContextWindowLimit(listed))
+        assertNull(subscription.assistantContextWindowLimit(model))
+        assertEquals(1_050_000, openAi.assistantContextWindowLimit(model))
+    }
+
+    @Test
     fun catalogLimitsTakePrecedenceOverTheExactOfficialReference() {
         val provider = AiDefaultProviders.all().first { it.id == "volcengine" }
         val model = AiModel(

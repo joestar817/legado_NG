@@ -72,7 +72,11 @@ data class AiProviderSetting(
     val useResponsesApi: Boolean? = null,
     @SerializedName("responsesApiPath")
     val responsesApiPath: String? = null,
+    @SerializedName("chatGptAccountId")
+    val chatGptAccountId: String? = null,
 )
+
+internal fun AiProviderSetting.isChatGptSubscription(): Boolean = builtIn && id == AiDefaultProviders.CHATGPT_ID
 
 enum class AiProviderType(val prefValue: String, val displayName: String) {
     @SerializedName(value = "OPENAI", alternate = ["X", "openai"])

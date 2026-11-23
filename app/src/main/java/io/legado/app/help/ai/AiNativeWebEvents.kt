@@ -23,14 +23,21 @@ data class AiWebActivity(
     @SerializedName("active_action") val activeAction: AiWebActivityAction? = null,
     @SerializedName("provider_label") val providerLabel: String? = null,
     @SerializedName("external_error") val externalError: String? = null,
+    @SerializedName("inline_citations") val inlineCitations: List<AiWebCitation>? = null,
+    @SerializedName("cited_text_hash") val citedTextHash: Int? = null,
 ) {
     fun settledOrNull(): AiWebActivity? = copy(activeAction = null).takeIf {
         it.sources.isNotEmpty() || it.failedLinks.isNotEmpty() || it.searchFailed || it.externalError != null
     }
 }
 
+data class AiWebCitation(
+    @SerializedName("end_offset") val endOffset: Int,
+    @SerializedName("url") val url: String,
+)
+
 /** Normalizes provider events for the chat UI. Wire history is kept separately by each codec. */
-internal class AiDeepSeekWebEvents(private val onUpdate: (AiWebActivity) -> Unit) {
+internal class AiNativeWebEvents(private val onUpdate: (AiWebActivity) -> Unit) {
     private data class Call(val action: AiWebActivityAction, val url: String?)
 
     private val running = mutableMapOf<String, Call>()
@@ -40,6 +47,8 @@ internal class AiDeepSeekWebEvents(private val onUpdate: (AiWebActivity) -> Unit
     private val failedLinks = linkedSetOf<String>()
     private var searchFailed = false
     private var latest = AiWebActivity()
+    private var inlineCitations: List<AiWebCitation>? = null
+    private var citedTextHash: Int? = null
 
     val settled: AiWebActivity? get() = latest.settledOrNull()
 
@@ -78,7 +87,7 @@ internal class AiDeepSeekWebEvents(private val onUpdate: (AiWebActivity) -> Unit
         publish()
     }
 
-    fun responsesResult(output: List<JsonObject>) {
+    fun responsesResult(output: List<JsonObject>, inline: Boolean = false) {
         output.forEach { item ->
             when (item.stringOrNull("type")) {
                 "web_search_call" -> completed(item)
@@ -87,7 +96,35 @@ internal class AiDeepSeekWebEvents(private val onUpdate: (AiWebActivity) -> Unit
                 }
             }
         }
+        if (inline) collectInlineCitations(output)
         publish()
+    }
+
+    private fun collectInlineCitations(output: List<JsonObject>) {
+        val text = StringBuilder()
+        val offsets = mutableListOf<AiWebCitation>()
+        output.filter { it.stringOrNull("type") == "message" }.forEach { item ->
+            item.arrayOrNull("content").webObjects().filter { it.stringOrNull("type") == "output_text" }
+                .forEach { part ->
+                    val value = part.stringOrNull("text").orEmpty()
+                    val characters = value.codePointCount(0, value.length)
+                    part.arrayOrNull("annotations").webObjects().forEach annotation@{ annotation ->
+                        if (offsets.size >= MAX_WEB_SOURCES || annotation.stringOrNull("type") != "url_citation") {
+                            return@annotation
+                        }
+                        val url = annotation.stringOrNull("url").webUrl() ?: return@annotation
+                        val end = runCatching { annotation.intOrNull("end_index") }.getOrNull()
+                        val offset = end?.takeIf { it in 1..characters }?.let { value.offsetByCodePoints(0, it) }
+                        offsets += AiWebCitation(if (offset == null) -1 else text.length + offset, url)
+                    }
+                    text.append(value)
+                }
+        }
+        val raw = text.toString()
+        val trimmed = raw.trim()
+        val leading = raw.length - raw.trimStart().length
+        inlineCitations = offsets.map { it.copy(endOffset = it.endOffset - leading) }.takeIf { it.isNotEmpty() }
+        citedTextHash = trimmed.hashCode().takeIf { inlineCitations != null }
     }
 
     fun messagesBlock(block: JsonObject, streaming: Boolean) {
@@ -176,7 +213,8 @@ internal class AiDeepSeekWebEvents(private val onUpdate: (AiWebActivity) -> Unit
     private fun publish() {
         val sources = (citations.ifEmpty { searchResults }.values + readPages.values)
             .distinctBy(AiWebSource::url).take(MAX_WEB_SOURCES)
-        val update = AiWebActivity(sources, failedLinks.take(MAX_WEB_SOURCES), searchFailed, running.values.lastOrNull()?.action)
+        val update = AiWebActivity(sources, failedLinks.take(MAX_WEB_SOURCES), searchFailed,
+            running.values.lastOrNull()?.action, inlineCitations = inlineCitations, citedTextHash = citedTextHash)
         if (update != latest) {
             latest = update
             onUpdate(update)
@@ -194,3 +232,35 @@ private fun JsonArray?.webObjects() = this?.filterIsInstance<JsonObject>().orEmp
 internal fun String?.webUrl(): String? = this?.takeIf { it.length <= 8192 }?.toHttpUrlOrNull()
     ?.takeUnless { it.username.isNotEmpty() || it.password.isNotEmpty() }
     ?.toString()
+
+/** Add citation links to the display projection without changing chat history sent to the model. */
+internal fun AiWebActivity.withInlineLinks(markdown: String): String {
+    val citations = inlineCitations.orEmpty()
+    if (citations.isEmpty() || markdown.isBlank()) return markdown
+    val labels = citations.map { it.url }.distinct().withIndex().associate { it.value to it.index + 1 }
+    val raw = markdown.trim()
+    val match = raw.hashCode() == citedTextHash
+    val links = linkedMapOf<Int, MutableSet<String>>()
+    val trailing = linkedSetOf<String>()
+    citations.forEach { citation ->
+        val url = citation.url.webUrl() ?: return@forEach
+        if (raw.contains("]($url") || raw.contains("](<$url")) return@forEach
+        val link = "[${labels.getValue(citation.url)}](<$url>)"
+        val offset = citation.endOffset
+        if (match && offset in 1..raw.length) {
+            val end = raw.indexOf('\n', offset - 1).takeIf { it >= 0 } ?: raw.length
+            val start = raw.lastIndexOf('\n', end - 1) + 1
+            val line = raw.substring(start, end).trimEnd()
+            // Keep link syntax out of table delimiters, indented code and fence markers.
+            if (line.isNotBlank() && !line.startsWith("    ") && !line.trimStart().startsWith("```") &&
+                !line.trimStart().startsWith("~~~") && '|' !in line && '`' !in line) {
+                links.getOrPut(start + line.length) { linkedSetOf() }.add(link)
+            } else trailing.add(link)
+        } else trailing.add(link)
+    }
+    if (links.isEmpty() && trailing.isEmpty()) return markdown
+    return StringBuilder(raw).apply {
+        links.toSortedMap(reverseOrder()).forEach { (offset, urls) -> insert(offset, urls.joinToString(" ", " ")) }
+        if (trailing.isNotEmpty()) append(trailing.joinToString(" ", "\n\n"))
+    }.toString()
+}

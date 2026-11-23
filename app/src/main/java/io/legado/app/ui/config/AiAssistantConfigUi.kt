@@ -43,6 +43,8 @@ import io.legado.app.help.ai.ENABLE_REASONING_CHOICE
 import io.legado.app.help.ai.assistantModelChoice
 import io.legado.app.help.ai.assistantModelChoices
 import io.legado.app.help.ai.apiKeyNeedsReentry
+import io.legado.app.help.ai.hasRequestCredentials
+import io.legado.app.help.ai.isChatGptSubscription
 import io.legado.app.help.ai.catalogFetchRequired
 import io.legado.app.help.ai.isTextChatModel
 import io.legado.app.help.ai.missingCatalogModelName
@@ -903,7 +905,7 @@ internal fun List<AiProviderSetting>.modelSelectionEligibleProviders(): List<AiP
 }
 
 internal fun assistantModelSelectionProviders(): List<AiModelSelectionProviderUiModel> {
-    return AiProviderStore.providers().modelSelectionEligibleProviders()
+    return AiProviderStore.enabledProviders().filter { it.hasRequestCredentials() }
         .map { it.toAssistantModelSelectionProviderUiModel() }
 }
 
@@ -937,18 +939,18 @@ internal fun AiProviderSetting.toModelSelectionProviderUiModel(
                 textTrial = model.id in textTrialIds,
                 generationHintRes = when {
                     route?.issue == AiModelGenerationIssue.UNSUPPORTED_PROTOCOL -> R.string.ai_model_interface_unavailable
-                    route?.requiresStreaming == true -> R.string.ai_model_streaming_only
+                    route?.requiresStreaming == true && !isChatGptSubscription() -> R.string.ai_model_streaming_only
                     else -> null
                 },
             )
         },
-        needsFetch = eligibleModels.isEmpty() && apiKey.isNotBlank() && !apiKeyNeedsReentry() && catalogFetchRequired(),
+        needsFetch = eligibleModels.isEmpty() && hasRequestCredentials() && catalogFetchRequired(),
         noEnabledModels = models.isNotEmpty() && !catalogFetchRequired() && effectiveAvailableModelIds().isEmpty(),
     )
 }
 
 internal fun AiProviderSetting.displayModels(): List<AiModel> {
-    val showCatalog = apiKey.isNotBlank() && !apiKeyNeedsReentry() && !catalogRefreshRequired
+    val showCatalog = hasRequestCredentials() && !catalogRefreshRequired
     val configurationKey = modelConfigurationKey()
     return models
         .filter { model ->

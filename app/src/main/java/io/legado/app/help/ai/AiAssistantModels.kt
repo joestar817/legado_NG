@@ -27,7 +27,7 @@ internal fun AiProviderSetting.missingCatalogModelName(modelId: String): String?
 }
 
 private fun AiProviderSetting.canUseModels(): Boolean =
-    enabled && apiKey.isNotBlank() && !apiKeyNeedsReentry()
+    enabled && hasRequestCredentials()
 
 private fun AiProviderSetting.modelIsCurrent(model: AiModel, source: String): Boolean =
     model.manualModelEndpoint?.let { it == source } ?: !catalogRefreshRequired
