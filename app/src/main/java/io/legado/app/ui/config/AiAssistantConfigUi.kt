@@ -1,6 +1,7 @@
 package io.legado.app.ui.config
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
@@ -20,11 +21,16 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
+import io.legado.app.constant.PreferKey
 import io.legado.app.help.ai.AiAssistantReasoning
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiDefaultProviders
@@ -58,6 +64,7 @@ import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.ui.widget.dialog.createNgBottomDrawerComposeHost
 import io.legado.app.ui.widget.dialog.createNgBottomDrawerViewHost
 import io.legado.app.utils.applyTint
+import io.legado.app.utils.defaultSharedPreferences
 import io.legado.app.utils.showWithAppNavigationBarVisibility
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -68,6 +75,23 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import splitties.init.appCtx
+
+@Composable
+internal fun rememberHasAssistantModelSelection(): Boolean {
+    val preferences = LocalContext.current.defaultSharedPreferences
+    var selected by remember(preferences) { mutableStateOf(AiConfig.hasAssistantModelSelection) }
+    DisposableEffect(preferences) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == PreferKey.aiAssistantProviderId || key == PreferKey.aiAssistantModelId) {
+                selected = AiConfig.hasAssistantModelSelection
+            }
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        selected = AiConfig.hasAssistantModelSelection
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    return selected
+}
 
 object AiAssistantConfigUi {
 
@@ -197,6 +221,11 @@ object AiAssistantConfigUi {
                             sheetState = sheetState.withUpdatedProvider(providerId, provider)
                             onChanged()
                         }
+                    },
+                    onClear = {
+                        AiConfig.clearAssistantModel()
+                        onChanged()
+                        dialog.dismiss()
                     },
                     onSelect = select@{ providerId, modelId ->
                         if (!AiConfig.saveAssistantModel(providerId, modelId)) {

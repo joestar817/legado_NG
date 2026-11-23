@@ -3,6 +3,7 @@ package io.legado.app.model.webBook
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
+import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.exception.NoStackTraceException
@@ -52,7 +53,12 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
             .newFixedThreadPool(threadCount).asCoroutineDispatcher()
     }
 
-    fun search(searchId: Long, key: String) {
+    fun search(searchId: Long, key: String) = search(searchId, key, null)
+
+    internal fun searchPrecise(searchId: Long, key: String, selection: PreciseSearch) =
+        search(searchId, key, selection)
+
+    private fun search(searchId: Long, key: String, selection: PreciseSearch?) {
         if (searchId != mSearchId) {
             if (key.isEmpty()) {
                 return
@@ -63,7 +69,7 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
             }
             // 已发布的列表仍被 UI 持有，新搜索只替换引用。
             searchBooks = emptyList()
-            bookSourceParts = callBack.getSearchScope().getBookSourceParts()
+            bookSourceParts = selection?.sources ?: callBack.getSearchScope().getBookSourceParts()
             if (bookSourceParts.isEmpty()) {
                 callBack.onSearchCancel(NoStackTraceException("启用书源为空"))
                 return
@@ -74,17 +80,20 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
         } else {
             searchPage++
         }
-        startSearch()
+        startSearch(selection)
     }
 
-    private fun startSearch() {
-        val precision = appCtx.getPrefBoolean(PreferKey.precisionSearch)
+    private fun startSearch(selection: PreciseSearch?) {
+        val precision = selection == null && appCtx.getPrefBoolean(PreferKey.precisionSearch)
         var hasMore = false
         searchJob = scope.launch(searchPool!! + interactionPolicy) {
             flow {
                 for (bs in bookSourceParts) {
-                    bs.getBookSource()?.let {
-                        emit(it)
+                    val source = bs.getBookSource()
+                    if (source != null && (selection == null || selection.acceptsSource(source))) {
+                        emit(source)
+                    } else if (selection != null) {
+                        callBack.onSearchSourceFailure()
                     }
                     workingState.first { it }
                 }
@@ -95,7 +104,7 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
                     withTimeout(30000L) {
                         WebBook.searchBookAwait(
                             source, searchKey, searchPage,
-                            filter = { name, author, kind ->
+                            filter = selection?.matches ?: { name, author, kind ->
                                 !precision || name.contains(searchKey) ||
                                         author.contains(searchKey) ||
                                         kind?.contains(searchKey) == true
@@ -103,10 +112,12 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
                     }
                 } catch (e: SourceInteractionBlockedException) {
                     currentCoroutineContext().ensureActive()
+                    if (selection != null) callBack.onSearchSourceFailure()
                     AppLog.putDebug("${source.bookSourceName}\n${e.localizedMessage}")
                     emptyList()
                 } catch (e: Throwable) {
                     currentCoroutineContext().ensureActive()
+                    if (selection != null) callBack.onSearchSourceFailure()
                     AppLog.put("书源搜索出错\n${source.bookSourceName}\n${e.localizedMessage}", e)
                     emptyList()
                 }
@@ -130,6 +141,7 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
                 if (it == null) callBack.onSearchFinish(searchBooks.isEmpty(), hasMore)
             }.catch {
                 AppLog.put("书源搜索出错\n${it.localizedMessage}", it)
+                if (selection != null) callBack.onSearchCancel(it)
             }.collect()
         }
     }
@@ -246,8 +258,15 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
         fun onSearchStart()
         fun onSearchSuccess(searchBooks: List<SearchBook>)
         fun onSearchProgress(resultCount: Int, progress: Int, total: Int, sourceName: String) {}
+        fun onSearchSourceFailure() {}
         fun onSearchFinish(isEmpty: Boolean, hasMore: Boolean)
         fun onSearchCancel(exception: Throwable? = null)
     }
+
+    internal data class PreciseSearch(
+        val sources: List<BookSourcePart>,
+        val acceptsSource: (BookSource) -> Boolean,
+        val matches: (String, String, String?) -> Boolean,
+    )
 
 }

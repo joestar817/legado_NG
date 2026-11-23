@@ -309,6 +309,7 @@ object AgentModeRegistry {
     const val GENERAL_REVISION = "1"
     const val BOOK_SCAN_ID = "book_scan"
     const val BOOK_SCAN_REVISION = "1"
+    const val BOOK_SEARCH_ID = "book_search"
     private const val LEGACY_DEFAULT_ID = "default"
     private val BOOK_SCAN_MCP_CAPABILITIES = listOf(
         "bookshelf.query",
@@ -401,7 +402,17 @@ object AgentModeRegistry {
         )
     )
 
-    private val definitions = listOf(general, bookScan).associateBy(AgentModeDefinition::id)
+    val bookSearch = AgentModeDefinition(
+        id = BOOK_SEARCH_ID,
+        revision = "1",
+        kind = AgentModeKind.SYSTEM,
+        allowsUserSkills = false,
+        allowsManualMcpCapabilities = false,
+        systemWorkflowId = AiSkillRegistry.SKILL_BOOK_SEARCH,
+        fixedMcpCapabilityIds = listOf("book_source.search"),
+    )
+
+    private val definitions = listOf(general, bookScan, bookSearch).associateBy(AgentModeDefinition::id)
 
     fun all(): List<AgentModeDefinition> = definitions.values.toList()
 

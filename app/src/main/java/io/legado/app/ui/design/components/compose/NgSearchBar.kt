@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -305,6 +306,8 @@ fun NgSearchBar(
     allowLiquidGlass: Boolean = true,
     hideHintOnFocus: Boolean = true,
     onFocusChanged: (Boolean) -> Unit = {},
+    leadingActionLabel: String? = null,
+    onLeadingAction: (() -> Unit)? = null,
     onSearch: (String) -> Unit = {}
 ) {
     val isToolbar = variant == NgSearchBarVariant.TOOLBAR
@@ -391,13 +394,20 @@ fun NgSearchBar(
                         ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        painter = searchIcon,
-                        contentDescription = stringResource(R.string.search),
-                        modifier = Modifier.size(if (isToolbar) 20.dp else 22.dp),
-                        tint = iconColor
-                    )
-                    Spacer(Modifier.width(if (isToolbar) 8.dp else 10.dp))
+                    val iconSize = if (isToolbar) 20.dp else 22.dp
+                    val iconGap = if (isToolbar) 8.dp else 10.dp
+                    if (onLeadingAction == null) {
+                        Icon(searchIcon, stringResource(R.string.search), Modifier.size(iconSize), iconColor)
+                        Spacer(Modifier.width(iconGap))
+                    } else {
+                        Box(
+                            modifier = Modifier.width(iconSize + iconGap).fillMaxHeight()
+                                .clickable(role = Role.Button, onClick = onLeadingAction),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Icon(searchIcon, leadingActionLabel, Modifier.size(iconSize), iconColor)
+                        }
+                    }
                     androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
                         if (query.isEmpty() && (!hideHintOnFocus || !focused)) {
                             Text(

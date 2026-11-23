@@ -23,6 +23,35 @@ class AiChatMarkdownCalloutTest {
     }
 
     @Test
+    fun repairsBookTitleEmphasisNextToChineseTextWithoutConsumingAuthorMarkers() {
+        val books = listOf(
+            "穿越霍雨浩，我的能力每月刷新" to "你是变态吗",
+            "舔狗反派只想苟，女主不按套路走！" to "我是愤怒",
+        )
+        for ((title, author) in books) {
+            assertEquals(
+                "找到了，是<strong>《$title》</strong>，作者是**$author**。",
+                normalizeAiChatMarkdown("找到了，是**《$title》**，作者是**$author**。"),
+            )
+        }
+    }
+
+    @Test
+    fun keepsBookTitleExamplesAndLinkDestinationsIntact() {
+        val samples = listOf(
+            "书名：**《月光》**，作者是**江河**。",
+            "是\\**《月光》**。",
+            "是**《未结束的书名》",
+            "`是**《月光》**`",
+            "```markdown\n是**《月光》**\n```",
+            "[网页](https://example.org/是**《月光》**)",
+            "![封面](https://example.org/是**《月光》**)",
+            "<span title=\"是**《月光》**\">文字</span>",
+        )
+        for (markdown in samples) assertEquals(markdown, normalizeAiChatMarkdown(markdown))
+    }
+
+    @Test
     fun keepsOnlyHttpLinksClickable() {
         assertEquals(
             "读取快速定位后的交互定义",

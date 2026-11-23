@@ -1,5 +1,29 @@
 package io.legado.app.ui.config
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import io.legado.app.help.ai.AI_BOOK_SEARCH_AUDIO_SCOPE_MEDIA
+import io.legado.app.help.ai.AI_BOOK_SEARCH_DRAFT
+import io.legado.app.help.ai.AI_BOOK_SEARCH_SCOPE
+import io.legado.app.help.ai.AiBookSearchAvailability
+import io.legado.app.help.ai.AiBookSearchCandidate
+import io.legado.app.help.ai.AiBookSearchReply
+import io.legado.app.help.ai.AiBookSourceLookup
+import io.legado.app.help.ai.AiBookSourceStatus
+import io.legado.app.help.ai.aiBookSearchVisibleText
+import io.legado.app.help.ai.bookSearchAvailability
+import io.legado.app.help.ai.explicitAiBookSearchCandidate
+import io.legado.app.help.ai.isConfirmedBookSearchAudioScope
+import io.legado.app.help.ai.parseAiBookSearchReply
+import io.legado.app.ui.book.changesource.ChangeSourceFilter
+import io.legado.app.ui.book.info.BookInfoActivity
+import io.legado.app.ui.book.info.EXTRA_BOOK_INFO_SEARCH_RESULT
+import io.legado.app.ui.book.search.SearchScopeDialog
+import io.legado.app.constant.BookSourceType
+import io.legado.app.web.mcp.McpInternalChannel
+import io.legado.app.web.mcp.McpPreciseBookSearch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -134,7 +158,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -151,6 +174,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -268,6 +292,7 @@ import io.legado.app.help.ai.AiWebAccess
 import io.legado.app.help.ai.AiWebActivity
 import io.legado.app.help.ai.AiWebActivityAction
 import io.legado.app.help.ai.AiExternalSearchStore
+import io.legado.app.help.ai.hasLegacyChatGptNativeLabel
 import io.legado.app.help.ai.webAccess
 import io.legado.app.help.ai.webUrl
 import io.legado.app.help.ai.withInlineLinks
@@ -381,6 +406,7 @@ class AiChatActivity : AppCompatActivity() {
         const val ENTRY_BOOKSHELF = "bookshelf"
         const val ENTRY_BOOK_DETAIL = "book_detail"
         const val ENTRY_BOOK_SCAN = "book_scan"
+        const val ENTRY_BOOK_SEARCH = "book_search"
         const val ENTRY_TEXT_SELECTION = "text_selection"
     }
 
@@ -567,6 +593,7 @@ private fun ChatBackgroundImage(
 private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val historyWriteLock = remember { Mutex() }
     val modelSheetLaunchGate = remember { AiModelSheetLaunchGate() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val chatClient = remember { AiChatClient() }
@@ -650,9 +677,10 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     val messages = remember { mutableStateListOf<ChatUiMessage>() }
     val sessions = remember { mutableStateListOf<AiChatSessionSnapshot>() }
     val listState = rememberLazyListState()
-    var activeSessionId by remember {
-        mutableStateOf<String?>(UUID.randomUUID().toString())
-    }
+    val sessionIdState = if (initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID) {
+        rememberSaveable { mutableStateOf<String?>(UUID.randomUUID().toString()) }
+    } else remember { mutableStateOf<String?>(UUID.randomUUID().toString()) }
+    var activeSessionId by sessionIdState
     var activeAgentMode by remember { mutableStateOf<AgentModeDefinition>(initialAgentMode) }
     var activeModeEntryContext by remember {
         mutableStateOf<AgentModeEntryContext?>(initialModeEntryContext)
@@ -667,9 +695,20 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             }
         )
     }
-    var input by remember { mutableStateOf(initialInput) }
+    val inputState = if (initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID) {
+        rememberSaveable { mutableStateOf(initialInput) }
+    } else remember { mutableStateOf(initialInput) }
+    var input by inputState
+    var bookSearchGreetingPending by rememberSaveable { mutableStateOf(true) }
+    var bookSearchHistoryRestored by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var sendingJob by remember { mutableStateOf<Job?>(null) }
+    var bookLookupJob by remember { mutableStateOf<Job?>(null) }
+    var bookOpenJob by remember { mutableStateOf<Job?>(null) }
+    var activeBookLookupMessageId by remember { mutableStateOf<String?>(null) }
+    var bookLookupRevision by remember { mutableIntStateOf(0) }
+    var bookScopeSelection by remember { mutableStateOf<Pair<String, AiBookSearchCandidate>?>(null) }
+    var bookSearchSaveJob by remember { mutableStateOf<Job?>(null) }
     var activeLoadingMessageId by remember { mutableStateOf<String?>(null) }
     var activeLoadingStartedAt by remember { mutableStateOf<Long?>(null) }
     var activeStreamContentTarget by remember { mutableStateOf("") }
@@ -733,10 +772,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         AiAssistantConfigUi.selectedReasoningEnabled()
     }
     val searchSettings by AiExternalSearchStore.changes.collectAsState()
-    val webAccess = if (activeAgentMode.id == AgentModeRegistry.GENERAL_ID) {
-        remember(configVersion, searchSettings, activeWebAccess) {
+    val bookSearchMode = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
+    val webAccess = if (activeAgentMode.id == AgentModeRegistry.GENERAL_ID || bookSearchMode) {
+        remember(configVersion, searchSettings, activeWebAccess, bookSearchMode) {
             val selection = AiAssistantConfigUi.selectedModel()
-            searchSettings.webAccess(selection?.provider, selection?.model, activeWebAccess)
+            searchSettings.webAccess(selection?.provider, selection?.model, activeWebAccess, bookSearchMode)
         }
     } else null
     val selectedModelSupportsToolCalls = remember(configVersion) {
@@ -750,6 +790,17 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     val activeSkillAttachments = inputAttachments.filter {
         it.type == AiChatInputAttachmentType.SKILL
     }
+    val hasBookSearchSkill = activeSkillAttachments.any { it.id == "skill.${AiSkillRegistry.SKILL_BOOK_SEARCH}" }
+    fun bookSearchAvailability(): AiBookSearchAvailability {
+        if (activeAgentMode.id != AgentModeRegistry.BOOK_SEARCH_ID) return AiBookSearchAvailability.READY
+        val selection = AiAssistantConfigUi.selectedModel()
+        val provider = selection?.provider ?: AiConfig.assistantProviderId.takeIf { it.isNotBlank() }
+            ?.let(AiProviderStore::provider)
+        return AiExternalSearchStore.current().bookSearchAvailability(hasBookSearchSkill, provider, selection?.model)
+    }
+    val bookSearchAvailability = remember(bookSearchMode, configVersion, searchSettings, hasBookSearchSkill) {
+        bookSearchAvailability()
+    }
     val fixedEntrySkillIds = entryAttachments
         .filter { it.type == AiChatInputAttachmentType.SKILL }
         .mapTo(mutableSetOf(), AiChatInputAttachment::id)
@@ -758,7 +809,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         hasActiveSkill = activeSkillAttachments.isNotEmpty(),
         allowsUserSkills = activeAgentMode.allowsUserSkills,
         fixedEntrySkill = hasFixedEntrySkill,
-        modelSupportsToolCalls = selectedModelSupportsToolCalls
+        modelSupportsToolCalls = selectedModelSupportsToolCalls || bookSearchMode
     )
     val skillToolErrorText = if (skillInputPolicy.toolError) {
         "当前模型不支持工具调用，请切换模型"
@@ -846,7 +897,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     fun syncModeEntryContext() {
         AiChatContextManager.syncModeEntryContext(
             messages = uploadMessages,
-            context = activeModeEntryContext
+            context = activeModeEntryContext.takeUnless { activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID }
         )
     }
 
@@ -1132,23 +1183,34 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     fun saveSessionSnapshot(
         snapshot: AiChatSessionSnapshot,
         makeActive: Boolean = false
-    ) {
-        scope.launch(Dispatchers.IO) {
-            AiChatHistoryStore.saveSessionSnapshot(snapshot)
-            if (makeActive) {
-                AiChatHistoryStore.setActiveSessionId(snapshot.id)
+    ): Job = scope.launch {
+        historyWriteLock.withLock {
+            withContext(Dispatchers.IO) {
+                AiChatHistoryStore.saveSessionSnapshot(snapshot)
+                if (makeActive) AiChatHistoryStore.setActiveSessionId(snapshot.id)
             }
         }
     }
 
+    fun persistedModeEntryContext(): AgentModeEntryContext? {
+        val entry = activeModeEntryContext ?: return null
+        if (activeAgentMode.id != AgentModeRegistry.BOOK_SEARCH_ID) return entry
+        return entry.copy(payload = entry.payload.deepCopy().apply {
+            val draft = input.take(4000).filter { !it.isISOControl() || it in "\n\r\t" }
+            if (draft.isBlank()) remove(AI_BOOK_SEARCH_DRAFT) else addProperty(AI_BOOK_SEARCH_DRAFT, draft)
+        })
+    }
+
     fun persistActiveSession() {
         val visibleMessages = messages.filterNot { it.loading }
-        if (!shouldPersistActiveSession(visibleMessages.isNotEmpty(), modeEntryStarted)) {
+        val oldSession = sessions.firstOrNull { it.id == activeSessionId }
+        val isBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
+        val hasBookSearchDraft = isBookSearch && (input.isNotBlank() || oldSession != null)
+        if (!hasBookSearchDraft && !shouldPersistActiveSession(visibleMessages.isNotEmpty(), modeEntryStarted)) {
             return
         }
         val now = System.currentTimeMillis()
         val sessionId = activeSessionId ?: UUID.randomUUID().toString().also { activeSessionId = it }
-        val oldSession = sessions.firstOrNull { it.id == sessionId }
         val snapshot = AiChatSessionSnapshot(
             id = sessionId,
             title = resolveConversationTitle(
@@ -1158,7 +1220,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             ),
             modeId = activeAgentMode.id,
             modeRevision = activeAgentMode.revision,
-            modeEntryContext = activeModeEntryContext,
+            modeEntryContext = persistedModeEntryContext(),
             modeEntryStarted = modeEntryStarted,
             createdAt = oldSession?.createdAt ?: now,
             updatedAt = now,
@@ -1174,7 +1236,147 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         if (sessionId !in loadedSessionDetailIds) {
             loadedSessionDetailIds += sessionId
         }
-        saveSessionSnapshot(snapshot, makeActive = true)
+        val saved = saveSessionSnapshot(snapshot, makeActive = true)
+        if (isBookSearch) bookSearchSaveJob = saved
+    }
+
+    fun cancelBookSourceLookup() {
+        val messageId = activeBookLookupMessageId ?: return
+        bookLookupRevision++
+        bookLookupJob?.cancel()
+        bookLookupJob = null
+        activeBookLookupMessageId = null
+        updateMessage(messageId) { message ->
+            val reply = message.bookSearch ?: return@updateMessage message
+            val lookup = reply.lookup ?: return@updateMessage message
+            message.copy(bookSearch = reply.copy(lookup = lookup.copy(status = AiBookSourceStatus.INTERRUPTED)))
+        }
+        persistActiveSession()
+    }
+
+    fun bookSearchScope(): String = activeModeEntryContext?.payload?.get(AI_BOOK_SEARCH_SCOPE)
+        ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty()
+
+    fun launchBookSourceLookup(
+        messageId: String,
+        candidate: AiBookSearchCandidate,
+        keyword: String = candidate.title,
+        automatically: Boolean = false,
+    ) {
+        if (activeAgentMode.id != AgentModeRegistry.BOOK_SEARCH_ID || sending || !candidate.searchable) return
+        val reply = messages.firstOrNull { it.id == messageId }?.bookSearch ?: return
+        if (candidate.key in reply.rejectedKeys) return
+        val lookupScope = bookSearchScope()
+        val attemptKey = "${candidate.key}\u0000$lookupScope"
+        if (automatically && messages.any { attemptKey in it.bookSearch?.attemptedKeys.orEmpty() }) return
+        val audioConfirmed = activeModeEntryContext?.payload.isConfirmedBookSearchAudioScope(candidate.media)
+        cancelBookSourceLookup()
+        val revision = ++bookLookupRevision
+        val sessionId = activeSessionId
+        val capabilities = enabledMcpCapabilityIds.toList()
+        activeBookLookupMessageId = messageId
+        fun isCurrent() = activeSessionId == sessionId && bookLookupRevision == revision
+        fun updateLookup(lookup: AiBookSourceLookup) {
+            updateMessage(messageId) { message ->
+                val state = message.bookSearch ?: return@updateMessage message
+                message.copy(bookSearch = state.copy(
+                    lookup = lookup,
+                    attemptedKeys = (state.attemptedKeys + attemptKey).distinct(),
+                ))
+            }
+        }
+        val running = AiBookSourceLookup(candidate.key, keyword, AiBookSourceStatus.RUNNING)
+        updateLookup(running)
+        persistActiveSession()
+        scope.launch {
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    McpInternalChannel.searchPreciseBook(
+                        candidate, keyword, lookupScope, audioConfirmed, capabilities,
+                    ) { hits ->
+                        scope.launch {
+                            if (isCurrent() && activeBookLookupMessageId == messageId) {
+                                val hadHit = messages.firstOrNull { it.id == messageId }
+                                    ?.bookSearch?.lookup?.hits.orEmpty().isNotEmpty()
+                                updateLookup(running.copy(hits = hits))
+                                // Preserve verified cards if the app is interrupted during the remaining requests.
+                                if (!hadHit && hits.isNotEmpty()) persistActiveSession()
+                            }
+                        }
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                val partial = messages.firstOrNull { it.id == messageId }?.bookSearch?.lookup?.hits.orEmpty()
+                running.copy(status = AiBookSourceStatus.FAILED, hits = partial)
+            }
+            if (isCurrent()) {
+                updateLookup(result)
+                activeBookLookupMessageId = null
+                bookLookupJob = null
+                persistActiveSession()
+            }
+        }.also { bookLookupJob = it }
+    }
+
+    fun handleBookSearchAction(messageId: String, action: AiBookSearchAction) {
+        when (action) {
+            is AiBookSearchAction.Lookup -> launchBookSourceLookup(messageId, action.candidate, action.keyword)
+            is AiBookSearchAction.Scope -> bookScopeSelection = messageId to action.candidate
+            AiBookSearchAction.EnableMcp -> showInternalMcpSheet = true
+            is AiBookSearchAction.Reject -> {
+                if (messageId == activeBookLookupMessageId) cancelBookSourceLookup()
+                updateMessage(messageId) { message ->
+                    val reply = message.bookSearch ?: return@updateMessage message
+                    message.copy(bookSearch = reply.copy(
+                        rejectedKeys = (reply.rejectedKeys + action.keys).distinct(),
+                        lookup = reply.lookup?.takeUnless { it.candidateKey in action.keys },
+                    ))
+                }
+                persistActiveSession()
+            }
+            is AiBookSearchAction.Open -> {
+                if (bookOpenJob?.isActive == true) return
+                val hit = action.hit
+                val sessionId = activeSessionId
+                val reply = messages.firstOrNull { it.id == messageId }?.bookSearch ?: return
+                val lookup = reply.lookup?.takeIf { hit in it.hits } ?: return
+                val media = reply.candidates.firstOrNull { it.key == lookup.candidateKey }?.media ?: return
+                bookOpenJob = scope.launch {
+                    val book = try {
+                        withContext(Dispatchers.IO) { McpPreciseBookSearch.resolveHit(hit, lookup.keyword, media) }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (sessionId != activeSessionId || messages.none {
+                            it.id == messageId && hit in it.bookSearch?.lookup?.hits.orEmpty()
+                        }) return@launch
+                    if (book != null) {
+                        context.startActivity(Intent(context, BookInfoActivity::class.java)
+                            .putExtra(EXTRA_BOOK_INFO_SEARCH_RESULT, book))
+                    } else {
+                        updateMessage(messageId) { message ->
+                            val state = message.bookSearch ?: return@updateMessage message
+                            val result = state.lookup?.takeUnless { it.status == AiBookSourceStatus.RUNNING }
+                                ?: return@updateMessage message
+                            message.copy(bookSearch = state.copy(lookup = result.copy(status = AiBookSourceStatus.OPEN_FAILED)))
+                        }
+                        persistActiveSession()
+                        Toast.makeText(context, R.string.ai_book_search_open_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(activeSessionId, input, bookSearchMode, historyLoaded) {
+        if (bookSearchMode && historyLoaded && (input.isNotBlank() || messages.isNotEmpty())) {
+            delay(350)
+            persistActiveSession()
+        }
     }
 
     fun updateMcpCapabilitySelection(capabilityIds: Collection<String>) {
@@ -1222,10 +1424,22 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     }
 
     fun startNewChat() {
+        bookScopeSelection = null
+        val wasBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
+        if (wasBookSearch) {
+            cancelBookSourceLookup()
+            bookOpenJob?.cancel()
+            sendingJob?.cancel()
+            sending = false
+            activeLoadingMessageId = null
+        }
         persistActiveSession()
         activeSessionId = UUID.randomUUID().toString()
         activeAgentMode = initialAgentMode
         activeModeEntryContext = initialModeEntryContext
+        val startsBookSearch = initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
+        if (wasBookSearch || startsBookSearch) input = ""
+        if (startsBookSearch) bookSearchGreetingPending = true
         modeEntryStarted = false
         uploadMessages.clear()
         uploadMessages += chatClient.newSystemMessage()
@@ -1252,9 +1466,25 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             ).show()
             return
         }
+        bookScopeSelection = null
+        val wasBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
+        if (wasBookSearch && activeSessionId != session.id) {
+            if (activeBookLookupMessageId != null) cancelBookSourceLookup() else persistActiveSession()
+            bookOpenJob?.cancel()
+            sendingJob?.cancel()
+            sending = false
+            activeLoadingMessageId = null
+        }
         activeSessionId = session.id
         activeAgentMode = restoredMode
         activeModeEntryContext = session.modeEntryContext
+        if (restoredMode.id == AgentModeRegistry.BOOK_SEARCH_ID) {
+            bookSearchGreetingPending = false
+            input = session.modeEntryContext?.payload?.get(AI_BOOK_SEARCH_DRAFT)
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty()
+        } else if (wasBookSearch) {
+            input = ""
+        }
         modeEntryStarted = session.modeEntryStarted
         messages.replaceWith(session.messages.map { it.toUiMessage() })
         uploadMessages.replaceUploadMessages(session, chatClient)
@@ -1294,6 +1524,22 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         }
         selectedDrawerIndex = 2
         saveHistory(session.id)
+    }
+
+    LaunchedEffect(historyLoaded) {
+        if (!historyLoaded) return@LaunchedEffect
+        if (initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID && messages.isEmpty()) {
+            val id = activeSessionId
+            if (id != null && sessions.any { it.id == id }) {
+                val pendingDraft = input
+                val restored = withContext(Dispatchers.IO) { AiChatHistoryStore.loadSession(id) }
+                if (restored != null && id == activeSessionId && messages.isEmpty()) {
+                    applyLoadedSession(restored)
+                    if (pendingDraft.isNotBlank()) input = pendingDraft
+                }
+            }
+        }
+        bookSearchHistoryRestored = true
     }
 
     fun openSession(session: AiChatSessionSnapshot) {
@@ -1439,6 +1685,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     }
 
     fun sendCurrentMessages(activeUserMessageIds: List<String> = emptyList()) {
+        if (bookSearchAvailability() != AiBookSearchAvailability.READY) {
+            updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
+            persistActiveSession()
+            return
+        }
         if (!ensureSkillToolSupport()) {
             updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
             return
@@ -1472,7 +1723,8 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         activeWebAccess = null
         val uploadMessagesBeforeSend = uploadMessages.map { it.deepCopy().asJsonObject }
         val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
-        val allowWebForTurn = activeAgentMode.id == AgentModeRegistry.GENERAL_ID
+        val requireWebSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
+        val allowWebForTurn = requireWebSearch || activeAgentMode.id == AgentModeRegistry.GENERAL_ID
         val webUserText = messages.lastOrNull { it.role == ChatRole.USER }?.content.orEmpty()
         messages += ChatUiMessage(
             id = loadingId,
@@ -1491,7 +1743,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             ),
             modeId = activeAgentMode.id,
             modeRevision = activeAgentMode.revision,
-            modeEntryContext = activeModeEntryContext,
+            modeEntryContext = persistedModeEntryContext(),
             modeEntryStarted = modeEntryStarted,
             createdAt = previousSession?.createdAt ?: startedAt,
             updatedAt = startedAt,
@@ -1532,6 +1784,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                             },
                         promptUsageAnchor = promptUsageAnchor,
                         allowWeb = allowWebForTurn,
+                        requireWebSearch = requireWebSearch,
                         webUserText = webUserText,
                         onWebUpdate = { update, access ->
                             scope.launch {
@@ -1544,7 +1797,9 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                         onStreamUpdate = { update: AiChatStreamUpdate ->
                             scope.launch {
                                 if (activeLoadingMessageId == loadingId) {
-                                    activeStreamContentTarget = update.content
+                                    activeStreamContentTarget = if (requireWebSearch) {
+                                        aiBookSearchVisibleText(update.content)
+                                    } else update.content
                                     activeStreamReasoningTarget = update.reasoning.orEmpty()
                                     activeStreamToolTraceTarget = update.toolTrace
                                     activeStreamMemoryTraceTarget = update.memoryTrace
@@ -1578,15 +1833,20 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 }
                             }
                         },
-                        enabledMcpCapabilityIds = mcpCapabilityIds,
+                        // Only the host can start a book-source search after validating the reply or user selection.
+                        enabledMcpCapabilityIds = if (requireWebSearch) emptyList() else mcpCapabilityIds,
                         onToolConfirmationRequired = { pendingCalls ->
                             confirmToolCalls(pendingCalls)
                         }
                     )
                 }
             }
+            if (requireWebSearch && (conversationId != activeSessionId || activeLoadingMessageId != loadingId)) {
+                return@launch
+            }
             val elapsedMs = System.currentTimeMillis() - startedAt
             val canceled = result.exceptionOrNull() is CancellationException
+            var bookToLookup: Pair<String, AiBookSearchCandidate>? = null
             result.onSuccess {
                 updateDeliveryState(activeUserMessageIds, ChatDeliveryState.SENT)
                 uploadMessages.clear()
@@ -1594,7 +1854,27 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                     it.contextMessages.map { message -> message.deepCopy().asJsonObject }
                 )
                 val loadingIndex = messages.indexOfFirst { message -> message.id == loadingId }
-                val completedMessage = it.toUiMessage(elapsedMs)
+                val baseMessage = it.toUiMessage(elapsedMs)
+                val completedMessage = if (requireWebSearch) {
+                    val rejected = messages.flatMap { message -> message.bookSearch?.rejectedKeys.orEmpty() }.toSet()
+                    val reply = parseAiBookSearchReply(it.content, it.webActivity)?.let { parsed ->
+                        parsed.copy(rejectedKeys = parsed.candidates.map { candidate -> candidate.key }.filter { key -> key in rejected })
+                    }
+                    val unverified = reply == null || it.webActivity?.searchFailed == true ||
+                        it.webActivity?.externalError != null || it.webActivity?.sources.isNullOrEmpty()
+                    baseMessage.copy(
+                        content = aiBookSearchVisibleText(baseMessage.content).ifBlank {
+                            reply?.question?.takeIf { question -> question.isNotBlank() }
+                                ?: context.getString(R.string.ai_book_search_unverified)
+                        },
+                        bookSearch = reply,
+                        meta = if (unverified) listOfNotNull(
+                            baseMessage.meta, context.getString(R.string.ai_book_search_unverified)
+                        ).joinToString(" · ") else baseMessage.meta,
+                    ).also { message ->
+                        reply?.automaticCandidate?.let { candidate -> bookToLookup = message.id to candidate }
+                    }
+                } else baseMessage
                 val compactionMessages = it.contextCompactions.map { record ->
                     ChatUiMessage(
                         role = ChatRole.ASSISTANT,
@@ -1614,6 +1894,12 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             }.onFailure {
                 val replyEnd = it as? AiAssistantReplyEndException
                 val chatGptError = (replyEnd?.cause ?: it) as? AiChatGptException
+                if (requireWebSearch) when (chatGptError?.messageRes) {
+                    R.string.ai_chatgpt_sign_in_required,
+                    R.string.ai_chatgpt_reauthorize_required,
+                    R.string.ai_chatgpt_plan_permission_required -> configVersion++
+                    else -> Unit
+                }
                 val replyNotice = replyEnd?.let { end ->
                     context.getString(when (end.reason) {
                         AiAssistantReplyEndReason.TRUNCATED -> R.string.ai_assistant_reply_truncated
@@ -1644,7 +1930,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                             uploadMessages += AiChatContextManager.interruptedReplyMessage(loading.id, draft)
                         }
                         loading.copy(
-                            content = partialContent ?: requireNotNull(replyNotice),
+                            content = (partialContent ?: requireNotNull(replyNotice)).let { content ->
+                                if (requireWebSearch) aiBookSearchVisibleText(content).ifBlank {
+                                    context.getString(R.string.ai_book_search_unverified)
+                                } else content
+                            },
                             uploadContent = draft,
                             reasoning = if (replyEnd != null) {
                                 replyEnd.partialReasoning ?: durable?.reasoning.takeIf { savedContent != null }
@@ -1719,13 +2009,31 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 refreshContextUsage()
                 persistActiveSession()
                 sendCurrentMessages(queuedIds)
+            } else {
+                bookToLookup?.let { (messageId, candidate) ->
+                    launchBookSourceLookup(messageId, candidate, automatically = true)
+                }
             }
         }
     }
 
     fun stopSending() {
+        if (activeBookLookupMessageId != null) cancelBookSourceLookup()
+        bookOpenJob?.cancel()
         if (!sending) return
         sendingJob?.cancel()
+    }
+
+    BackHandler(
+        enabled = bookSearchMode && drawerState.isClosed && !globalSearchMode && !statsMode &&
+            !exportSelectionMode && !historyManageMode && chatSearch == null,
+    ) {
+        stopSending()
+        persistActiveSession()
+        scope.launch {
+            bookSearchSaveJob?.join()
+            onBack()
+        }
     }
 
     fun manuallyCompressContext() {
@@ -1843,18 +2151,49 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             Toast.makeText(context, R.string.ai_chat_empty, Toast.LENGTH_SHORT).show()
             return
         }
+        if (bookSearchAvailability() != AiBookSearchAvailability.READY) return
         if (!ensureModelGenerationRoute()) return
+        val isBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
+        if (isBookSearch) cancelBookSourceLookup()
         input = ""
-        val uploadContent = uploadOverride
+        val originalUpload = uploadOverride
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?: buildUserUploadContent(content, inputAttachments)
+        val rejected = if (isBookSearch) messages.flatMap { message ->
+            val reply = message.bookSearch ?: return@flatMap emptyList()
+            reply.candidates.filter { it.key in reply.rejectedKeys }
+        }.distinctBy { it.key }.takeLast(12) else emptyList()
+        val uploadContent = if (rejected.isEmpty()) originalUpload else originalUpload +
+            rejected.joinToString(prefix = "\n\n[用户已排除的作品]\n", separator = "\n") {
+                "《${it.title}》 ${it.author} (${it.media?.name.orEmpty()})"
+            }
         val userMessage = ChatUiMessage(
             role = ChatRole.USER,
             content = content,
             deliveryState = ChatDeliveryState.QUEUED,
             uploadContent = uploadContent
         )
+        val specified = if (isBookSearch && !sending) explicitAiBookSearchCandidate(content) else null
+        if (specified != null) {
+            messages += userMessage.copy(deliveryState = ChatDeliveryState.SENT)
+            val message = ChatUiMessage(
+                role = ChatRole.ASSISTANT,
+                content = context.getString(R.string.ai_book_search_identified, specified.title, specified.author),
+                bookSearch = AiBookSearchReply(listOf(specified), verified = true, findInSources = true),
+            )
+            messages += message
+            uploadMessages += chatClient.newUserMessage(uploadContent)
+            uploadMessages += JsonObject().apply {
+                addProperty("role", "assistant")
+                addProperty("content", message.content)
+            }
+            refreshContextUsage()
+            persistActiveSession()
+            launchBookSourceLookup(message.id, specified, automatically = true)
+            scope.launch { listState.scrollToItem(messages.lastIndex.coerceAtLeast(0)) }
+            return
+        }
         messages += userMessage
         scope.launch {
             if (chatSearch == null) listState.scrollToItem(messages.lastIndex)
@@ -1980,10 +2319,12 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
 
     fun regenerateMessage(message: ChatUiMessage) {
         if (!ensureSkillToolSupport() || !ensureModelGenerationRoute()) return
+        if (bookSearchAvailability() != AiBookSearchAvailability.READY) return
         if (sending) {
             Toast.makeText(context, "正在生成中", Toast.LENGTH_SHORT).show()
             return
         }
+        if (activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID) cancelBookSourceLookup()
         val index = messages.indexOfFirst { it.id == message.id }
         if (index < 0) {
             return
@@ -2028,6 +2369,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             Toast.makeText(context, "正在生成中，暂不能删除消息", Toast.LENGTH_SHORT).show()
             return
         }
+        if (message.id == activeBookLookupMessageId) cancelBookSourceLookup()
         val removed = messages.removeAll { it.id == message.id }
         if (!removed) {
             return
@@ -2655,6 +2997,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                     }
                     pendingGlobalSearchResult = null
                 }
+                val bookSearchNotice: (@Composable () -> Unit)? = if (
+                    bookSearchMode && bookSearchAvailability != AiBookSearchAvailability.READY
+                ) {
+                    { AiBookSearchWebNotice(bookSearchAvailability) }
+                } else null
                 Scaffold(
                     containerColor = Color.Transparent,
                     contentWindowInsets = WindowInsets(0),
@@ -2663,6 +3010,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                             AiChatToolbar(
                                 title = currentTitle,
                                 modelLabel = selectedModelLabel,
+                                bookSearchMode = bookSearchMode,
                                 dayBackdrop = controlsBackdrop,
                                 onOpenMenu = { scope.launch { drawerState.open() } },
                                 onOpenSearch = {
@@ -2722,11 +3070,23 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                             }
                             RikkaChatInput(
                                 value = input,
-                                onValueChange = { input = it },
+                                onValueChange = {
+                                    input = it
+                                    if (bookSearchMode) bookSearchGreetingPending = false
+                                },
+                                onInputFocused = {
+                                    if (bookSearchMode) bookSearchGreetingPending = false
+                                },
                                 dayBackdrop = controlsBackdrop,
                                 messageInputEnabled = modeEntryConfirmation == null &&
-                                    skillToolErrorText == null,
-                                sending = sending,
+                                    skillToolErrorText == null && bookSearchAvailability == AiBookSearchAvailability.READY,
+                                sendEnabled = modeEntryConfirmation == null && skillToolErrorText == null &&
+                                    bookSearchAvailability == AiBookSearchAvailability.READY,
+                                sending = sending || activeBookLookupMessageId != null,
+                                inputNotice = bookSearchNotice,
+                                inputHint = if (bookSearchMode) stringResource(
+                                    if (messages.isEmpty()) R.string.ai_book_search_hint else R.string.ai_book_search_follow_up
+                                ) else null,
                                 modelIconRes = selectedModelIconRes,
                                 reasoningEnabled = selectedReasoningEnabled,
                                 webAccess = webAccess,
@@ -2734,7 +3094,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 skillEnabled = inputAttachments.any {
                                     it.type == AiChatInputAttachmentType.SKILL
                                 },
-                                mcpControlVisible = activeAgentMode.allowsManualMcpCapabilities,
+                                mcpControlVisible = activeAgentMode.allowsManualMcpCapabilities || bookSearchMode,
                                 skillControlVisible = skillInputPolicy.selectorVisible,
                                 contextAvailable = availableContextAttachments.isNotEmpty()
                                         || inputAttachments.any {
@@ -2772,7 +3132,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                     }
                                 },
                                 onMcpClick = {
-                                    if (activeAgentMode.allowsManualMcpCapabilities) {
+                                    if (activeAgentMode.allowsManualMcpCapabilities || bookSearchMode) {
                                         showInternalMcpSheet = true
                                     }
                                 },
@@ -2874,12 +3234,33 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 }
                             }
                         }
+                        val greetingSessionId = activeSessionId
                         RikkaChatList(
                             padding = padding,
                             dayBackdrop = dayChatBackdrop,
                             state = listState,
                             messages = messages,
                             entryInteraction = modeEntryConfirmation,
+                            bookSearchMode = bookSearchMode,
+                            bookSearchGuide = if (
+                                bookSearchMode && bookSearchHistoryRestored && messages.isEmpty() && search == null
+                            ) {
+                                {
+                                    AssistantMessageHeader(
+                                        fontWeight = FontWeight.Normal,
+                                        modelLabel = selectedModelLabel,
+                                        modelIconRes = selectedModelIconRes,
+                                    )
+                                    key(greetingSessionId) {
+                                        AiBookSearchGreetingText(bookSearchGreetingPending) {
+                                            if (activeSessionId == greetingSessionId) bookSearchGreetingPending = false
+                                        }
+                                    }
+                                }
+                            } else null,
+                            showBookSearchActions = bookSearchMode && !sending && !exportSelectionMode && search == null,
+                            bookSearchMcpEnabled = internalMcpEnabled,
+                            onBookSearchAction = ::handleBookSearchAction,
                             interactionPolicy = interactionPolicy,
                             searchLocation = searchLocation,
                             onRegenerate = ::regenerateMessage,
@@ -3040,7 +3421,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             }
         )
     }
-    if (showInternalMcpSheet && activeAgentMode.allowsManualMcpCapabilities) {
+    if (showInternalMcpSheet && (activeAgentMode.allowsManualMcpCapabilities || bookSearchMode)) {
         AiChatInternalMcpSheet(
             enabled = internalMcpEnabled,
             onEnabledChange = { enabled ->
@@ -3049,10 +3430,48 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                     configVersion++
                 }
             },
-            modules = McpInternalToolCatalog.modules,
+            modules = if (bookSearchMode) {
+                McpInternalToolCatalog.modules.mapNotNull { module ->
+                    val available = module.capabilities.filter { it.id in activeAgentMode.fixedMcpCapabilityIds }
+                    available.takeIf { it.isNotEmpty() }?.let { module.copy(capabilities = it) }
+                }
+            } else McpInternalToolCatalog.modules,
             selectedCapabilityIds = enabledMcpCapabilityIds.toSet(),
             onSelectionChange = ::updateMcpCapabilitySelection,
+            selectionEnabled = !bookSearchMode,
             onDismiss = { showInternalMcpSheet = false }
+        )
+    }
+    bookScopeSelection?.let { (messageId, candidate) ->
+        val media = candidate.media ?: return@let
+        val sources by produceState(initialValue = emptyList<io.legado.app.data.entities.BookSourcePart>(), media) {
+            value = withContext(Dispatchers.IO) { McpPreciseBookSearch.sourcesFor(media) }
+        }
+        val groups = remember(sources) {
+            sources.flatMap { ChangeSourceFilter.splitGroups(it.bookSourceGroup) }.distinct().sorted()
+        }
+        var query by remember(media) { mutableStateOf("") }
+        val filtered = remember(sources, query) {
+            sources.filter { it.bookSourceName.contains(query, ignoreCase = true) }
+        }
+        SearchScopeDialog(
+            groups = groups,
+            sources = filtered,
+            onSourceQueryChange = { query = it },
+            onApply = { selected ->
+                val entry = activeModeEntryContext ?: return@SearchScopeDialog
+                activeModeEntryContext = entry.copy(payload = entry.payload.deepCopy().apply {
+                    addProperty(AI_BOOK_SEARCH_SCOPE, selected.toString())
+                    if (media.sourceType == BookSourceType.audio && !selected.isAll()) {
+                        addProperty(AI_BOOK_SEARCH_AUDIO_SCOPE_MEDIA, media.name)
+                    } else {
+                        remove(AI_BOOK_SEARCH_AUDIO_SCOPE_MEDIA)
+                    }
+                })
+                bookScopeSelection = null
+                launchBookSourceLookup(messageId, candidate)
+            },
+            onDismiss = { bookScopeSelection = null },
         )
     }
     generationBlock?.let { (providerId, issue) ->
@@ -3415,6 +3834,7 @@ private fun AiStatCard(
 private fun AiChatToolbar(
     title: String,
     modelLabel: String,
+    bookSearchMode: Boolean,
     dayBackdrop: NgLiquidGlassBackdrop?,
     onOpenMenu: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -3431,7 +3851,7 @@ private fun AiChatToolbar(
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (dayBackdrop != null) FontWeight.SemiBold else null,
+                fontWeight = FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -3439,6 +3859,7 @@ private fun AiChatToolbar(
                 text = "默认助手 / $modelLabel",
                 color = LocalContentColor.current.copy(alpha = 0.62f),
                 style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (bookSearchMode) FontWeight.Normal else null,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -4404,6 +4825,11 @@ private fun RikkaChatList(
     state: LazyListState,
     messages: List<ChatUiMessage>,
     entryInteraction: AiChatInteraction?,
+    bookSearchMode: Boolean,
+    bookSearchGuide: (@Composable () -> Unit)?,
+    showBookSearchActions: Boolean,
+    bookSearchMcpEnabled: Boolean,
+    onBookSearchAction: (String, AiBookSearchAction) -> Unit,
     interactionPolicy: AiChatInteractionPolicyContract?,
     searchLocation: AiChatSearchLocation?,
     onRegenerate: (ChatUiMessage) -> Unit,
@@ -4450,6 +4876,13 @@ private fun RikkaChatList(
         contentPadding = listPadding,
         verticalArrangement = Arrangement.spacedBy(if (dayBackdrop == null) 16.dp else 12.dp),
     ) {
+        if (bookSearchGuide != null) {
+            item(key = "book-search-guide") {
+                AiChatMessageSurface(isUser = false, dayBackdrop = dayBackdrop, actionsMenu = null) {
+                    bookSearchGuide()
+                }
+            }
+        }
         entryInteraction?.let { interaction ->
             item(key = "mode-entry-${interaction.id}") {
                 Box(Modifier.padding(start = selectionStartReduction)) {
@@ -4463,10 +4896,11 @@ private fun RikkaChatList(
         }
         items(messages, key = { it.id }) { message ->
             val messageLocation = searchLocation?.takeIf { it.match.messageId == message.id }
-            val messageContent: @Composable () -> Unit = {
+            val renderMessage: @Composable () -> Unit = {
                 RikkaMessageItem(
                     message = message,
                     dayBackdrop = dayBackdrop,
+                    assistantLabelWeight = if (bookSearchMode) FontWeight.Normal else FontWeight.SemiBold,
                     interactionPolicy = interactionPolicy,
                     searchLocation = messageLocation,
                     onRegenerate = { onRegenerate(message) },
@@ -4476,6 +4910,19 @@ private fun RikkaChatList(
                     onExport = { onExport(message) },
                     onInteractionSubmit = onInteractionSubmit
                 )
+            }
+            val messageContent: @Composable () -> Unit = {
+                val bookSearch = message.bookSearch
+                if (showBookSearchActions && bookSearch != null) {
+                    Column {
+                        renderMessage()
+                        AiBookSearchReplyContent(bookSearch, actionsEnabled = true, mcpEnabled = bookSearchMcpEnabled) {
+                            onBookSearchAction(message.id, it)
+                        }
+                    }
+                } else {
+                    renderMessage()
+                }
             }
             if (selectionMode && !message.loading) {
                 Row(
@@ -4603,6 +5050,7 @@ private fun ChatSearchSource.searchableParts(markdown: Markwon): List<Pair<AiCha
 private fun RikkaMessageItem(
     message: ChatUiMessage,
     dayBackdrop: NgLiquidGlassBackdrop?,
+    assistantLabelWeight: FontWeight,
     interactionPolicy: AiChatInteractionPolicyContract?,
     searchLocation: AiChatSearchLocation?,
     onRegenerate: () -> Unit,
@@ -4696,7 +5144,7 @@ private fun RikkaMessageItem(
                 )
             }
         } else {
-            AssistantMessageHeader()
+            AssistantMessageHeader(assistantLabelWeight)
             if (message.loading) {
                 ThinkingLoadingLine(message.webActivity?.activeAction)
                 if (!message.reasoning.isNullOrBlank()) {
@@ -4784,7 +5232,7 @@ private fun RikkaMessageItem(
                         )
                     }
                 }
-                message.webActivity?.let { WebSources(it) }
+                message.webActivity?.let { WebSources(it, message.usageProviderId) }
                 if (message.toolTrace.isNotEmpty()) {
                     ToolTraceEntry(message.toolTrace)
                 }
@@ -4935,7 +5383,7 @@ private fun ContextCompactionEventItem(
 }
 
 @Composable
-private fun aiChatContentCardColor(): Color = if (NgTheme.snapshot.isDark) {
+internal fun aiChatContentCardColor(): Color = if (NgTheme.snapshot.isDark) {
     Color(NgTheme.colors.surfaceContainerHigh)
 } else {
     colorResource(R.color.ng_surface_card)
@@ -5479,7 +5927,7 @@ private fun InteractionSubmitRow(
 }
 
 @Composable
-private fun InteractionChip(
+internal fun InteractionChip(
     text: String,
     primary: Boolean,
     modifier: Modifier = Modifier,
@@ -5577,19 +6025,23 @@ private fun ThinkingDots() {
 }
 
 @Composable
-private fun AssistantMessageHeader() {
+private fun AssistantMessageHeader(
+    fontWeight: FontWeight,
+    modelLabel: String = currentAssistantModelLabel(),
+    @DrawableRes modelIconRes: Int = currentAssistantModelIconRes(),
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         RikkaAssistantAvatar(
-            iconRes = currentAssistantModelIconRes(),
+            iconRes = modelIconRes,
             modifier = Modifier.size(28.dp)
         )
         Text(
-            text = currentAssistantModelLabel(),
+            text = modelLabel,
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = fontWeight,
             color = colorResource(R.color.ng_on_surface),
             maxLines = 1
         )
@@ -7150,7 +7602,7 @@ private fun AgentModeEntryContext?.payloadInt(key: String): Int? {
 }
 
 @Composable
-private fun WebSources(activity: AiWebActivity) {
+private fun WebSources(activity: AiWebActivity, usageProviderId: String?) {
     activity.externalError?.let { error ->
         Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
@@ -7181,7 +7633,12 @@ private fun WebSources(activity: AiWebActivity) {
     )
     AnimatedVisibility(visible = expanded) {
         Column(Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 6.dp)) {
-            activity.providerLabel?.let { label ->
+            val providerLabel = if (activity.hasLegacyChatGptNativeLabel(usageProviderId)) {
+                stringResource(R.string.ai_search_source_native, "ChatGPT")
+            } else {
+                activity.providerLabel
+            }
+            providerLabel?.let { label ->
                 Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             activity.sources.forEach { source ->
@@ -7987,9 +8444,13 @@ internal fun resolveSkillInputPolicy(
 private fun RikkaChatInput(
     value: String,
     onValueChange: (String) -> Unit,
+    onInputFocused: () -> Unit,
     dayBackdrop: NgLiquidGlassBackdrop?,
     messageInputEnabled: Boolean,
+    sendEnabled: Boolean,
     sending: Boolean,
+    inputNotice: (@Composable () -> Unit)?,
+    inputHint: String?,
     @DrawableRes modelIconRes: Int,
     reasoningEnabled: Boolean,
     webAccess: AiWebAccess?,
@@ -8060,13 +8521,19 @@ private fun RikkaChatInput(
                             onRemove = onRemoveAttachment
                         )
                     }
-                    AiChatComposerField(
-                        value = value,
-                        onValueChange = onValueChange,
-                        messageInputEnabled = messageInputEnabled,
-                        hasSkillError = skillErrorText != null,
-                        compact = dayBackdrop != null,
-                    )
+                    if (inputNotice != null) {
+                        inputNotice()
+                    } else {
+                        AiChatComposerField(
+                            value = value,
+                            onValueChange = onValueChange,
+                            onInputFocused = onInputFocused,
+                            messageInputEnabled = messageInputEnabled,
+                            hasSkillError = skillErrorText != null,
+                            compact = dayBackdrop != null,
+                            inputHint = inputHint,
+                        )
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -8138,15 +8605,15 @@ private fun RikkaChatInput(
                         ChatInputActionButton(
                             icon = if (sending) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
                             contentDescription = if (sending) "Stop" else "Send",
-                            enabled = sending || messageInputEnabled && value.isNotBlank(),
+                            enabled = sending || sendEnabled && value.isNotBlank(),
                             color = when {
                                 sending -> MaterialTheme.colorScheme.errorContainer
-                                !messageInputEnabled || value.isBlank() -> MaterialTheme.colorScheme.surfaceVariant
+                                !sendEnabled || value.isBlank() -> MaterialTheme.colorScheme.surfaceVariant
                                 else -> sendButtonColor
                             },
                             tint = when {
                                 sending -> MaterialTheme.colorScheme.onErrorContainer
-                                !messageInputEnabled || value.isBlank() ->
+                                !sendEnabled || value.isBlank() ->
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                 else -> Color.White
                             },
@@ -8189,20 +8656,26 @@ private fun AiChatComposerSurface(
 private fun AiChatComposerField(
     value: String,
     onValueChange: (String) -> Unit,
+    onInputFocused: () -> Unit,
     messageInputEnabled: Boolean,
     hasSkillError: Boolean,
     compact: Boolean,
+    inputHint: String?,
 ) {
     var inputFocused by remember { mutableStateOf(false) }
-    val modifier = Modifier.fillMaxWidth().onFocusChanged { inputFocused = it.isFocused }
+    val modifier = Modifier.fillMaxWidth().onFocusChanged { state ->
+        inputFocused = state.isFocused
+        if (state.isFocused) onInputFocused()
+    }
     val placeholder = @Composable {
         if (!inputFocused) {
             Text(
-                when {
+                text = when {
                     hasSkillError -> "请先切换到支持工具调用的模型"
-                    messageInputEnabled -> "输入消息与 AI 聊天"
+                    messageInputEnabled -> inputHint ?: "输入消息与 AI 聊天"
                     else -> "可先设置模型和思考深度"
-                }
+                },
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
     }
@@ -8221,7 +8694,7 @@ private fun AiChatComposerField(
                 Box(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 8.dp)) {
                     if (value.isEmpty()) {
                         CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
-                            ProvideTextStyle(style, content = placeholder)
+                            placeholder()
                         }
                     }
                     innerTextField()
@@ -8516,6 +8989,7 @@ private fun AiChatInternalMcpSheet(
     modules: List<McpInternalToolModule>,
     selectedCapabilityIds: Set<String>,
     onSelectionChange: (Set<String>) -> Unit,
+    selectionEnabled: Boolean,
     onDismiss: () -> Unit
 ) {
     val baseSnapshot = NgTheme.snapshot
@@ -8547,7 +9021,7 @@ private fun AiChatInternalMcpSheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (enabled) Modifier.fillMaxHeight(0.70f) else Modifier),
+                .then(if (enabled && selectionEnabled) Modifier.fillMaxHeight(0.70f) else Modifier),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             Column(
@@ -8571,6 +9045,15 @@ private fun AiChatInternalMcpSheet(
                     if (!enabled) return@NgFormPanel
 
                     NgFormGroupDivider()
+                    if (!selectionEnabled) {
+                        modules.flatMap { it.capabilities }.forEach { capability ->
+                            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                Text(capability.title, style = MaterialTheme.typography.titleMedium)
+                                Text(capability.description, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        return@NgFormPanel
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -9323,6 +9806,7 @@ private fun buildAgentSkillInputAttachments(): List<AiChatInputAttachment> {
 internal fun resolveEntryAgentMode(entrySource: String?): AgentModeDefinition {
     return when (entrySource) {
         AiChatActivity.ENTRY_BOOK_SCAN -> AgentModeRegistry.bookScan
+        AiChatActivity.ENTRY_BOOK_SEARCH -> AgentModeRegistry.bookSearch
         else -> AgentModeRegistry.general
     }
 }
@@ -9335,7 +9819,9 @@ private fun buildModeSkillInputAttachments(
     val workflowId = mode.systemWorkflowId
     val systemSkillIds = mode.availableSystemSkillIds
     val systemSkillSetHash = if (workflowId != null) {
-        requireNotNull(AiSkillPackageRegistry.systemPackageSet(systemSkillIds)) {
+        val packages = AiSkillPackageRegistry.systemPackageSet(systemSkillIds)
+        if (packages == null && mode.id == AgentModeRegistry.BOOK_SEARCH_ID) return emptyList()
+        requireNotNull(packages) {
             "System Skill Package 集合不存在：${systemSkillIds.joinToString()}"
         }.contentHash
     } else {
@@ -9364,6 +9850,7 @@ private fun buildModeSkillInputAttachments(
         else -> emptyList()
     }
     if (workflowId != null) {
+        if (mode.id == AgentModeRegistry.BOOK_SEARCH_ID && attachments.isEmpty()) return emptyList()
         check(attachments.size == 1) { "System Workflow 资源不存在：$workflowId" }
         check(
             McpInternalToolCatalog.normalizeCapabilityIds(
@@ -10073,6 +10560,7 @@ private fun ChatUiMessage.toSnapshot(): AiChatMessageSnapshot {
         toolReceipts = toolReceipts,
         memoryTrace = memoryTrace,
         webActivity = webActivity?.settledOrNull(),
+        bookSearch = bookSearch,
         elapsedMs = elapsedMs,
         favorite = favorite,
         deliveryState = deliveryState.snapshotValue,
@@ -10108,6 +10596,11 @@ private fun AiChatMessageSnapshot.toUiMessage(): ChatUiMessage {
         toolReceipts = toolReceipts.orEmpty(),
         memoryTrace = memoryTrace.orEmpty(),
         webActivity = webActivity?.settledOrNull(),
+        bookSearch = bookSearch?.let { reply ->
+            if (reply.lookup?.status == AiBookSourceStatus.RUNNING) {
+                reply.copy(lookup = reply.lookup.copy(status = AiBookSourceStatus.INTERRUPTED))
+            } else reply
+        },
         elapsedMs = elapsedMs,
         favorite = favorite,
         deliveryState = ChatDeliveryState.fromSnapshot(
@@ -10148,6 +10641,7 @@ private data class ChatUiMessage(
     val toolReceipts: List<ToolExecutionReceipt> = emptyList(),
     val memoryTrace: List<AiMemoryTraceItem> = emptyList(),
     val webActivity: AiWebActivity? = null,
+    val bookSearch: AiBookSearchReply? = null,
     val elapsedMs: Long? = null,
     val favorite: Boolean = false,
     val loading: Boolean = false,

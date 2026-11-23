@@ -312,7 +312,13 @@ object AiChatHistoryStore {
         val cleanEntryContext = modeEntryContext?.validatedCopyOrNull()
         val cleanMessages = recoverLegacyVisibleMessages(messages.filter {
             it.role.isNotBlank() && it.content.isNotBlank()
-        }, uploadMessages).toMutableList()
+        }, uploadMessages).map { message ->
+            if (mode.id != AgentModeRegistry.BOOK_SEARCH_ID || message.role != AiChatMessageSnapshot.ROLE_ASSISTANT) {
+                message
+            } else {
+                message.copy(content = aiBookSearchVisibleText(message.content).ifBlank { "AI 搜书" })
+            }
+        }
         val cleanTitle = title.ifBlank {
             cleanEntryContext?.title?.takeIf { it.isNotBlank() }
                 ?: cleanMessages.firstOrNull { it.role == AiChatMessageSnapshot.ROLE_USER }
@@ -451,6 +457,8 @@ data class AiChatMessageSnapshot(
     val memoryTrace: List<AiMemoryTraceItem>? = emptyList(),
     @SerializedName("web_activity")
     val webActivity: AiWebActivity? = null,
+    @SerializedName("book_search")
+    val bookSearch: AiBookSearchReply? = null,
     @SerializedName("elapsed_ms")
     val elapsedMs: Long? = null,
     @SerializedName("favorite")

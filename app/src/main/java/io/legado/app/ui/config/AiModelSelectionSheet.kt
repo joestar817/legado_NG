@@ -180,6 +180,7 @@ internal fun AiModelSelectionSheet(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     onFetchProvider: (suspend (String) -> Unit)? = null,
+    onClear: (() -> Unit)? = null,
     onSelect: (providerId: String, modelId: String) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
@@ -238,6 +239,7 @@ internal fun AiModelSelectionSheet(
     val currentOnProviderOpen by rememberUpdatedState<(String) -> Unit>({ openProvider(it) })
     val selectedTarget = remember(state) { state.selectedTarget() }
     val selectedVisible = selectedTarget?.position(filteredProviders)
+    val hasSavedSelection = state.selectedProviderId.isNotBlank() || state.selectedModelId.isNotBlank()
     val refreshInteractionSource = remember { MutableInteractionSource() }
     val locateInteractionSource = remember { MutableInteractionSource() }
     val searchInteractionSource = remember { MutableInteractionSource() }
@@ -376,6 +378,19 @@ internal fun AiModelSelectionSheet(
                     tint = if (query.isNotBlank()) Color(NgTheme.colors.primary)
                     else ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
                 )
+            }
+            if (hasSavedSelection && onClear != null) {
+                Box(
+                    modifier = Modifier.size(40.dp).clickable(role = Role.Button, onClick = onClear),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_clear),
+                        contentDescription = stringResource(R.string.ai_clear_selected_model),
+                        modifier = Modifier.size(22.dp),
+                        tint = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
+                    )
+                }
             }
         }
         Spacer(Modifier.height(8.dp))

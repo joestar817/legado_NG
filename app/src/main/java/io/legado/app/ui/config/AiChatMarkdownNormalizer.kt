@@ -3,11 +3,9 @@ package io.legado.app.ui.config
 /**
  * Normalizes model Markdown before it reaches Markwon.
  *
- * CommonMark does not treat `**` after closing Chinese punctuation as a closing
- * delimiter when a Chinese letter follows immediately. Model output commonly
- * uses that form, so convert only that ambiguous shape to the equivalent HTML
- * strong tag. Skill-internal links are useful to the agent but have no valid
- * navigation target in the app; keep their label while allowing web links.
+ * CommonMark can reject a strong delimiter next to Chinese punctuation, such as
+ * the opening stars in "是**《书名》**" or closing stars before a letter. Use
+ * HTML strong tags for those cases. Skill-internal links keep their label only.
  */
 internal fun normalizeAiChatMarkdown(content: String): String {
     if (content.isBlank()) return content
@@ -19,9 +17,15 @@ private fun normalizeMarkdownProse(content: String): String {
         val destination = match.groupValues[2].removeSurrounding("<", ">")
         if (destination.isHttpUrl()) match.value else match.groupValues[1]
     }
-    return ambiguousChineseStrongRegex.replace(withoutInternalLinks) { match ->
-        "<strong>${match.groupValues[1].escapeHtml()}</strong>"
+    val withBookTitleEmphasis = if ("**《" in withoutInternalLinks) {
+        bookTitleOrProtectedInlineRegex.replace(withoutInternalLinks) { match ->
+            val title = match.groupValues[1]
+            if (title.isEmpty()) match.value else title.asStrongHtml()
+        }
+    } else {
+        withoutInternalLinks
     }
+    return ambiguousChineseStrongRegex.replace(withBookTitleEmphasis) { it.groupValues[1].asStrongHtml() }
 }
 
 private fun transformOutsideInlineCode(
@@ -68,8 +72,15 @@ private fun String.escapeHtml(): String {
         .replace("\"", "&quot;")
 }
 
-private val markdownInlineLinkRegex = Regex(
-    """(?<!!)\[([^]\r\n]+)]\((<[^>\r\n]+>|[^\s)\r\n]+)(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\)"""
+private fun String.asStrongHtml(): String = "<strong>${escapeHtml()}</strong>"
+
+private const val markdownInlineLinkPattern =
+    """\[([^]\r\n]+)]\((<[^>\r\n]+>|[^\s)\r\n]+)(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\)"""
+private val markdownInlineLinkRegex = Regex("(?<!!)$markdownInlineLinkPattern")
+
+// Consume inline links and HTML tags as a unit, so their attributes and destinations stay intact.
+private val bookTitleOrProtectedInlineRegex = Regex(
+    """(?<=[\p{L}\p{N}])\*\*(《[^*\r\n<>\[\]\\]+》)\*\*(?!\*)|!?$markdownInlineLinkPattern|<[^<>\r\n]+>"""
 )
 
 private val ambiguousChineseStrongRegex = Regex(

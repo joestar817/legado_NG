@@ -646,6 +646,7 @@
     <string name="ai_model_select">Select model</string>
     <string name="ai_filter_models">Search and filter models</string>
     <string name="ai_locate_selected_model">Locate selected model</string>
+    <string name="ai_clear_selected_model">Clear selected model</string>
     <string name="ai_model_enable">Enable model</string>
     <string name="ai_edit_model">Edit model</string>
     <string name="ai_model_information">Model information</string>
@@ -770,7 +771,7 @@
     <string name="ai_search_debug_http_status">HTTP %1$d</string>
     <string name="ai_search_debug_no_body">No response body available</string>
     <string name="ai_search_debug_body_truncated">Response exceeds the size limit. Showing its beginning.</string>
-    <string name="ai_search_source_native">DeepSeek built-in web access</string>
+    <string name="ai_search_source_native">%1$s built-in web access</string>
     <string name="ai_search_source_external">%1$s · External web access</string>
     <string name="ai_search_error_key_required">Enter an API key first.</string>
     <string name="ai_search_error_key_invalid">The API key is invalid or lacks permission for this request.</string>

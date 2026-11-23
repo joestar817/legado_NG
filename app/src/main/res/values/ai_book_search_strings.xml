@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_book_search_title">AI Book Search</string>
+    <string name="ai_book_search_guide_greeting">Hi! I’m your AI assistant. What book are you looking for?</string>
+    <string name="ai_book_search_guide_body">Tell me about any character, plot detail, or line you remember.</string>
+    <string name="ai_book_search_hint">Enter a clue</string>
+    <string name="ai_book_search_follow_up">Add a clue</string>
+    <string name="ai_book_search_web_required">Book search needs web search. Enable it or select a compatible model.</string>
+    <string name="ai_book_search_missing_model">Select a chat model to search for books</string>
+    <string name="ai_book_search_web_off">Enable web search to find books</string>
+    <string name="ai_book_search_configure_web">This model cannot search the web.</string>
+    <string name="ai_book_search_external_setup">Enable and select a configured external search service.</string>
+    <string name="ai_book_search_external_tools">This model cannot call the external search service.</string>
+    <string name="ai_book_search_model_config_invalid">The selected model’s interface is unavailable.</string>
+    <string name="ai_book_search_key_required">Set up the API key in provider settings.</string>
+    <string name="ai_book_search_account_required">Sign in to ChatGPT or renew its authorization</string>
+    <string name="ai_book_search_skill_unavailable">The Book Search skill is unavailable</string>
+    <string name="ai_book_search_unverified">Web verification was incomplete</string>
+    <string name="ai_book_search_more_clues">Do you remember a character, a distinctive scene, or a line?</string>
+    <string name="ai_book_search_identified">《%1$s》 · %2$s</string>
+    <string name="ai_book_search_select">Find this one</string>
+    <string name="ai_book_search_search_sources">Search sources</string>
+    <string name="ai_book_search_reject">Not this one</string>
+    <string name="ai_book_search_reject_all">None of these</string>
+    <string name="ai_book_search_searching">Searching book sources…</string>
+    <string name="ai_book_search_no_match">Current sources did not find 《%1$s》</string>
+    <string name="ai_book_search_scope_invalid">The selected source scope is unavailable</string>
+    <string name="ai_book_search_no_sources">No searchable sources for this format in the current scope</string>
+    <string name="ai_book_search_audio_scope">Select a group or source for the requested audio format</string>
+    <string name="ai_book_search_incomplete">Some sources failed or have not finished</string>
+    <string name="ai_book_search_failed">Source search failed</string>
+    <string name="ai_book_search_disabled">Built-in MCP is off</string>
+    <string name="ai_book_search_enable_mcp">Enable built-in MCP</string>
+    <string name="ai_book_search_namesake">The sources returned a different work with the same title</string>
+    <string name="ai_book_search_source_unverified">The sources returned entries whose details could not be verified</string>
+    <string name="ai_book_search_interrupted">Source search stopped</string>
+    <string name="ai_book_search_retry">Retry sources</string>
+    <string name="ai_book_search_scope">Change scope</string>
+    <string name="ai_book_search_alternate_title">Search by alias</string>
+    <string name="ai_book_search_open_failed">Book details are unavailable. Try searching the sources again.</string>
+    <string name="ai_book_search_media_novel">Novel</string>
+    <string name="ai_book_search_media_manga">Comic</string>
+    <string name="ai_book_search_media_audiobook">Audiobook</string>
+    <string name="ai_book_search_media_music">Music</string>
+    <string name="ai_book_search_media_video">Video</string>
+    <string name="ai_book_search_media_download">Download</string>
+</resources>

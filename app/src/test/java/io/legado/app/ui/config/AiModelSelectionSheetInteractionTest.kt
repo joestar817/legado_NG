@@ -85,6 +85,33 @@ class AiModelSelectionSheetInteractionTest {
     }
 
     @Test
+    fun clearRemainsAvailableWhenTheSavedModelIsMissingFromTheCatalog() {
+        var state by mutableStateOf(AiModelSelectionSheetState(
+            title = "Models", emptyText = null, providers = providers,
+            selectedProviderId = "b", selectedModelId = "Unavailable",
+        ))
+        var clearCount = 0
+        composeRule.setContent {
+            NgAppTheme(snapshot = snapshot, updateSystemBars = false) {
+                AiModelSelectionSheet(
+                    state = state, isRefreshing = false, onRefresh = {},
+                    onClear = {
+                        clearCount++
+                        state = state.copy(selectedProviderId = "", selectedModelId = "")
+                    },
+                    onSelect = { _, _ -> error("Clear must not select a model") },
+                )
+            }
+        }
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val clear = composeRule.onNodeWithContentDescription(context.getString(R.string.ai_clear_selected_model))
+        clear.assertIsDisplayed().performClick()
+        clear.assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(1, clearCount) }
+    }
+
+    @Test
     fun emptyCatalogLoadsOnlyAfterOpeningAndCanBeRetried() {
         val calls = mutableListOf<String>()
         val empty = AiModelSelectionProviderUiModel(

@@ -149,6 +149,9 @@ object AiConfig {
     val assistantModelId: String
         get() = appCtx.getPrefString(PreferKey.aiAssistantModelId).orEmpty()
 
+    internal val hasAssistantModelSelection: Boolean
+        get() = assistantProviderId.isNotBlank() && assistantModelId.isNotBlank()
+
     internal fun assistantModelReasoning(provider: AiProviderSetting, model: AiModel): AiAssistantReasoning {
         val legacyEffortKey = if (provider.officialDeepSeekModelConfigEndpoint() != null) {
             PreferKey.aiAssistantDeepSeekReasoningEffort
@@ -159,16 +162,16 @@ object AiConfig {
             model,
             assistantEffort = appCtx.getPrefString(legacyEffortKey),
             inheritedLevel = appCtx.getPrefString(PreferKey.aiAssistantReasoningLevel)?.let { AiReasoningLevel.from(it) },
-            modelEffort = appCtx.getPrefString(assistantReasoningChoiceKey(provider, model)),
+            modelEffort = appCtx.getPrefString(assistantReasoningChoiceKey(provider, model.id)),
         )
     }
 
     internal fun saveAssistantModelReasoning(provider: AiProviderSetting, model: AiModel, choice: String) {
-        appCtx.putPrefString(assistantReasoningChoiceKey(provider, model), choice)
+        appCtx.putPrefString(assistantReasoningChoiceKey(provider, model.id), choice)
     }
 
-    private fun assistantReasoningChoiceKey(provider: AiProviderSetting, model: AiModel): String {
-        val identity = "${provider.modelConfigurationKey()}\u0000${model.id}"
+    private fun assistantReasoningChoiceKey(provider: AiProviderSetting, modelId: String): String {
+        val identity = "${provider.modelConfigurationKey()}\u0000$modelId"
         val modelKey = UUID.nameUUIDFromBytes(identity.toByteArray(Charsets.UTF_8))
         return "${PreferKey.aiAssistantReasoningChoice}.$modelKey"
     }
@@ -330,6 +333,14 @@ object AiConfig {
         purifyModelId = modelId
     }
 
+    internal fun clearPurifyModel() {
+        appCtx.defaultSharedPreferences.edit {
+            remove(PreferKey.aiPurifyProviderId)
+            remove(PreferKey.aiPurifyModelId)
+            remove(PreferKey.aiPurifyReasoningLevel)
+        }
+    }
+
     fun requireReadAloudStoryboardModel(): AiModelSelection {
         val providerId = readAloudStoryboardProviderId
         val modelId = readAloudStoryboardModelId
@@ -342,6 +353,14 @@ object AiConfig {
     fun saveReadAloudStoryboardModel(providerId: String, modelId: String) {
         readAloudStoryboardProviderId = providerId
         readAloudStoryboardModelId = modelId
+    }
+
+    internal fun clearReadAloudStoryboardModel() {
+        appCtx.defaultSharedPreferences.edit {
+            remove(PreferKey.aiReadAloudStoryboardProviderId)
+            remove(PreferKey.aiReadAloudStoryboardModelId)
+            remove(PreferKey.aiReadAloudStoryboardReasoningLevel)
+        }
     }
 
     fun requireAssistantModel(): AiModelSelection {
@@ -373,6 +392,24 @@ object AiConfig {
             if (nextWindow != storedWindow) putInt(PreferKey.aiAssistantContextWindowTokens, nextWindow)
         }
         return true
+    }
+
+    internal fun clearAssistantModel() {
+        val providerId = assistantProviderId
+        val modelId = assistantModelId
+        val provider = if (providerId.isNotBlank() && modelId.isNotBlank()) {
+            AiProviderStore.provider(providerId)
+        } else {
+            null
+        }
+        appCtx.defaultSharedPreferences.edit {
+            remove(PreferKey.aiAssistantProviderId)
+            remove(PreferKey.aiAssistantModelId)
+            remove(PreferKey.aiAssistantReasoningLevel)
+            remove(PreferKey.aiAssistantDeepSeekReasoningEffort)
+            remove(PreferKey.aiAssistantModelReasoningEffort)
+            if (provider != null) remove(assistantReasoningChoiceKey(provider, modelId))
+        }
     }
 
     fun purifyParagraphParams(

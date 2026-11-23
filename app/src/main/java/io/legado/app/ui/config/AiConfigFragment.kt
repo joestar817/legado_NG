@@ -2312,6 +2312,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             selectedProviderId = selectedProviderId,
             selectedModelId = selectedModelId,
         ))
+        fun finishSelection() {
+            refreshModelSettings()
+            refreshMain()
+            dialog.dismiss()
+        }
         dialog.setContentView(
             requireContext().createNgBottomDrawerComposeHost(
                 fillMaxHeight = true,
@@ -2340,6 +2345,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                             refreshMain()
                         }
                     },
+                    onClear = {
+                        when (target) {
+                            AiModelSelectionTarget.PURIFY -> AiConfig.clearPurifyModel()
+                            AiModelSelectionTarget.READ_ALOUD -> AiConfig.clearReadAloudStoryboardModel()
+                            AiModelSelectionTarget.ASSISTANT -> AiConfig.clearAssistantModel()
+                        }
+                        finishSelection()
+                    },
                     onSelect = select@{ providerId, modelId ->
                         when (target) {
                             AiModelSelectionTarget.PURIFY -> {
@@ -2356,9 +2369,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                                 }
                             }
                         }
-                        refreshModelSettings()
-                        refreshMain()
-                        dialog.dismiss()
+                        finishSelection()
                     },
                 )
             }

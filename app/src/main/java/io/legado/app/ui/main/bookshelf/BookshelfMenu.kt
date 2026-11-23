@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.config.rememberHasAssistantModelSelection
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
@@ -55,7 +56,8 @@ internal val BookshelfContentToolbarMenuOffset = DpOffset(
 )
 
 internal fun bookshelfMenuItems(
-    includeBrowseHistory: Boolean = false
+    includeBrowseHistory: Boolean,
+    includeAiManagement: Boolean,
 ): List<NgExpandableActionMenuItem> = buildList {
     if (includeBrowseHistory) {
         add(
@@ -66,19 +68,21 @@ internal fun bookshelfMenuItems(
             )
         )
     }
-    add(
-        NgExpandableActionMenuItem(
-            itemId = R.id.menu_ai_assistant,
-            titleRes = R.string.ai_bookshelf_assistant,
-            iconRes = R.drawable.ic_ai
+    if (includeAiManagement) {
+        add(
+            NgExpandableActionMenuItem(
+                itemId = R.id.menu_ai_assistant,
+                titleRes = R.string.ai_bookshelf_assistant,
+                iconRes = R.drawable.ic_ai
+            )
         )
-    )
+    }
     add(
         NgExpandableActionMenuItem(
             itemId = R.id.menu_add_books,
             titleRes = R.string.add_books,
             iconRes = R.drawable.ic_add,
-            dividerBefore = true,
+            dividerBefore = includeBrowseHistory || includeAiManagement,
             children = listOf(
                 NgExpandableActionMenuItem(
                     R.id.menu_add_local,
@@ -193,8 +197,9 @@ internal fun BookshelfMenuHost(
     anchor: @Composable BoxScope.((() -> Unit)) -> Unit
 ) {
     val menuState = remember { NgPopupToggleState() }
-    val items = remember(includeBrowseHistory) {
-        bookshelfMenuItems(includeBrowseHistory)
+    val includeAiManagement = rememberHasAssistantModelSelection()
+    val items = remember(includeBrowseHistory, includeAiManagement) {
+        bookshelfMenuItems(includeBrowseHistory, includeAiManagement)
     }
     Box(modifier = modifier) {
         anchor { menuState.onAnchorClick() }

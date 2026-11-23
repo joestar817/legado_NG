@@ -32,7 +32,9 @@ class AiDeepSeekWebToolsTest {
         )
         val proResponses = official.deepSeekWebRoute(pro.copy(modelSettings = editable))!!
         assertEquals(setOf(AiWebTool.SEARCH), proResponses.enabled)
-        assertEquals(listOf("web_search"), proResponses.plan(true, "", false).types())
+        val plan = proResponses.plan(true, "", false) as AiWebToolPlan.Native
+        assertEquals("DeepSeek", plan.sourceName)
+        assertEquals(listOf("web_search"), plan.types())
         assertEquals(both, official.deepSeekWebRoute(flash.copy(modelSettings = editable))?.enabled)
 
         val senseTime = AiDefaultProviders.all().single { it.id == "sensenova" }

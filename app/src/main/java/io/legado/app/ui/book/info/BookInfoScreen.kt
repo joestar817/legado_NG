@@ -80,6 +80,7 @@ import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.menuCapabilities
 import io.legado.app.ui.book.search.SearchResultCard
+import io.legado.app.ui.config.rememberHasAssistantModelSelection
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgActionBarButton
@@ -961,16 +962,18 @@ private fun BookInfoCharactersCard(
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
             )
-            IconButton(
-                onClick = { onEvent(BookInfoUiEvent.CharacterAi) },
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_ai),
-                    contentDescription = stringResource(R.string.ai_assistant),
-                    tint = colorResource(R.color.tv_text_summary),
-                    modifier = Modifier.size(18.dp),
-                )
+            if (rememberHasAssistantModelSelection()) {
+                IconButton(
+                    onClick = { onEvent(BookInfoUiEvent.CharacterAi) },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_ai),
+                        contentDescription = stringResource(R.string.ai_assistant),
+                        tint = colorResource(R.color.tv_text_summary),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
         if (state.characters.isEmpty()) {

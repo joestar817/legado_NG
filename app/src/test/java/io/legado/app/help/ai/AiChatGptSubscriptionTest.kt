@@ -28,6 +28,21 @@ class AiChatGptSubscriptionTest {
         .copy(chatGptAccountId = "oaiapp_fixture")
 
     @Test
+    fun recognizesTheSharedLegacyNativeLabelOnlyForChatGptResults() {
+        val history = AiWebActivity(providerLabel = "DeepSeek 内置联网")
+
+        assertTrue(history.hasLegacyChatGptNativeLabel(provider.id))
+        assertTrue(history.copy(providerLabel = "DeepSeek built-in web access")
+            .hasLegacyChatGptNativeLabel(provider.id))
+        assertTrue(history.copy(inlineCitations = listOf(AiWebCitation(1, "https://example.test/book")))
+            .hasLegacyChatGptNativeLabel(null))
+        assertFalse(history.hasLegacyChatGptNativeLabel("deepseek"))
+        assertFalse(history.hasLegacyChatGptNativeLabel(null))
+        assertFalse(history.copy(providerLabel = "DeepSeek · 外置联网").hasLegacyChatGptNativeLabel(provider.id))
+        assertFalse(history.copy(providerLabel = "ChatGPT 内置联网").hasLegacyChatGptNativeLabel(provider.id))
+    }
+
+    @Test
     fun rememberedAccountDistinguishesSignedOutFromAuthorizationFailureOnReload() {
         val gson = Gson()
         val stored = """{"client_id":"oaiapp_fixture","subject":"reader","email":"reader@example.test"}"""
@@ -221,9 +236,10 @@ class AiChatGptSubscriptionTest {
         val model = AiModel(id = "gpt-6.2-sol", inputModalities = listOf(AiModelModality.TEXT),
             outputModalities = listOf(AiModelModality.TEXT))
         val plan = configured.nativeWebRoute(model)?.plan(allowed = true, userText = "搜书", thinkingOff = false)
-        assertTrue(plan is AiWebToolPlan.Native)
+            as AiWebToolPlan.Native
+        assertEquals("ChatGPT", plan.sourceName)
         val codec = AiOpenAiResponsesCodec(configured, model.id, "/unexpected",
-            nativeTools = (plan as AiWebToolPlan.Native).definitions, webEvents = events, chatGptAccessToken = "fixture")
+            nativeTools = plan.definitions, webEvents = events, chatGptAccessToken = "fixture")
         val request = codec.request(listOf(json("""{"role":"system","content":"system"}"""),
             json("""{"role":"user","content":"user"}""")),
             listOf(json("""{"type":"function","function":{"name":"test","parameters":{"type":"object"}}}""")),

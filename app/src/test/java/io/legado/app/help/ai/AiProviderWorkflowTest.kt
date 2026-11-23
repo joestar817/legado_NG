@@ -41,6 +41,41 @@ import java.util.concurrent.atomic.AtomicReference
 @Config(sdk = [35], application = Application::class)
 class AiProviderWorkflowTest {
     @Test
+    fun bookSearchWithoutAUsableRouteStopsBeforeCallingTheModel() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        context.injectAsAppCtx()
+        val provider = AiDefaultProviders.all().single { it.id == "xiaomi_mimo" }
+            .copy(apiKey = "fixture").withFetchedModels(listOf(AiModelRegistry.enrich(AiModel("mimo-v2.6-flash"))))
+        AiProviderStore.saveProviders(listOf(provider))
+        assertTrue(AiConfig.saveAssistantModel(provider.id, "mimo-v2.6-flash"))
+        val requests = AtomicInteger()
+        val assistant = AiChatClient {
+            OkHttpClient.Builder().addInterceptor {
+                requests.incrementAndGet()
+                error("This blocked turn must not reach the network")
+            }.build()
+        }
+        val settingsBefore = AiExternalSearchStore.current()
+        try {
+            for (settings in listOf(
+                AiExternalSearchSettings(),
+                AiExternalSearchSettings(routing = AiWebRoutingMode.EXTERNAL),
+                AiExternalSearchSettings(webEnabled = false),
+            )) {
+                AiExternalSearchStore.update { settings }
+                val messages = mutableListOf(assistant.newSystemMessage(), assistant.newUserMessage("找一本小说"))
+                val failure = runCatching {
+                    assistant.send(messages, "book-search-fixture", "blocked-turn", allowWeb = true, requireWebSearch = true)
+                }.exceptionOrNull()
+                assertEquals(context.getString(io.legado.app.R.string.ai_book_search_web_required), failure?.message)
+            }
+            assertEquals(0, requests.get())
+        } finally {
+            AiExternalSearchStore.update { settingsBefore }
+        }
+    }
+
+    @Test
     fun defaultAssistantReceivesNativeWebGuidanceForCurrentPublicInformation() = runBlocking {
         ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
         AiConfig.internalMcpEnabled = false

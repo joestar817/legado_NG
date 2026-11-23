@@ -2,12 +2,29 @@ package io.legado.app.web.mcp
 
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import io.legado.app.help.ai.AiBookSearchCandidate
+import io.legado.app.help.ai.AiBookSourceHit
+import io.legado.app.help.ai.AiBookSourceLookup
+import io.legado.app.help.ai.AiBookSourceStatus
 import io.legado.app.constant.PreferKey
 import io.legado.app.utils.GSON
 import io.legado.app.utils.getPrefBoolean
 import splitties.init.appCtx
 
 object McpInternalChannel {
+
+    internal suspend fun searchPreciseBook(
+        candidate: AiBookSearchCandidate,
+        keyword: String,
+        scope: String,
+        audioScopeConfirmed: Boolean,
+        capabilities: Collection<String>,
+        onHits: (List<AiBookSourceHit>) -> Unit,
+    ): AiBookSourceLookup {
+        check(McpPreciseBookSearch.CAPABILITY in capabilities)
+        if (!isEnabled()) return AiBookSourceLookup(candidate.key, keyword, AiBookSourceStatus.DISABLED)
+        return McpPreciseBookSearch.run(candidate, keyword, scope, audioScopeConfirmed, onHits)
+    }
 
     fun isEnabled(): Boolean = appCtx.getPrefBoolean(PreferKey.aiInternalMcp, false)
 

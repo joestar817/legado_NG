@@ -530,7 +530,7 @@ object WebBook {
             currentCoroutineContext().ensureActive()
             searchBookAwait(
                 bookSource, name,
-                filter = { fName, fAuthor, _ -> fName == name && fAuthor == author },
+                filter = { fName, fAuthor, _ -> matchesPreciseBook(fName, fAuthor, name, author) },
                 shouldBreak = { it > 0 }
             ).firstOrNull()?.let { searchBook ->
                 currentCoroutineContext().ensureActive()

@@ -36,6 +36,13 @@ data class AiWebCitation(
     @SerializedName("url") val url: String,
 )
 
+internal fun AiWebActivity.hasLegacyChatGptNativeLabel(usageProviderId: String?): Boolean {
+    // Only ChatGPT Responses populate inline citations. The old native label was shared by both routes.
+    val fromChatGpt = if (usageProviderId.isNullOrBlank()) !inlineCitations.isNullOrEmpty()
+        else usageProviderId == AiDefaultProviders.CHATGPT_ID
+    return fromChatGpt && (providerLabel == "DeepSeek 内置联网" || providerLabel == "DeepSeek built-in web access")
+}
+
 /** Normalizes provider events for the chat UI. Wire history is kept separately by each codec. */
 internal class AiNativeWebEvents(private val onUpdate: (AiWebActivity) -> Unit) {
     private data class Call(val action: AiWebActivityAction, val url: String?)

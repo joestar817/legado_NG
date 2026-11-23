@@ -235,6 +235,7 @@ class AiChatClient internal constructor(
         onContextEvent: (AiChatContextEvent) -> Unit = {},
         enabledMcpCapabilityIds: List<String> = emptyList(),
         allowWeb: Boolean = false,
+        requireWebSearch: Boolean = false,
         webUserText: String? = null,
         onWebUpdate: (AiWebActivity, AiWebAccess) -> Unit = { _, _ -> },
         onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
@@ -261,11 +262,17 @@ class AiChatClient internal constructor(
             userText = webUserText ?: messages.lastOrNull { it.stringOrNull("role") == "user" }
                 ?.get("content").contentText(),
             thinkingOff = params.disableThinking && protocol != AiModelGenerationTestProtocol.CLAUDE_MESSAGES,
+            requireSearch = requireWebSearch,
         )
-        val nativeWebLabel = appCtx.getString(R.string.ai_search_source_native)
-        val webEvents = if (webPlan is AiWebToolPlan.Native) AiNativeWebEvents {
-            onWebUpdate(it.copy(providerLabel = nativeWebLabel), AiWebAccess.Native)
-        } else null
+        check(!requireWebSearch || webPlan !is AiWebToolPlan.Off) {
+            appCtx.getString(R.string.ai_book_search_web_required)
+        }
+        val nativeWebLabel = (webPlan as? AiWebToolPlan.Native)?.let { plan ->
+            appCtx.getString(R.string.ai_search_source_native, plan.sourceName)
+        }
+        val webEvents = nativeWebLabel?.let { label ->
+            AiNativeWebEvents { onWebUpdate(it.copy(providerLabel = label), AiWebAccess.Native) }
+        }
         val externalWeb = (webPlan as? AiWebToolPlan.External)?.let { plan ->
             val access = AiWebAccess.External(plan.service)
             AiExternalWebTurn(plan.service, externalSearchClient()) { update ->

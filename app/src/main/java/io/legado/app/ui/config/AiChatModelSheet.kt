@@ -139,6 +139,11 @@ internal fun AiChatModelSheet(onChanged: () -> Unit, onDismiss: () -> Unit) {
                     sheetState = sheetState.withUpdatedProvider(providerId, provider)
                     onChanged()
                 },
+                onClear = {
+                    AiConfig.clearAssistantModel()
+                    onChanged()
+                    onDismiss()
+                },
                 onSelect = select@{ providerId, modelId ->
                     if (!AiConfig.saveAssistantModel(providerId, modelId)) {
                         Toast.makeText(context, R.string.ai_assistant_model_unavailable, Toast.LENGTH_SHORT).show()

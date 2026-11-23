@@ -11,10 +11,13 @@ import org.junit.Test
 class AgentModeRegistryTest {
 
     @Test
-    fun p3RegistersGeneralAndReadOnlyBookScanMode() {
+    fun registersGeneralAndReadOnlyBookModes() {
         val modes = AgentModeRegistry.all()
 
-        assertEquals(listOf(AgentModeRegistry.general, AgentModeRegistry.bookScan), modes)
+        assertEquals(listOf(AgentModeRegistry.general, AgentModeRegistry.bookScan, AgentModeRegistry.bookSearch), modes)
+        assertEquals(AiSkillRegistry.SKILL_BOOK_SEARCH, AgentModeRegistry.bookSearch.systemWorkflowId)
+        assertEquals(listOf("book_source.search"), AgentModeRegistry.bookSearch.fixedMcpCapabilityIds)
+        assertEquals(false, AgentModeRegistry.bookSearch.allowsManualMcpCapabilities)
         assertTrue(AgentModeRegistry.general.allowsUserSkills)
         assertEquals(AgentModeKind.GENERAL, AgentModeRegistry.general.kind)
         assertEquals(AgentModeKind.SYSTEM, AgentModeRegistry.bookScan.kind)

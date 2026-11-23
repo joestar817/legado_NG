@@ -64,6 +64,7 @@ import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.data.entities.SearchKeyword
 import io.legado.app.ui.book.source.BookSourceGroupIcon
+import io.legado.app.ui.config.rememberHasAssistantModelSelection
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.rememberNgSolidButtonColors
@@ -98,6 +99,7 @@ internal fun SearchScreen(
     focusRequestToken: Long,
     onQueryChange: (String) -> Unit,
     onSubmitSearch: (String) -> Unit,
+    onOpenAiSearch: () -> Unit,
     onBack: () -> Unit,
     onHistoryClick: suspend (String) -> Boolean,
     onDeleteHistory: (SearchKeyword) -> Unit,
@@ -168,6 +170,11 @@ internal fun SearchScreen(
                 }
             },
             historyVisible = history.isNotEmpty(),
+            onOpenAiSearch = {
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                onOpenAiSearch()
+            },
             groups = groups,
             scopeNames = scopeNames,
             isSourceScope = isSourceScope,
@@ -282,6 +289,7 @@ private fun SearchTopBar(
     query: String,
     onQueryChange: (String) -> Unit,
     onSubmit: (String) -> Unit,
+    onOpenAiSearch: () -> Unit,
     onBack: () -> Unit,
     focusRequester: FocusRequester,
     onFocusChanged: (Boolean) -> Unit,
@@ -314,6 +322,7 @@ private fun SearchTopBar(
             query = query,
             onQueryChange = onQueryChange,
             onSubmit = onSubmit,
+            onOpenAiSearch = onOpenAiSearch,
             focusRequester = focusRequester,
             onFocusChanged = onFocusChanged,
             modifier = Modifier.weight(1f)
@@ -365,18 +374,23 @@ private fun SearchQueryField(
     query: String,
     onQueryChange: (String) -> Unit,
     onSubmit: (String) -> Unit,
+    onOpenAiSearch: () -> Unit,
     focusRequester: FocusRequester,
     onFocusChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val hasAssistantModel = rememberHasAssistantModelSelection()
     NgSearchBar(
         query = query,
         onQueryChange = onQueryChange,
         hint = stringResource(R.string.search_book_key),
         modifier = modifier.focusRequester(focusRequester),
+        searchIcon = painterResource(if (hasAssistantModel) R.drawable.ic_ai else R.drawable.ic_search),
         variant = NgSearchBarVariant.TOOLBAR,
         hideHintOnFocus = true,
         onFocusChanged = onFocusChanged,
+        leadingActionLabel = stringResource(R.string.ai_book_search_title),
+        onLeadingAction = onOpenAiSearch.takeIf { hasAssistantModel },
         onSearch = onSubmit
     )
 }

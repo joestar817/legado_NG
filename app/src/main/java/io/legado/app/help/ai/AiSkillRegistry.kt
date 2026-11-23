@@ -63,14 +63,16 @@ object AiSkillRegistry {
     const val SKILL_BOOK_SCAN = "book_scan"
     const val SKILL_BOOK_SCAN_FACTS = "book_scan_facts"
     const val SKILL_BOOK_SCAN_REPORT = "book_scan_report"
+    const val SKILL_BOOK_SEARCH = "book_search"
     private const val MAX_SKILL_FILE_LENGTH = 512 * 1024
     private const val BUILT_IN_SKILL_ASSET_DIR = "skills"
     private val SYSTEM_WORKFLOW_IDS = listOf(
         SKILL_BOOK_SCAN,
         SKILL_BOOK_SCAN_FACTS,
-        SKILL_BOOK_SCAN_REPORT
+        SKILL_BOOK_SCAN_REPORT,
+        SKILL_BOOK_SEARCH,
     )
-    private val MANAGEMENT_SYSTEM_WORKFLOW_IDS = listOf(SKILL_BOOK_SCAN)
+    private val MANAGEMENT_SYSTEM_WORKFLOW_IDS = listOf(SKILL_BOOK_SCAN, SKILL_BOOK_SEARCH)
     private val builtInSkillDefaults by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         loadBuiltInSkills()
     }

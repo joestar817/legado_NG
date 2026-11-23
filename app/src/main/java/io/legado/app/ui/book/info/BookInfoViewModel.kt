@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
@@ -67,6 +68,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
+
+internal const val EXTRA_BOOK_INFO_SEARCH_RESULT = "book_info_search_result"
 
 class BookInfoViewModel(application: Application) : BaseViewModel(application) {
     private val mutableBookInfo = MutableLiveData<BookInfoSnapshot>()
@@ -168,9 +171,17 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
             val name = intent.getStringExtra("name") ?: ""
             val author = intent.getStringExtra("author") ?: ""
             val bookUrl = intent.getStringExtra("bookUrl") ?: ""
-            val saved = appDb.bookDao.getBook(name, author)
-                ?: bookUrl.takeIf(String::isNotBlank)?.let { appDb.bookDao.getBook(it) }
+            val selection = IntentCompat.getParcelableExtra(intent, EXTRA_BOOK_INFO_SEARCH_RESULT, SearchBook::class.java)
+            val saved = if (selection != null) {
+                appDb.bookDao.getBook(selection.bookUrl)?.takeIf {
+                    it.isSameNameAuthor(selection) && selection.sameBookTypeLocal(it.type)
+                }
+            } else {
+                appDb.bookDao.getBook(name, author)
+                    ?: bookUrl.takeIf(String::isNotBlank)?.let { appDb.bookDao.getBook(it) }
+            }
             val book = saved
+                ?: selection?.toBook()
                 ?: bookUrl.takeIf(String::isNotBlank)?.let { appDb.searchBookDao.getSearchBook(it)?.toBook() }
                 ?: appDb.searchBookDao.getFirstByNameAuthor(name, author)?.toBook()
                 ?: throw NoStackTraceException("未找到书籍")

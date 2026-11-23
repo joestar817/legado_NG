@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.google.gson.JsonObject
 import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.PreferKey
@@ -25,11 +26,15 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.databinding.ActivityBookSearchBinding
+import io.legado.app.help.ai.AI_BOOK_SEARCH_SCOPE
+import io.legado.app.help.ai.AgentModeEntryContext
+import io.legado.app.help.ai.AgentModeRegistry
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.info.BookInfoActivity
 import io.legado.app.ui.book.source.manage.BookSourceActivity
+import io.legado.app.ui.config.AiChatActivity
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.putPrefBoolean
@@ -94,6 +99,17 @@ class SearchActivity : VMBaseActivity<ActivityBookSearchBinding, SearchViewModel
                     focusRequestToken = focusRequestToken,
                     onQueryChange = viewModel::updateQuery,
                     onSubmitSearch = viewModel::submitSearch,
+                    onOpenAiSearch = {
+                        startActivity<AiChatActivity> {
+                            putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_SEARCH)
+                            putExtra(AiChatActivity.EXTRA_INITIAL_INPUT, query)
+                            putExtra(AiChatActivity.EXTRA_MODE_ENTRY_CONTEXT, AgentModeEntryContext(
+                                contextId = AgentModeRegistry.BOOK_SEARCH_ID,
+                                title = getString(R.string.ai_book_search_title),
+                                payload = JsonObject().apply { addProperty(AI_BOOK_SEARCH_SCOPE, scopeValue) },
+                            ).toJson())
+                        }
+                    },
                     onBack = ::finish,
                     onHistoryClick = ::activateHistory,
                     onDeleteHistory = viewModel::deleteHistory,

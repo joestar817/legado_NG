@@ -53,6 +53,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.loadBookCacheStatus
 import io.legado.app.help.book.menuCapabilities
+import io.legado.app.ui.config.rememberHasAssistantModelSelection
 import io.legado.app.ui.design.components.compose.NgBookCover
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgCompactDrawerPanel
@@ -242,7 +243,8 @@ class BookshelfBookActionSheet(
 
     @Composable
     private fun QuickActionPanel() {
-        val actions = remember(book.bookUrl) {
+        val hasAssistantModel = rememberHasAssistantModelSelection()
+        val actions = remember(book.bookUrl, hasAssistantModel) {
             listOf(
                 QuickAction(
                     R.string.chapter_list,
@@ -282,7 +284,7 @@ class BookshelfBookActionSheet(
                 QuickAction(
                     R.string.bookshelf_book_action_scan,
                     NgThemedActionIconKind.BOOK_SCAN,
-                    enabled = capabilities.textContent,
+                    enabled = capabilities.textContent && hasAssistantModel,
                 ) {
                     dismissThen { callback.onBookScan(book) }
                 },

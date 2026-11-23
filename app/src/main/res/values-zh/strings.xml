@@ -640,6 +640,7 @@
     <string name="ai_model_select">选择模型</string>
     <string name="ai_filter_models">搜索和筛选模型</string>
     <string name="ai_locate_selected_model">定位到已选模型</string>
+    <string name="ai_clear_selected_model">清除已选模型</string>
     <string name="ai_model_enable">启用模型</string>
     <string name="ai_edit_model">编辑模型</string>
     <string name="ai_model_information">模型信息</string>
@@ -762,7 +763,7 @@
     <string name="ai_search_debug_http_status">HTTP %1$d</string>
     <string name="ai_search_debug_no_body">未取得响应正文</string>
     <string name="ai_search_debug_body_truncated">响应超出大小上限，仅显示开头。</string>
-    <string name="ai_search_source_native">DeepSeek 内置联网</string>
+    <string name="ai_search_source_native">%1$s 内置联网</string>
     <string name="ai_search_source_external">%1$s · 外置联网</string>
     <string name="ai_search_error_key_required">请先填写 API Key。</string>
     <string name="ai_search_error_key_invalid">API Key 无效或无权调用此接口。</string>

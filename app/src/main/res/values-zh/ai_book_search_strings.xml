@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_book_search_title">AI 搜书</string>
+    <string name="ai_book_search_guide_greeting">你好呀！我是你的AI小助理，想找哪本书？</string>
+    <string name="ai_book_search_guide_body">记得的人物、情节或一句原文，都可以告诉我。</string>
+    <string name="ai_book_search_hint">输入你记得的线索</string>
+    <string name="ai_book_search_follow_up">补充线索</string>
+    <string name="ai_book_search_web_required">AI 搜书需要联网，请开启搜索或切换模型</string>
+    <string name="ai_book_search_missing_model">请先选择聊天模型</string>
+    <string name="ai_book_search_web_off">开启联网后可搜书</string>
+    <string name="ai_book_search_configure_web">当前模型无法搜索网页</string>
+    <string name="ai_book_search_external_setup">请启用并选择可用的外置搜索服务</string>
+    <string name="ai_book_search_external_tools">当前模型无法调用外置搜索服务</string>
+    <string name="ai_book_search_model_config_invalid">当前模型的接口配置不可用</string>
+    <string name="ai_book_search_key_required">请在提供商设置中配置 API Key</string>
+    <string name="ai_book_search_account_required">请登录 ChatGPT 或重新授权</string>
+    <string name="ai_book_search_skill_unavailable">搜书技能暂不可用</string>
+    <string name="ai_book_search_unverified">本轮未完成联网核对</string>
+    <string name="ai_book_search_more_clues">还记得角色名、特别的情节或一句原文吗？</string>
+    <string name="ai_book_search_identified">《%1$s》 · %2$s</string>
+    <string name="ai_book_search_select">找这本</string>
+    <string name="ai_book_search_search_sources">查书源</string>
+    <string name="ai_book_search_reject">不是这本</string>
+    <string name="ai_book_search_reject_all">都不是</string>
+    <string name="ai_book_search_searching">正在查书源…</string>
+    <string name="ai_book_search_no_match">当前书源未搜到《%1$s》</string>
+    <string name="ai_book_search_scope_invalid">当前书源范围不可用</string>
+    <string name="ai_book_search_no_sources">当前范围没有可搜索的同类书源</string>
+    <string name="ai_book_search_audio_scope">请为要找的音频类型选择分组或书源</string>
+    <string name="ai_book_search_incomplete">部分书源失败或未完成</string>
+    <string name="ai_book_search_failed">书源查询失败</string>
+    <string name="ai_book_search_disabled">内置 MCP 未开启</string>
+    <string name="ai_book_search_enable_mcp">开启内置 MCP</string>
+    <string name="ai_book_search_namesake">当前书源只搜到其他同名作品</string>
+    <string name="ai_book_search_source_unverified">已找到条目，作品身份或详情链接待核</string>
+    <string name="ai_book_search_interrupted">书源查询已停止</string>
+    <string name="ai_book_search_retry">重试书源</string>
+    <string name="ai_book_search_scope">调整范围</string>
+    <string name="ai_book_search_alternate_title">用别名查</string>
+    <string name="ai_book_search_open_failed">书籍详情暂时无法打开，可重试书源</string>
+    <string name="ai_book_search_media_novel">小说</string>
+    <string name="ai_book_search_media_manga">漫画</string>
+    <string name="ai_book_search_media_audiobook">有声书</string>
+    <string name="ai_book_search_media_music">音乐</string>
+    <string name="ai_book_search_media_video">视频</string>
+    <string name="ai_book_search_media_download">下载</string>
+</resources>
