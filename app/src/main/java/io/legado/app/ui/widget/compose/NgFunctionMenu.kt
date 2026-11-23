@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -34,15 +35,16 @@ fun NgFunctionMenu(
     onDismissRequest: () -> Unit,
     actions: List<NgFunctionMenuAction>,
     modifier: Modifier = Modifier,
-    width: Dp = 132.dp
+    width: Dp = 132.dp,
+    containerColor: Color? = null,
 ) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier.width(width),
         shape = RoundedCornerShape(18.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 4.dp,
+        containerColor = containerColor ?: MaterialTheme.colorScheme.surface,
+        tonalElevation = if (containerColor == null) 4.dp else 0.dp,
         shadowElevation = 8.dp
     ) {
         actions.forEach { action ->

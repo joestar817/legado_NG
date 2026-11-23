@@ -160,7 +160,7 @@ internal fun AiAssistantWebSettingsSheet(onManageServices: () -> Unit) {
                 Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
             ) {
                 NgFormPanel {
-                    AssistantWebSwitchRow(
+                    AiAssistantSwitchRow(
                         title = stringResource(R.string.ai_assistant_web_enable),
                         summary = stringResource(R.string.ai_assistant_web_enable_hint),
                         checked = settings.webEnabled,
@@ -199,7 +199,7 @@ internal fun AiAssistantWebSettingsSheet(onManageServices: () -> Unit) {
                     }
                     if (automatic) {
                         NgFormGroupDivider()
-                        AssistantWebSwitchRow(
+                        AiAssistantSwitchRow(
                             title = stringResource(R.string.ai_search_backup_service),
                             summary = stringResource(
                                 if (settings.backupEnabled) R.string.ai_search_backup_on_hint
@@ -229,7 +229,7 @@ internal fun AiAssistantWebSettingsSheet(onManageServices: () -> Unit) {
 }
 
 @Composable
-private fun AssistantWebSwitchRow(
+internal fun AiAssistantSwitchRow(
     title: String,
     summary: String,
     checked: Boolean,

@@ -420,6 +420,9 @@
     <string name="ai_prompt_saved">技能已保存</string>
     <string name="ai_prompt_reset_done">已恢复默认技能</string>
     <string name="ai_internal_mcp">内置 MCP</string>
+    <string name="ai_internal_mcp_enable">全局启用</string>
+    <string name="ai_internal_mcp_enable_summary">允许 AI 调用内置工具</string>
+    <string name="ai_internal_mcp_session_features">本会话功能</string>
     <string name="ai_internal_mcp_summary_off">已关闭，AI 不调用 MCP</string>
     <string name="ai_internal_mcp_summary_on">已开启，AI 可调用 MCP</string>
     <string name="ai_operation_permission">操作权限</string>

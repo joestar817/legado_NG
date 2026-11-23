@@ -298,6 +298,7 @@ fun NgSideDrawerSurface(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     contentCardStyle: NgDrawerContentCardStyle = NgDrawerContentCardStyle.LEGACY,
     themeProfile: NgThemeDrawerProfile? = rememberNgDrawerThemeProfile(),
+    role: NgMaterialRole = NgMaterialRole.SOFT_SURFACE,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val baseSnapshot = NgTheme.snapshot
@@ -351,6 +352,7 @@ fun NgSideDrawerSurface(
             modifier = modifier,
             shape = shape,
             style = customGlassStyle ?: NgDrawerDefaults.style(normalized),
+            role = role,
             surfaceDecoration = imageSource?.let { source ->
                 {
                     NgDrawerBackdrop(

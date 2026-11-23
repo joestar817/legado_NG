@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_chat_find_hint">Search this chat</string>
+    <string name="ai_chat_global_search_hint">Search chat messages</string>
+    <string name="ai_chat_find_searching">Searching…</string>
+    <string name="ai_chat_find_empty">No matching messages</string>
+    <string name="ai_chat_find_exit">Exit chat search</string>
+    <string name="ai_chat_find_results">Back to search results</string>
+    <string name="ai_chat_find_edit">Edit search query</string>
+    <string name="ai_chat_find_previous">Previous matching message</string>
+    <string name="ai_chat_find_next">Next matching message</string>
+    <string name="ai_chat_find_position">%1$d / %2$d</string>
+    <string name="ai_chat_find_you">You</string>
+    <plurals name="ai_chat_find_count">
+        <item quantity="one">%d matching message</item>
+        <item quantity="other">%d matching messages</item>
+    </plurals>
+</resources>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_chat_find_hint">搜索本对话</string>
+    <string name="ai_chat_global_search_hint">搜索聊天内容</string>
+    <string name="ai_chat_find_searching">正在查找…</string>
+    <string name="ai_chat_find_empty">没有找到匹配的消息</string>
+    <string name="ai_chat_find_exit">退出搜索</string>
+    <string name="ai_chat_find_results">返回搜索结果</string>
+    <string name="ai_chat_find_edit">编辑关键词</string>
+    <string name="ai_chat_find_previous">上一条匹配消息</string>
+    <string name="ai_chat_find_next">下一条匹配消息</string>
+    <string name="ai_chat_find_position">%1$d / %2$d</string>
+    <string name="ai_chat_find_you">你</string>
+    <plurals name="ai_chat_find_count">
+        <item quantity="other">%d 条匹配消息</item>
+    </plurals>
+</resources>

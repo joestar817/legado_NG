@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.positionInWindow
@@ -44,9 +45,8 @@ import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.toIntSize
 import kotlin.math.ceil
-import kotlin.math.roundToInt
+import kotlin.math.floor
 
 @Stable
 class NgLiquidGlassBackdrop internal constructor() {
@@ -130,12 +130,16 @@ private class NgBackdropRecorderNode(
     }
 
     override fun ContentDrawScope.draw() {
-        drawContent()
-        val layer = graphicsLayer ?: return
-        val outerScope = this
-        recordLayer(layer, size.toIntSize()) {
-            outerScope.drawContent()
+        val layer = graphicsLayer
+        if (layer == null || !drawContext.canvas.nativeCanvas.isHardwareAccelerated) {
+            drawContent()
+            return
         }
+        // Use DrawScope.record so drawContent records against the layer's canvas.
+        layer.record {
+            this@draw.drawContent()
+        }
+        drawLayer(layer)
     }
 
     override fun onGloballyPositioned(coordinates: LayoutCoordinates) {
@@ -154,17 +158,6 @@ private class NgBackdropRecorderNode(
         backdrop.coordinates = null
         layer?.let(requireGraphicsContext()::releaseGraphicsLayer)
         graphicsLayer = null
-    }
-
-    private fun DrawScope.recordLayer(
-        layer: GraphicsLayer,
-        targetSize: IntSize,
-        block: DrawScope.() -> Unit,
-    ) {
-        val density = requireDensity()
-        layer.record(density, layoutDirection, targetSize) {
-            block()
-        }
     }
 }
 
@@ -253,8 +246,8 @@ private class NgLiquidBackdropNode(
         if (
             destinationLayer != null &&
             sourceLayer != null &&
-            sourceCoordinates != null &&
-            destinationCoordinates != null
+            sourceCoordinates?.isAttached == true &&
+            destinationCoordinates?.isAttached == true
         ) {
             drawBackdropLayer(
                 destinationLayer = destinationLayer,
@@ -279,31 +272,37 @@ private class NgLiquidBackdropNode(
         // 与上游 lens 的 padding 语义一致：折射位移不能扩大采样区域，
         // 否则会把承载面外的旧列表内容远距离拉进来，形成视觉残留。
         val padding = (blurPx - refractionHeightPx).coerceAtLeast(0f)
-        val paddedWidth = ceil(size.width + padding * 2f).toInt().coerceAtLeast(1)
-        val paddedHeight = ceil(size.height + padding * 2f).toInt().coerceAtLeast(1)
         val offset = runCatching {
             sourceCoordinates.localPositionOf(destinationCoordinates, Offset.Zero)
         }.getOrElse {
             destinationCoordinates.positionInWindow() - sourceCoordinates.positionInWindow()
         }
+        // Long scrolling surfaces only need the portion that can sample the page backdrop.
+        val sourceSize = sourceCoordinates.size
+        val left = floor(maxOf(-padding, -offset.x - padding)).toInt()
+        val top = floor(maxOf(-padding, -offset.y - padding)).toInt()
+        val right = ceil(minOf(size.width + padding, sourceSize.width - offset.x + padding)).toInt()
+        val bottom = ceil(minOf(size.height + padding, sourceSize.height - offset.y + padding)).toInt()
+        if (left >= right || top >= bottom) return
+        val sampleOrigin = IntOffset(left, top)
 
         val density = requireDensity()
         destinationLayer.record(
             density,
             layoutDirection,
-            IntSize(paddedWidth, paddedHeight),
+            IntSize(right - left, bottom - top),
         ) {
             withTransform({
-                translate(padding - offset.x, padding - offset.y)
+                translate(-left - offset.x, -top - offset.y)
             }) {
                 drawLayer(sourceLayer)
             }
         }
-        destinationLayer.topLeft = IntOffset(-padding.roundToInt(), -padding.roundToInt())
+        destinationLayer.topLeft = sampleOrigin
         updateRenderEffect(
             layer = destinationLayer,
             contentSize = size,
-            padding = padding,
+            sampleOrigin = sampleOrigin,
             cornerRadiusPx = cornerRadius.toPx(),
             blurRadiusPx = blurPx,
             refractionHeightPx = refractionHeightPx,
@@ -320,7 +319,7 @@ private class NgLiquidBackdropNode(
     private fun updateRenderEffect(
         layer: GraphicsLayer,
         contentSize: androidx.compose.ui.geometry.Size,
-        padding: Float,
+        sampleOrigin: IntOffset,
         cornerRadiusPx: Float,
         blurRadiusPx: Float,
         refractionHeightPx: Float,
@@ -366,7 +365,7 @@ private class NgLiquidBackdropNode(
                 refractionShader = it
             }
             shader.setFloatUniform("size", contentSize.width, contentSize.height)
-            shader.setFloatUniform("offset", -padding, -padding)
+            shader.setFloatUniform("offset", sampleOrigin.x.toFloat(), sampleOrigin.y.toFloat())
             shader.setFloatUniform(
                 "cornerRadii",
                 cornerRadiusPx,
@@ -396,7 +395,11 @@ private class NgLiquidBackdropNode(
     }
 
     override fun onGloballyPositioned(coordinates: LayoutCoordinates) {
-        if (coordinates.isAttached) this.coordinates = coordinates
+        if (!coordinates.isAttached) return
+        this.coordinates = coordinates
+        // Lazy lists can move a retained layer without drawing its content again.
+        // The recorded slice must follow the bubble's position in the backdrop.
+        invalidateDraw()
     }
 
     override fun onAttach() {

@@ -426,6 +426,9 @@
     <string name="ai_prompt_saved">Skill saved</string>
     <string name="ai_prompt_reset_done">Default skill restored</string>
     <string name="ai_internal_mcp">Built-in MCP</string>
+    <string name="ai_internal_mcp_enable">Enable globally</string>
+    <string name="ai_internal_mcp_enable_summary">Allow AI to use built-in tools</string>
+    <string name="ai_internal_mcp_session_features">Features for this chat</string>
     <string name="ai_internal_mcp_summary_off">Off. AI will not call MCP.</string>
     <string name="ai_internal_mcp_summary_on">On. AI can call MCP.</string>
     <string name="ai_operation_permission">Operation permission</string>

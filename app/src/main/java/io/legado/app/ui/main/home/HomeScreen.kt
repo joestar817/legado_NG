@@ -73,9 +73,8 @@ import io.legado.app.BuildConfig
 import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
-import io.legado.app.ui.design.components.compose.NgGlassDefaults
-import io.legado.app.ui.design.components.compose.NgGlassSurface
-import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.NgFloatingIconToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingIconToolbarAction
 import io.legado.app.ui.design.components.compose.NgIconButton
 import io.legado.app.ui.design.theme.NgThemeContextProvider
 import io.legado.app.ui.design.theme.NgTheme
@@ -412,50 +411,33 @@ private fun HomeEditToolbar(
     styleEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val radius = 24.dp
-    val neutral = if (NgTheme.snapshot.isDark) Color(0xFF242321) else Color.White
-    NgGlassSurface(
-        modifier = modifier.height(48.dp),
-        shape = RoundedCornerShape(radius),
-        role = NgMaterialRole.CONTROL,
-        liquidCornerRadius = radius,
-        style = NgGlassDefaults.bookDetailStyle(
-            containerColor = neutral,
-        ).copy(
-            containerTop = neutral.copy(alpha = 0.94f),
-            containerBottom = neutral.copy(alpha = 0.88f),
-            accentGlow = Color.Transparent,
-            borderColor = Color.White.copy(alpha = if (NgTheme.snapshot.isDark) 0.22f else 0.92f),
-            shadowElevation = 3.dp,
+    NgFloatingIconToolbar(
+        modifier = modifier,
+        actions = listOf(
+            NgFloatingIconToolbarAction(
+                iconRes = R.drawable.ic_baseline_close,
+                label = stringResource(R.string.home_cancel),
+                onClick = onCancel,
+            ),
+            NgFloatingIconToolbarAction(
+                iconRes = R.drawable.ic_add,
+                label = stringResource(R.string.home_add),
+                onClick = onAdd,
+            ),
+            NgFloatingIconToolbarAction(
+                iconRes = R.drawable.ic_cfg_theme,
+                label = stringResource(R.string.home_style),
+                onClick = onStyle,
+                enabled = styleEnabled,
+            ),
+            NgFloatingIconToolbarAction(
+                iconRes = R.drawable.ic_check,
+                label = stringResource(R.string.home_done),
+                onClick = onSave,
+                emphasized = true,
+            ),
         ),
-    ) {
-        Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            val actions = listOf(
-                Triple(R.string.home_cancel, onCancel, true),
-                Triple(R.string.home_add, onAdd, true),
-                Triple(R.string.home_style, onStyle, styleEnabled),
-                Triple(R.string.home_done, onSave, true),
-            )
-            actions.forEachIndexed { index, (label, action, enabled) ->
-                if (index > 0) Spacer(Modifier.width(1.dp).height(18.dp)
-                    .background(Color(NgTheme.colors.primary).copy(alpha = 0.18f)))
-                NgIconButton(onClick = action, enabled = enabled,
-                    modifier = Modifier.weight(1f).height(48.dp)) {
-                    val icon = when (label) {
-                        R.string.home_cancel -> R.drawable.ic_baseline_close
-                        R.string.home_add -> R.drawable.ic_add
-                        R.string.home_style -> R.drawable.ic_cfg_theme
-                        else -> R.drawable.ic_check
-                    }
-                    Icon(painterResource(icon), contentDescription = stringResource(label),
-                        modifier = Modifier.size(24.dp),
-                        tint = Color(if (label == R.string.home_done) NgTheme.colors.primary
-                            else NgTheme.colors.onSurface).copy(alpha = if (enabled) 1f else 0.4f))
-                }
-            }
-        }
-    }
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
