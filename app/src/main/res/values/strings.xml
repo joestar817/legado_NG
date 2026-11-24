@@ -456,7 +456,6 @@
     <string name="pet_get_pets">Get pets</string>
     <string name="ai_chat_entry_none">Off</string>
     <string name="ai_chat_entry_button">Floating button</string>
-    <string name="ai_pet_open_chat">Open AI chat</string>
     <string name="ai_chat_input_hint">Message AI</string>
     <string name="ai_chat_model_required">Select a chat model in model settings first</string>
     <string name="ai_chat_openai_only">AI chat currently supports OpenAI-compatible providers only</string>

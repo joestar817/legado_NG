@@ -450,7 +450,6 @@
     <string name="pet_get_pets">获取宠物</string>
     <string name="ai_chat_entry_none">关闭</string>
     <string name="ai_chat_entry_button">悬浮按钮</string>
-    <string name="ai_pet_open_chat">打开 AI 聊天</string>
     <string name="ai_chat_input_hint">输入消息与 AI 聊天</string>
     <string name="ai_chat_model_required">请先在模型设置中选择聊天模型</string>
     <string name="ai_chat_openai_only">AI 聊天暂只支持 OpenAI 兼容提供商</string>

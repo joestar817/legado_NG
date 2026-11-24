@@ -23,7 +23,9 @@ import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentStatePagerAdapter
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.viewpager.widget.ViewPager
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import io.legado.app.BuildConfig
@@ -61,9 +63,13 @@ import io.legado.app.ui.association.ImportRssSourceDialog
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.aloud.ReadAloudMiniPlayer
 import io.legado.app.ui.config.AiChatActivity
+import io.legado.app.ui.config.aiChatSessions
+import io.legado.app.ui.config.petWorkActivity
+import io.legado.app.ui.config.showAiChatTaskPicker
 import io.legado.app.ui.design.components.view.NgFloatingTabItem
 import io.legado.app.ui.design.components.view.NgFloatingTabBarVariant
 import io.legado.app.ui.main.bookshelf.BaseBookshelfFragment
+import io.legado.app.ui.main.chatentry.AiChatPetTaskWindow
 import io.legado.app.ui.main.chatentry.ChatPetViewModel
 import io.legado.app.ui.main.bookshelf.style1.BookshelfFragment1
 import io.legado.app.ui.main.explore.ExploreFragment
@@ -107,6 +113,16 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     override val viewModel by viewModels<MainViewModel>()
     private var petLoadJob: Job? = null
     private val chatPetViewModel by viewModels<ChatPetViewModel>()
+    private val petTaskWindow by lazy {
+        AiChatPetTaskWindow(
+            toolbar = binding.aiChatPetMenu,
+            messages = binding.aiChatPetTaskWindow,
+            backdrop = binding.viewPagerMain,
+            onMenuChanged = binding.aiChatPet::setMenuOpen,
+            onOpenTask = { openAiChat(sessionId = it) },
+            onOpenAssistant = { openAiChat() },
+        )
+    }
     private val idHome = MainPageIds.HOME
     private val idBookshelf = MainPageIds.BOOKSHELF
     private val idBookshelf1 = 11
@@ -156,6 +172,14 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         upBottomMenu()
         initView()
         lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                aiChatSessions.tasks.collect { tasks ->
+                    petTaskWindow.showTasks(tasks)
+                    binding.aiChatPet.showWorkActivity(tasks.petWorkActivity())
+                }
+            }
+        }
+        lifecycleScope.launch {
             PetPluginStore.revision.collect {
                 if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) refreshAiChatFab()
             }
@@ -175,6 +199,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         upHomePage()
         if (!openHomeWidgets(intent)) openLastReadBookAfterStartup(savedInstanceState)
         onBackPressedDispatcher.addCallback(this) {
+            if (petTaskWindow.dismiss()) return@addCallback
             if (realPositions.getOrNull(pagePosition) == idHome &&
                 (fragmentMap[idHome] as? HomeFragment)?.back() == true
             ) return@addCallback
@@ -274,10 +299,14 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         recycleShelfSwipeVelocityTracker()
         petLoadJob?.cancel()
         binding.aiChatPet.setHostActive(false)
+        petTaskWindow.dismiss()
         super.onPause()
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && petTaskWindow.isOpen && !isTouchInsideChatEntry(ev)) {
+            petTaskWindow.dismiss()
+        }
         val shelfHandled = handleBookshelfSwipe(ev)
         return if (shelfHandled) true else super.dispatchTouchEvent(ev)
     }
@@ -408,7 +437,9 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     }
 
     private fun isTouchInsideChatEntry(event: MotionEvent): Boolean =
-        isTouchInsideView(event, binding.fabAiChat) || binding.aiChatPet.isTouchOnPet(event.rawX, event.rawY)
+        isTouchInsideView(event, binding.aiChatPetMenu) || isTouchInsideView(event, binding.aiChatPetTaskWindow) ||
+            isTouchInsideView(event, binding.fabAiChat) ||
+            binding.aiChatPet.isTouchOnPet(event.rawX, event.rawY)
 
     private fun cancelShelfTouchTarget(event: MotionEvent) {
         MotionEvent.obtain(event).also { cancel ->
@@ -507,17 +538,21 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         updateFloatingBottomMenu()
         updateBottomNavigationStyle()
         fabAiChat.setOnClickListener {
-            if (isBookshelfPage) {
-                startBookshelfGenericAiChat()
+            val tasks = aiChatSessions.tasks.value
+            if (tasks.size > 1) {
+                showAiChatTaskPicker(
+                    tasks,
+                    onOpenTask = { openAiChat(sessionId = it) },
+                    onNewChat = { openAiChat(startNew = true) },
+                )
             } else {
-                startActivity<AiChatActivity>()
+                openAiChat(sessionId = tasks.singleOrNull()?.sessionId)
             }
         }
-        aiChatPet.setOnClickListener {
-            aiChatPet.setHostActive(false)
-            aiChatPet.visibility = View.GONE
-            if (isBookshelfPage) startBookshelfGenericAiChat() else startActivity<AiChatActivity>()
-        }
+        aiChatPet.onAnchorChanged = petTaskWindow::moveTo
+        aiChatPet.takeCompletion = aiChatSessions::takePetCompletion
+        aiChatPet.onDragStarted = { petTaskWindow.dismiss() }
+        aiChatPet.setOnClickListener { petTaskWindow.toggle() }
         aiChatPet.onAssetLoadFailed = {
             aiChatPet.setHostActive(false)
             aiChatPet.visibility = View.GONE
@@ -537,8 +572,14 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         floatingBottomNavigation.setLiquidBackdropSource(pageView ?: backgroundSource)
     }
 
-    private fun startBookshelfGenericAiChat() {
-        startActivity<AiChatActivity>()
+    private fun openAiChat(sessionId: String? = null, startNew: Boolean = false) {
+        binding.aiChatPet.setHostActive(false)
+        petTaskWindow.dismiss()
+        binding.aiChatPet.visibility = View.GONE
+        startActivity<AiChatActivity> {
+            if (sessionId != null) putExtra(AiChatActivity.EXTRA_TASK_SESSION_ID, sessionId)
+            if (startNew) putExtra(AiChatActivity.EXTRA_START_NEW_CHAT, true)
+        }
     }
 
     private fun refreshAiChatFab() = binding.run {

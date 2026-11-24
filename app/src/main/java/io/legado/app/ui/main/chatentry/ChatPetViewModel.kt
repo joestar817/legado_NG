@@ -6,7 +6,10 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import io.legado.app.help.pet.PetPluginHandle
 import io.legado.app.help.pet.PetPluginStore
+import io.legado.pet.api.PetActivitySession
+import io.legado.pet.api.PetPlacementSession
 import io.legado.pet.api.PetSession
+import java.io.Closeable
 
 private const val MAX_STATE_BYTES = 4096
 private const val MAX_SAVED_PETS = 16
@@ -67,12 +70,24 @@ class ChatPetViewModel : ViewModel() {
     }
 }
 
+internal class LeasedPetSession(
+    private val instance: PetSession,
+    private val assets: Closeable,
+) : PetSession by instance {
+    val activity get() = instance as? PetActivitySession
+    val isParked get() = (instance as? PetPlacementSession)?.isParked == true
+
+    override fun close() {
+        try { instance.close() } finally { assets.close() }
+    }
+}
+
 internal class PetBinding(
     val id: String,
     val plugin: PetPluginHandle,
     private var lastState: ByteArray?,
 ) {
-    var session: PetSession? = null
+    var session: LeasedPetSession? = null
         private set
     var failed = false
         private set
@@ -81,22 +96,17 @@ internal class PetBinding(
     var onFailure: (() -> Unit)? = null
 
     /** The open ZIP remains available until the last callback even if an update unlinks its path. */
-    fun openSession(): PetSession {
+    fun openSession(): LeasedPetSession {
         val assets = plugin.openAssets()
         try {
-            val instance = plugin.provider.createSession(assets)
-            return object : PetSession by instance {
-                override fun close() {
-                    try { instance.close() } finally { assets.close() }
-                }
-            }
+            return LeasedPetSession(plugin.provider.createSession(assets), assets)
         } catch (error: Throwable) {
             assets.close()
             throw error
         }
     }
 
-    fun attach(value: PetSession) {
+    fun attach(value: LeasedPetSession) {
         check(!retired && !failed && session == null)
         session = value
         lastState?.let { bytes -> invoke("restoreState", Unit) { it.restoreState(bytes.copyOf()) } }
@@ -114,7 +124,7 @@ internal class PetBinding(
     }
 
     /** Plugin callback failures disable this instance. Fatal VM errors and thread termination propagate. */
-    inline fun <T> invoke(stage: String, fallback: T, action: (PetSession) -> T): T {
+    inline fun <T> invoke(stage: String, fallback: T, action: (LeasedPetSession) -> T): T {
         val current = session ?: return fallback
         return try {
             action(current)

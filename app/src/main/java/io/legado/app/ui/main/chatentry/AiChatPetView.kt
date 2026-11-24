@@ -15,7 +15,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.legado.app.R
-import io.legado.pet.api.PetSession
+import io.legado.pet.api.PetActivities
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +37,9 @@ class AiChatPetView @JvmOverloads constructor(
 ) : View(context, attrs) {
     private val density = resources.displayMetrics.density
     private val hitBounds = RectF()
+    private val overlayAnchor = Rect()
+    private val overlayViewport = Rect()
+    private var overlayParked = false
     private val screenLocation = IntArray(2)
     private val loadScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var loadJob: Job? = null
@@ -44,6 +47,8 @@ class AiChatPetView @JvmOverloads constructor(
     private var binding: PetBinding? = null
     private var hostActive = false
     private var visibleToPlugin: Boolean? = null
+    private var menuOpen = false
+    private var workActivity: String? = null
     private var lastFrameTime = 0L
     private var insetLeft = 0f
     private var insetTop = 0f
@@ -58,6 +63,9 @@ class AiChatPetView @JvmOverloads constructor(
     private var lifecycleReady = false
 
     var onAssetLoadFailed: (() -> Unit)? = null
+    internal var onAnchorChanged: ((Rect, Rect, Boolean) -> Unit)? = null
+    internal var onDragStarted: (() -> Unit)? = null
+    internal var takeCompletion: (() -> Boolean)? = null
 
     private val frameCallback = Runnable {
         if (visibleToPlugin == true) {
@@ -71,7 +79,7 @@ class AiChatPetView @JvmOverloads constructor(
         isClickable = true
         isFocusable = true
         isSaveEnabled = false
-        contentDescription = context.getString(R.string.ai_pet_open_chat)
+        contentDescription = context.getString(R.string.ai_pet_open_menu)
         ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             if (insetLeft != bars.left.toFloat() || insetTop != bars.top.toFloat() ||
@@ -109,6 +117,7 @@ class AiChatPetView @JvmOverloads constructor(
             clearPointer()
             stopTicker()
             hitBounds.setEmpty()
+            reportOverlayAnchor()
             invalidate()
             onAssetLoadFailed?.invoke()
         }
@@ -126,7 +135,7 @@ class AiChatPetView @JvmOverloads constructor(
         loadJob = loadScope.launch {
             petPreparation.withLock {
                 // withContext can discard a completed result when the view detaches during preparation.
-                var candidate: PetSession? = null
+                var candidate: LeasedPetSession? = null
                 try {
                     withContext(Dispatchers.IO) { candidate = current.openSession() }
                     if (generation == ticket && binding === current && !current.retired && !current.failed) {
@@ -154,6 +163,41 @@ class AiChatPetView @JvmOverloads constructor(
     fun setHostActive(active: Boolean) {
         hostActive = active
         syncVisibility()
+    }
+
+    internal fun setMenuOpen(open: Boolean) {
+        if (menuOpen == open) return
+        advanceClock()
+        menuOpen = open
+        contentDescription = context.getString(if (open) R.string.ai_pet_close_menu else R.string.ai_pet_open_menu)
+        binding?.invoke("setPositionHeld", Unit) { it.activity?.setPositionHeld(open) }
+        invalidate()
+        updateTicker()
+    }
+
+    internal fun showWorkActivity(activityId: String?) {
+        val changed = activityId != workActivity
+        workActivity = activityId
+        if (visibleToPlugin != true) return
+        if (changed) {
+            advanceClock()
+            binding?.invoke("setWorkActivity", Unit) { it.activity?.setWorkActivity(activityId) }
+        }
+        val played = playCompletionIfReady()
+        if (changed || played) {
+            invalidate()
+            updateTicker()
+        }
+    }
+
+    private fun playCompletionIfReady(): Boolean {
+        val current = binding ?: return false
+        if (visibleToPlugin != true || current.session?.activity == null || takeCompletion?.invoke() != true) {
+            return false
+        }
+        advanceClock()
+        current.invoke("playReaction", Unit) { it.activity?.playReaction(PetActivities.COMPLETED) }
+        return true
     }
 
     fun isTouchOnPet(rawX: Float, rawY: Float): Boolean {
@@ -202,6 +246,8 @@ class AiChatPetView @JvmOverloads constructor(
         if (visibleToPlugin != true) {
             visibleToPlugin = true
             current.invoke("setVisible", Unit) { it.setVisible(true) }
+            current.invoke("setWorkActivity", Unit) { it.activity?.setWorkActivity(workActivity) }
+            playCompletionIfReady()
         }
         updateTicker()
     }
@@ -214,6 +260,7 @@ class AiChatPetView @JvmOverloads constructor(
             binding?.invoke("setVisible", Unit) { it.setVisible(false) }
         }
         stopTicker()
+        reportOverlayAnchor()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -227,6 +274,7 @@ class AiChatPetView @JvmOverloads constructor(
         val h = viewportHeight
         if (w > 0f && h > 0f) binding?.invoke("resize", Unit) { it.resize(w, h) }
         hitBounds.setEmpty()
+        reportOverlayAnchor()
         invalidate()
         updateTicker()
     }
@@ -234,7 +282,7 @@ class AiChatPetView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (viewportWidth <= 0f || viewportHeight <= 0f) return
-        binding?.invoke("draw", Unit) {
+        val parked = binding?.invoke("draw", false) {
             val save = canvas.save()
             try {
                 canvas.translate(insetLeft, insetTop)
@@ -246,7 +294,39 @@ class AiChatPetView @JvmOverloads constructor(
             } finally {
                 canvas.restoreToCount(save)
             }
+            pointerId == MotionEvent.INVALID_POINTER_ID && !hitBounds.isEmpty && it.isParked
+        } == true
+        reportOverlayAnchor(parked)
+    }
+
+    private fun reportOverlayAnchor(parked: Boolean = false) {
+        val notify = onAnchorChanged ?: return
+        if (visibleToPlugin != true || hitBounds.isEmpty) {
+            if (!overlayAnchor.isEmpty) {
+                overlayAnchor.setEmpty()
+                overlayParked = false
+                notify(overlayAnchor, overlayViewport, false)
+            }
+            return
         }
+        val viewportLeft = left + insetLeft.roundToInt()
+        val viewportTop = top + insetTop.roundToInt()
+        val viewportRight = right - insetRight.roundToInt()
+        val viewportBottom = bottom - insetBottom.roundToInt()
+        val anchorLeft = viewportLeft + (hitBounds.left * density).roundToInt()
+        val anchorTop = viewportTop + (hitBounds.top * density).roundToInt()
+        val anchorRight = viewportLeft + (hitBounds.right * density).roundToInt()
+        val anchorBottom = viewportTop + (hitBounds.bottom * density).roundToInt()
+        if (overlayAnchor.left == anchorLeft && overlayAnchor.top == anchorTop &&
+            overlayAnchor.right == anchorRight && overlayAnchor.bottom == anchorBottom &&
+            overlayViewport.left == viewportLeft && overlayViewport.top == viewportTop &&
+            overlayViewport.right == viewportRight && overlayViewport.bottom == viewportBottom &&
+            overlayParked == parked
+        ) return
+        overlayAnchor.set(anchorLeft, anchorTop, anchorRight, anchorBottom)
+        overlayViewport.set(viewportLeft, viewportTop, viewportRight, viewportBottom)
+        overlayParked = parked
+        notify(overlayAnchor, overlayViewport, parked)
     }
 
     private fun xDp(value: Float) = (value - insetLeft) / density
@@ -258,9 +338,13 @@ class AiChatPetView @JvmOverloads constructor(
     private fun movePointer(event: MotionEvent, index: Int) {
         val x = event.getX(index)
         val y = event.getY(index)
+        val threshold = 6f * density
+        val wasDragging = maxDragDistance > threshold
         maxDragDistance = maxOf(maxDragDistance, hypot(x - downX, y - downY))
+        val dragging = maxDragDistance > threshold
+        if (dragging && !wasDragging) onDragStarted?.invoke()
         binding?.invoke("move", Unit) {
-            it.move(xDp(x), yDp(y), event.eventTime, maxDragDistance > 6f * density)
+            it.move(xDp(x), yDp(y), event.eventTime, dragging)
         }
     }
 
@@ -278,6 +362,7 @@ class AiChatPetView @JvmOverloads constructor(
                 downY = event.y
                 maxDragDistance = 0f
                 current.invoke("press", Unit) { it.press(x, y, event.eventTime) }
+                reportOverlayAnchor()
                 if (!current.failed) parent?.requestDisallowInterceptTouchEvent(true)
             }
             MotionEvent.ACTION_MOVE -> {
@@ -342,7 +427,11 @@ class AiChatPetView @JvmOverloads constructor(
 
     private fun updateTicker() {
         removeCallbacks(frameCallback)
-        val delay = if (visibleToPlugin == true) binding?.invoke("nextFrameDelayMs", null as Long?) { it.nextFrameDelayMs() } else null
+        // API 2 pets do not signal a position hold, so pause their clock for the open menu.
+        val heldByHost = menuOpen && binding?.session?.activity == null
+        val delay = if (visibleToPlugin == true && !heldByHost) {
+            binding?.invoke("nextFrameDelayMs", null as Long?) { it.nextFrameDelayMs() }
+        } else null
         if (delay == null) {
             lastFrameTime = 0L
             return
