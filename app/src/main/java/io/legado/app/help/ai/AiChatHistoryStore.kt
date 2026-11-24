@@ -146,12 +146,13 @@ object AiChatHistoryStore {
         update: AiChatDurableContextUpdate,
         now: Long,
         modelSelection: AiModelSelection? = null,
+        assistantMessageIndex: Int? = null,
     ): AiChatSessionSnapshot {
         val messages = baseSession.messages
             .filterNot { message -> message.id == assistantMessageId }
             .toMutableList()
         if (update.visibleContent.isNotBlank()) {
-            messages += AiChatMessageSnapshot(
+            val assistant = AiChatMessageSnapshot(
                 id = assistantMessageId,
                 role = AiChatMessageSnapshot.ROLE_ASSISTANT,
                 content = update.visibleContent,
@@ -168,6 +169,7 @@ object AiChatHistoryStore {
                 usageProviderId = modelSelection?.providerId,
                 usageModelId = modelSelection?.modelId,
             )
+            messages.add(assistantMessageIndex?.coerceIn(0, messages.size) ?: messages.size, assistant)
         }
         return baseSession.copy(
             updatedAt = now,

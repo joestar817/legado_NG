@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_chat_tasks">AI tasks</string>
+    <string name="ai_chat_task_thinking">Thinking</string>
+    <string name="ai_chat_task_generating">Writing a reply</string>
+    <string name="ai_chat_task_tool">Running a tool</string>
+    <string name="ai_chat_task_chapters">Searching chapters</string>
+    <string name="ai_chat_task_read_chapters">Reading chapters</string>
+    <string name="ai_chat_task_check_cache">Checking cached chapters</string>
+    <string name="ai_chat_task_save_characters">Updating character cards</string>
+    <string name="ai_chat_task_working">Working</string>
+    <string name="ai_chat_task_compacting">Compacting context</string>
+    <string name="ai_chat_task_confirm_tool">Confirm a tool action</string>
+    <string name="ai_chat_task_confirm_book">Confirm which book</string>
+    <string name="ai_chat_task_choose_book_scope">Choose a source scope</string>
+    <string name="ai_chat_task_waiting">Needs action</string>
+    <string name="ai_chat_task_completed">Completed · View result</string>
+    <string name="ai_chat_task_failed">Failed · View details</string>
+    <string name="ai_chat_task_character_card">%1$s · Character cards</string>
+    <string name="ai_chat_task_new_chat">New chat</string>
+    <string name="ai_chat_task_expand">Show task messages</string>
+    <string name="ai_chat_task_collapse">Hide task messages</string>
+    <string name="ai_pet_open_menu">Open pet menu</string>
+    <string name="ai_pet_close_menu">Close pet menu</string>
+    <string name="ai_pet_open_assistant">Open AI assistant</string>
+    <string name="ai_pet_no_messages">No task messages</string>
+</resources>

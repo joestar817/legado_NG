@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_chat_tasks">AI 任务</string>
+    <string name="ai_chat_task_thinking">正在思考</string>
+    <string name="ai_chat_task_generating">正在生成回复</string>
+    <string name="ai_chat_task_tool">正在调用工具</string>
+    <string name="ai_chat_task_chapters">正在查找章节</string>
+    <string name="ai_chat_task_read_chapters">正在读取章节</string>
+    <string name="ai_chat_task_check_cache">正在检查章节缓存</string>
+    <string name="ai_chat_task_save_characters">正在更新角色卡</string>
+    <string name="ai_chat_task_working">正在处理</string>
+    <string name="ai_chat_task_compacting">正在压缩上下文</string>
+    <string name="ai_chat_task_confirm_tool">待确认工具操作</string>
+    <string name="ai_chat_task_confirm_book">待确认书名</string>
+    <string name="ai_chat_task_choose_book_scope">待选择书源范围</string>
+    <string name="ai_chat_task_waiting">待操作</string>
+    <string name="ai_chat_task_completed">已完成 · 查看结果</string>
+    <string name="ai_chat_task_failed">失败 · 查看原因</string>
+    <string name="ai_chat_task_character_card">%1$s · 角色卡生成</string>
+    <string name="ai_chat_task_new_chat">新聊天</string>
+    <string name="ai_chat_task_expand">展开任务消息</string>
+    <string name="ai_chat_task_collapse">收起任务消息</string>
+    <string name="ai_pet_open_menu">展开宠物菜单</string>
+    <string name="ai_pet_close_menu">收起宠物菜单</string>
+    <string name="ai_pet_open_assistant">打开 AI 助理</string>
+    <string name="ai_pet_no_messages">暂无任务消息</string>
+</resources>

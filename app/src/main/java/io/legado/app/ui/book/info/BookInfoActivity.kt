@@ -98,6 +98,10 @@ import io.legado.app.ui.association.OnLineImportActivity
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.book.toc.TocActivityResult
 import io.legado.app.ui.config.AiChatActivity
+import io.legado.app.ui.config.CHARACTER_CARD_ENTRY_CONTEXT
+import io.legado.app.ui.config.aiChatSessions
+import io.legado.app.ui.config.characterCardTasks
+import io.legado.app.ui.config.showAiChatTaskPicker
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.SelectDirectoryContract
 import io.legado.app.ui.login.SourceLoginActivity
@@ -886,18 +890,24 @@ class BookInfoActivity :
                 ?.let { addProperty("book_intro", it) }
         }
         val entryContext = AgentModeEntryContext(
-            contextId = "book_detail_character_card",
+            contextId = CHARACTER_CARD_ENTRY_CONTEXT,
             payload = payload
         )
-        startActivity<AiChatActivity> {
-            putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_DETAIL)
-            putStringArrayListExtra(
-                AiChatActivity.EXTRA_LOADED_SKILL_IDS,
-                arrayListOf(AiSkillRegistry.SKILL_CHARACTER_CARD_GENERATE)
-            )
-            putExtra(AiChatActivity.EXTRA_MODE_ENTRY_CONTEXT, entryContext.toJson())
-            putExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, true)
+        fun openSession(sessionId: String?) {
+            startActivity<AiChatActivity> {
+                putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_DETAIL)
+                putStringArrayListExtra(
+                    AiChatActivity.EXTRA_LOADED_SKILL_IDS,
+                    arrayListOf(AiSkillRegistry.SKILL_CHARACTER_CARD_GENERATE)
+                )
+                putExtra(AiChatActivity.EXTRA_MODE_ENTRY_CONTEXT, entryContext.toJson())
+                putExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, true)
+                if (sessionId != null) putExtra(AiChatActivity.EXTRA_TASK_SESSION_ID, sessionId)
+            }
         }
+        val tasks = aiChatSessions.tasks.value.characterCardTasks(workKey)
+        if (tasks.size > 1) showAiChatTaskPicker(tasks, onOpenTask = ::openSession)
+        else openSession(tasks.singleOrNull()?.sessionId)
     }
 
     private fun String.toPlainBookIntro(): String {

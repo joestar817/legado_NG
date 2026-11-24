@@ -1,31 +1,24 @@
 package io.legado.app.ui.config
 
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.legado.app.help.ai.AI_BOOK_SEARCH_AUDIO_SCOPE_MEDIA
-import io.legado.app.help.ai.AI_BOOK_SEARCH_DRAFT
 import io.legado.app.help.ai.AI_BOOK_SEARCH_SCOPE
 import io.legado.app.help.ai.AiBookSearchAvailability
 import io.legado.app.help.ai.AiBookSearchCandidate
 import io.legado.app.help.ai.AiBookSearchReply
 import io.legado.app.help.ai.AiBookSourceLookup
 import io.legado.app.help.ai.AiBookSourceStatus
-import io.legado.app.help.ai.aiBookSearchVisibleText
 import io.legado.app.help.ai.bookSearchAvailability
 import io.legado.app.help.ai.bookSearchDraft
-import io.legado.app.help.ai.bookSearchDraftForHistory
-import io.legado.app.help.ai.hasChatHistoryContent
 import io.legado.app.help.ai.explicitAiBookSearchCandidate
-import io.legado.app.help.ai.isConfirmedBookSearchAudioScope
-import io.legado.app.help.ai.parseAiBookSearchReply
 import io.legado.app.ui.book.changesource.ChangeSourceFilter
 import io.legado.app.ui.book.info.BookInfoActivity
 import io.legado.app.ui.book.info.EXTRA_BOOK_INFO_SEARCH_RESULT
 import io.legado.app.ui.book.search.SearchScopeDialog
 import io.legado.app.constant.BookSourceType
-import io.legado.app.web.mcp.McpInternalChannel
 import io.legado.app.web.mcp.McpPreciseBookSearch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 import android.content.Context
 import android.content.Intent
@@ -173,6 +166,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -261,17 +255,10 @@ import io.legado.app.help.ai.AgentModeEntryContext
 import io.legado.app.help.ai.AgentModeEntryLaunchDecision
 import io.legado.app.help.ai.AgentModeEntryMemoryState
 import io.legado.app.help.ai.AgentModeRegistry
-import io.legado.app.help.ai.AiAssistantReplyEndException
-import io.legado.app.help.ai.AiChatGptException
-import io.legado.app.help.ai.CHATGPT_USAGE_URL
-import io.legado.app.help.ai.AiAssistantReplyEndReason
 import io.legado.app.help.ai.AiChatClient
 import io.legado.app.help.ai.AiActiveSkillSnapshot
 import io.legado.app.help.ai.AiAvailableSkillSnapshot
-import io.legado.app.help.ai.AiChatContextEvent
-import io.legado.app.help.ai.AiChatContextEventType
 import io.legado.app.help.ai.AiChatContextManager
-import io.legado.app.help.ai.AiChatDurableContextUpdate
 import io.legado.app.help.ai.AiChatContextUsage
 import io.legado.app.help.ai.AiChatCompactionRecord
 import io.legado.app.help.ai.AiChatPromptUsageAnchor
@@ -287,7 +274,6 @@ import io.legado.app.help.ai.AiChatInteractionSubmit
 import io.legado.app.help.ai.AiChatInteractionType
 import io.legado.app.help.ai.AiChatMessageSnapshot
 import io.legado.app.help.ai.AiChatSessionSnapshot
-import io.legado.app.help.ai.AiChatStreamUpdate
 import io.legado.app.help.ai.AiChatTurnResult
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiMemoryTraceItem
@@ -302,7 +288,6 @@ import io.legado.app.help.ai.withInlineLinks
 import io.legado.app.help.ai.AiModelAbility
 import io.legado.app.help.ai.AiModelGenerationIssue
 import io.legado.app.help.ai.AiModelSelection
-import io.legado.app.help.ai.AiPendingToolCall
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiSkillRegistry
@@ -377,9 +362,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import java.io.File
@@ -408,6 +391,8 @@ class AiChatActivity : AppCompatActivity() {
         const val EXTRA_MODE_ENTRY_CONTEXT = "mode_entry_context"
         const val EXTRA_INITIAL_INPUT = "initial_input"
         const val EXTRA_EXPAND_SUGGESTIONS = "expand_suggestions"
+        internal const val EXTRA_TASK_SESSION_ID = "task_session_id"
+        internal const val EXTRA_START_NEW_CHAT = "start_new_chat"
         const val ENTRY_BOOKSHELF = "bookshelf"
         const val ENTRY_BOOK_DETAIL = "book_detail"
         const val ENTRY_BOOK_SCAN = "book_scan"
@@ -517,12 +502,12 @@ internal fun buildModeEntryConfirmation(
 
 private const val MODE_ENTRY_ACTION_PROMPT_TEMPLATE = "[MODE_ENTRY_ACTION] action={{value}}"
 
-private enum class AiChatInputAttachmentType {
+internal enum class AiChatInputAttachmentType {
     CONTEXT,
     SKILL
 }
 
-private data class AiChatInputAttachment(
+internal data class AiChatInputAttachment(
     val id: String,
     val type: AiChatInputAttachmentType,
     val title: String,
@@ -595,10 +580,9 @@ private fun ChatBackgroundImage(
 private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val historyWriteLock = remember { Mutex() }
     val modelSheetLaunchGate = remember { AiModelSheetLaunchGate() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val chatClient = remember { AiChatClient() }
+    val chatClient = aiChatSessions.client
     val entrySource = remember {
         (context as? AiChatActivity)?.intent?.getStringExtra(AiChatActivity.EXTRA_ENTRY)
     }
@@ -632,8 +616,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 .orEmpty()
         )
     }
+    val taskSessionId = remember {
+        (context as? AiChatActivity)?.intent?.getStringExtra(AiChatActivity.EXTRA_TASK_SESSION_ID)
+    }
     val expandSuggestionsOnEntry = remember {
-        (context as? AiChatActivity)
+        taskSessionId == null && (context as? AiChatActivity)
             ?.intent
             ?.getBooleanExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, false) == true
     }
@@ -655,71 +642,93 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             .orEmpty()
         buildContextInputAttachments((listOfNotNull(entrySource) + contextSources).distinct())
     }
-    val inputAttachments = remember(entrySource) {
-        mutableStateListOf<AiChatInputAttachment>().apply {
-            addAll(entryAttachments)
-        }
+    val sessionEntry = remember {
+        if (taskSessionId != null || initialModeEntryContext?.contextId == CHARACTER_CARD_ENTRY_CONTEXT) null
+        else chatSessionEntry(
+            entrySource,
+            initialAgentMode,
+            initialModeEntryContext,
+            initialInput,
+            preloadSkillIds,
+            preloadContextAttachments,
+        )
     }
+    var resumeSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    val restoreEntry = remember {
+        val startNew = (context as? AiChatActivity)?.intent
+            ?.getBooleanExtra(AiChatActivity.EXTRA_START_NEW_CHAT, false) == true
+        sessionEntry.takeIf { resumeSessionId == null && taskSessionId == null && !startNew }
+    }
+    val targetSessionId = remember { resumeSessionId ?: taskSessionId ?: restoreEntry?.let(aiChatSessions::selectedFor) }
+    val liveSession = remember { aiChatSessions.get(targetSessionId) }
+    val initialSession = remember {
+        liveSession ?: AiChatSessionRuntime(aiChatSessions, initialAgentMode, initialModeEntryContext, entryAttachments, initialInput)
+    }
+    val selectedSession = remember { mutableStateOf(initialSession) }
+    val chatSession = selectedSession.value
+    val sessionToRestore = targetSessionId?.takeIf { it != initialSession.id }
+    var sessionRestored by remember { mutableStateOf(sessionToRestore == null) }
+    val activeSessionId = chatSession.id
+    val activeAgentMode = chatSession.mode
+    var activeModeEntryContext by chatSession.entryContextState
+    var modeEntryStarted by chatSession.modeStartedState
+    var input by chatSession.inputState
+    var bookSearchDraftEdited by chatSession.draftEditedState
+    var bookSearchGreetingPending by chatSession.greetingPendingState
+    val bookSearchHistoryRestored = sessionRestored
+    var contextStatusText by chatSession.contextStatusState
+    val messages = chatSession.messages
+    val uploadMessages = chatSession.uploadMessages
+    val inputAttachments = chatSession.inputAttachments
+    val skillManagedCapabilityIds = chatSession.skillManagedCapabilityIds
+    val manualMcpCapabilityIds = chatSession.manualMcpCapabilityIds
+    val enabledMcpCapabilityIds = chatSession.enabledMcpCapabilityIds
+    val contextUsage = chatSession.contextUsage
+    val sending = chatSession.sending
+    val manualContextCompacting = chatSession.manualContextCompacting
+    val activeLoadingMessageId = chatSession.activeLoadingMessageId
+    val activeLoadingStartedAt = chatSession.activeLoadingStartedAt
+    val activeWebAccess = chatSession.activeWebAccess
+    val sessions = aiChatSessions.history
+    val loadedSessionDetailIds = aiChatSessions.loadedDetailIds
     val inputAttachmentUsageKey = inputAttachments.joinToString(separator = "|") { attachment ->
         "${attachment.id}:${attachment.prompt.hashCode()}"
     }
-    val uploadMessages = remember {
-        mutableStateListOf<JsonObject>().apply {
-            add(chatClient.newSystemMessage())
-        }
-    }
-    var contextUsage by remember {
-        mutableStateOf(AiChatContextManager.usage(uploadMessages))
-    }
-    var contextStatusText by remember { mutableStateOf<String?>(null) }
-    var contextCompactionCount by remember { mutableIntStateOf(0) }
-    var showContextUsageDialog by remember { mutableStateOf(false) }
-    var contextUsageRevision by remember { mutableIntStateOf(0) }
-    var manualContextCompacting by remember { mutableStateOf(false) }
-    val messages = remember { mutableStateListOf<ChatUiMessage>() }
-    val sessions = remember { mutableStateListOf<AiChatSessionSnapshot>() }
     val listState = rememberLazyListState()
-    val sessionIdState = if (initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID) {
-        rememberSaveable { mutableStateOf<String?>(UUID.randomUUID().toString()) }
-    } else remember { mutableStateOf<String?>(UUID.randomUUID().toString()) }
-    var activeSessionId by sessionIdState
-    var activeAgentMode by remember { mutableStateOf<AgentModeDefinition>(initialAgentMode) }
-    var activeModeEntryContext by remember {
-        mutableStateOf<AgentModeEntryContext?>(initialModeEntryContext)
-    }
-    var modeEntryStarted by remember { mutableStateOf(false) }
-    var modeEntryMemoryState by remember {
+    var showContextUsageDialog by remember { mutableStateOf(false) }
+    var modeEntryMemoryState by remember(chatSession.id) {
         mutableStateOf(
-            if (initialAgentMode.entryPolicy.memoryProbe == null) {
+            if (activeAgentMode.entryPolicy.memoryProbe == null) {
                 AgentModeEntryMemoryState.NOT_REQUIRED
             } else {
                 AgentModeEntryMemoryState.LOADING
             }
         )
     }
-    val inputState = if (initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID) {
-        rememberSaveable { mutableStateOf(initialInput) }
-    } else remember { mutableStateOf(initialInput) }
-    var input by inputState
-    var bookSearchDraftEdited by rememberSaveable { mutableStateOf(false) }
-    var bookSearchGreetingPending by rememberSaveable { mutableStateOf(true) }
-    var bookSearchHistoryRestored by remember { mutableStateOf(false) }
-    var sending by remember { mutableStateOf(false) }
-    var sendingJob by remember { mutableStateOf<Job?>(null) }
-    var bookLookupJob by remember { mutableStateOf<Job?>(null) }
     var bookOpenJob by remember { mutableStateOf<Job?>(null) }
-    var activeBookLookupMessageId by remember { mutableStateOf<String?>(null) }
-    var bookLookupRevision by remember { mutableIntStateOf(0) }
-    var bookScopeSelection by remember { mutableStateOf<Pair<String, AiBookSearchCandidate>?>(null) }
-    var bookSearchSaveJob by remember { mutableStateOf<Job?>(null) }
-    var activeLoadingMessageId by remember { mutableStateOf<String?>(null) }
-    var activeLoadingStartedAt by remember { mutableStateOf<Long?>(null) }
-    var activeStreamContentTarget by remember { mutableStateOf("") }
-    var activeStreamReasoningTarget by remember { mutableStateOf("") }
-    var activeStreamToolTraceTarget by remember { mutableStateOf<List<String>>(emptyList()) }
-    var activeStreamMemoryTraceTarget by remember { mutableStateOf<List<AiMemoryTraceItem>>(emptyList()) }
-    var activeWebActivity by remember { mutableStateOf<AiWebActivity?>(null) }
-    var activeWebAccess by remember { mutableStateOf<AiWebAccess?>(null) }
+    var bookScopeSelection by remember(activeSessionId) { mutableStateOf<Pair<String, AiBookSearchCandidate>?>(null) }
+
+    DisposableEffect(Unit) {
+        aiChatSessions.attachWindow()
+        onDispose { aiChatSessions.detachWindow() }
+    }
+    DisposableEffect(chatSession) {
+        aiChatSessions.bind(chatSession)
+        onDispose { aiChatSessions.unbind(chatSession) }
+    }
+    LaunchedEffect(sessionRestored) {
+        if (sessionRestored && sessionEntry?.dedicated == true &&
+            liveSession == null && selectedSession.value === initialSession) {
+            aiChatSessions.select(sessionEntry, initialSession, createdForEntry = true)
+        }
+    }
+    LaunchedEffect(chatSession, sessionRestored) {
+        if (sessionRestored) {
+            resumeSessionId = chatSession.id
+            aiChatSessions.select(sessionEntry, chatSession)
+            if (chatSession.savedSnapshot != null) aiChatSessions.saveSelection(chatSession.id)
+        }
+    }
     var selectedDrawerIndex by remember { mutableIntStateOf(2) }
     var configVersion by remember { mutableIntStateOf(0) }
     var generationBlock by remember { mutableStateOf<Pair<String, AiModelGenerationIssue>?>(null) }
@@ -737,26 +746,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     var exportFormatDialog by remember { mutableStateOf(false) }
     var showContextAttachmentSheet by remember { mutableStateOf(false) }
     var showSkillAttachmentSheet by remember { mutableStateOf(false) }
-    val initialSkillManagedCapabilityIds = remember(entryAttachments) {
-        resolveModeManagedCapabilities(initialAgentMode, entryAttachments)
-    }
-    val skillManagedCapabilityIds = remember {
-        mutableStateListOf<String>().apply {
-            addAll(initialSkillManagedCapabilityIds)
-        }
-    }
-    val manualMcpCapabilityIds = remember { mutableStateListOf<String>() }
-    val enabledMcpCapabilityIds = remember {
-        mutableStateListOf<String>().apply {
-            addAll(initialSkillManagedCapabilityIds)
-        }
-    }
     var contextPreviewAttachments by remember { mutableStateOf<List<AiChatInputAttachment>>(emptyList()) }
     var pendingSkillCapabilityAuthorization by remember {
         mutableStateOf<AiChatInputAttachment?>(null)
     }
     var historyLoaded by remember { mutableStateOf(false) }
-    val loadedSessionDetailIds = remember { mutableStateListOf<String>() }
     var historyDetailsLoaded by remember { mutableStateOf(false) }
     var historyDetailsLoading by remember { mutableStateOf(false) }
     var pendingHistoryReadyAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -842,19 +836,6 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         AiChatInteractionPolicyRegistry.resolve(activeAgentMode)
     }
 
-    fun updateMessage(id: String, transform: (ChatUiMessage) -> ChatUiMessage) {
-        val index = messages.indexOfFirst { it.id == id }
-        if (index >= 0) {
-            messages[index] = transform(messages[index])
-        }
-    }
-
-    fun updateDeliveryState(ids: Collection<String>, state: ChatDeliveryState) {
-        ids.forEach { id ->
-            updateMessage(id) { message -> message.copy(deliveryState = state) }
-        }
-    }
-
     fun ensureSelectedModelInCatalog(): Boolean {
         val missing = AiAssistantConfigUi.missingSelectedModelLabel() ?: return true
         if (modelSheetLaunchGate.tryOpen(SystemClock.elapsedRealtime())) {
@@ -878,87 +859,18 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         return false
     }
 
-    fun syncActiveSkillContext() {
-        val skill = inputAttachments.lastOrNull {
-            it.type == AiChatInputAttachmentType.SKILL
-        }
-        AiChatContextManager.syncActiveSkill(
-            messages = uploadMessages,
-            snapshot = skill?.let { attachment ->
-                AiActiveSkillSnapshot(
-                    skillId = attachment.id.removePrefix("skill."),
-                    title = attachment.title,
-                    prompt = attachment.prompt,
-                    revision = attachment.skillRevision,
-                    runtimeRevision = attachment.skillRuntimeRevision,
-                    contentHash = attachment.skillContentHash,
-                    runtime = attachment.skillRuntime,
-                    description = attachment.subtitle,
-                    availableSkills = attachment.availableSkills
-                )
-            }
-        )
-    }
-
-    fun syncModeEntryContext() {
-        AiChatContextManager.syncModeEntryContext(
-            messages = uploadMessages,
-            context = activeModeEntryContext.takeUnless { activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID }
-        )
-    }
-
-    fun refreshContextUsage() {
-        syncModeEntryContext()
-        syncActiveSkillContext()
-        val revision = ++contextUsageRevision
-        val pendingContexts = inputAttachments.filter {
-            it.type == AiChatInputAttachmentType.CONTEXT
-        }
-        val snapshot = buildList {
-            addAll(uploadMessages.map { it.deepCopy().asJsonObject })
-            if (pendingContexts.isNotEmpty()) {
-                add(chatClient.newUserMessage(buildUserUploadContent("", pendingContexts)))
-            }
-        }
-        val promptUsageAnchor = messages.latestPromptUsageAnchor()
-        val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
-        val activeSkill = inputAttachments.lastOrNull {
-            it.type == AiChatInputAttachmentType.SKILL
-        }
-        contextUsage = AiChatContextManager.usage(snapshot)
-        scope.launch {
-            val measured = withContext(Dispatchers.IO) {
-                runCatching {
-                    chatClient.estimateContextUsage(
-                        snapshot,
-                        promptUsageAnchor,
-                        skillId = activeSkill?.id?.removePrefix("skill.").orEmpty(),
-                        skillContentHash = activeSkill?.skillContentHash.orEmpty(),
-                        availableSkillIds = activeSkill?.availableSkillIds.orEmpty(),
-                        enabledMcpCapabilityIds = mcpCapabilityIds
-                    )
-                }
-                    .getOrElse { AiChatContextManager.usage(snapshot) }
-            }
-            if (revision == contextUsageRevision) {
-                contextUsage = measured
-            }
-        }
-    }
-
     LaunchedEffect(Unit) {
-        val history = withContext(Dispatchers.IO) {
-            AiChatHistoryStore.loadIndex()
-        }
-        val currentSessionIds = sessions.mapTo(mutableSetOf()) { it.id }
-        sessions += history.sessions.filterNot { it.id in currentSessionIds }
-        sessions.sortChatSessions()
+        val history = aiChatSessions.readHistory(AiChatHistoryStore::loadIndex)
+        aiChatSessions.mergeIndex(history.sessions)
         historyLoaded = true
-        refreshContextUsage()
+        chatSession.refreshContextUsage()
         selectedDrawerIndex = 2
     }
-    LaunchedEffect(configVersion) {
-        refreshContextUsage()
+    LaunchedEffect(chatSession, chatSession.providerStateRevision) {
+        if (chatSession.providerStateRevision > 0) configVersion++
+    }
+    LaunchedEffect(chatSession, configVersion) {
+        if (!chatSession.sending) chatSession.refreshContextUsage()
     }
     LaunchedEffect(
         activeSessionId,
@@ -1048,20 +960,20 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             }
         }
         if (historyLoaded) {
-            refreshContextUsage()
+            chatSession.refreshContextUsage()
         }
     }
     val pendingSearchJump = pendingGlobalSearchResult
-    LaunchedEffect(messages.size) {
+    LaunchedEffect(activeSessionId, messages.size) {
         if (chatSearch == null && pendingSearchJump == null && messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
         }
     }
-    LaunchedEffect(activeLoadingMessageId, activeLoadingStartedAt, sending) {
+    LaunchedEffect(chatSession, activeLoadingMessageId, activeLoadingStartedAt, sending) {
         val loadingId = activeLoadingMessageId ?: return@LaunchedEffect
         val startedAt = activeLoadingStartedAt ?: return@LaunchedEffect
-        while (sending && activeLoadingMessageId == loadingId) {
-            updateMessage(loadingId) { message ->
+        while (chatSession.sending && chatSession.activeLoadingMessageId == loadingId) {
+            chatSession.updateMessage(loadingId) { message ->
                 if (message.loading) {
                     message.copy(elapsedMs = System.currentTimeMillis() - startedAt)
                 } else {
@@ -1071,10 +983,10 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             delay(250)
         }
     }
-    LaunchedEffect(activeLoadingMessageId, sending) {
+    LaunchedEffect(chatSession, activeLoadingMessageId, sending) {
         val loadingId = activeLoadingMessageId ?: return@LaunchedEffect
-        while (sending && activeLoadingMessageId == loadingId) {
-            updateMessage(loadingId) { message ->
+        while (chatSession.sending && chatSession.activeLoadingMessageId == loadingId) {
+            chatSession.updateMessage(loadingId) { message ->
                 if (!message.loading) {
                     message
                 } else {
@@ -1083,22 +995,22 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                         .orEmpty()
                     val nextContent = nextStreamingText(
                         current = visibleContent,
-                        target = activeStreamContentTarget
+                        target = chatSession.activeStreamContentTarget
                     )
                     val nextReasoning = nextStreamingText(
                         current = message.reasoning.orEmpty(),
-                        target = activeStreamReasoningTarget
+                        target = chatSession.activeStreamReasoningTarget
                     )
                     message.copy(
                         content = nextContent.ifBlank { "正在思考..." },
                         reasoning = nextReasoning.takeIf { it.isNotBlank() },
-                        toolTrace = activeStreamToolTraceTarget
+                        toolTrace = chatSession.activeStreamToolTraceTarget
                             .takeIf { it.isNotEmpty() }
                             ?: message.toolTrace,
-                        memoryTrace = activeStreamMemoryTraceTarget
+                        memoryTrace = chatSession.activeStreamMemoryTraceTarget
                             .takeIf { it.isNotEmpty() }
                             ?: message.memoryTrace,
-                        webActivity = activeWebActivity,
+                        webActivity = chatSession.activeWebActivity,
                     )
                 }
             }
@@ -1170,7 +1082,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
 
     val assistantSettingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         configVersion++
-        refreshContextUsage()
+        chatSession.refreshContextUsage()
     }
 
     fun openAssistantSettings() {
@@ -1180,168 +1092,23 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         })
     }
 
-    fun saveHistory(activeId: String? = activeSessionId) {
-        scope.launch(Dispatchers.IO) {
-            AiChatHistoryStore.setActiveSessionId(activeId)
-        }
-    }
-
-    fun saveSessionSnapshot(
-        snapshot: AiChatSessionSnapshot,
-        makeActive: Boolean = false
-    ): Job = scope.launch {
-        historyWriteLock.withLock {
-            withContext(Dispatchers.IO) {
-                AiChatHistoryStore.saveSessionSnapshot(snapshot)
-                if (makeActive) AiChatHistoryStore.setActiveSessionId(snapshot.id)
-            }
-        }
-    }
-
-    fun persistedModeEntryContext(): AgentModeEntryContext? {
-        val entry = activeModeEntryContext ?: return null
-        if (activeAgentMode.id != AgentModeRegistry.BOOK_SEARCH_ID) return entry
-        val draft = bookSearchDraftForHistory(input, messages.any { !it.loading }, bookSearchDraftEdited)
-        return entry.copy(payload = entry.payload.deepCopy().apply {
-            if (draft == null) remove(AI_BOOK_SEARCH_DRAFT) else addProperty(AI_BOOK_SEARCH_DRAFT, draft)
-        })
+    fun saveHistory(activeId: String = activeSessionId) {
+        aiChatSessions.saveSelection(activeId)
     }
 
     fun persistActiveSession() {
-        val visibleMessages = messages.filterNot { it.loading }
-        val oldSession = sessions.firstOrNull { it.id == activeSessionId }
-        val isBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
-        val savedEntry = persistedModeEntryContext()
-        val keepInHistory = hasChatHistoryContent(
-            hasMessages = visibleMessages.isNotEmpty(),
-            modeEntryStarted = modeEntryStarted,
-            bookSearchDraft = if (isBookSearch) savedEntry.bookSearchDraft() else null,
-        )
-        val hadSavedDraft = isBookSearch && oldSession?.modeEntryContext.bookSearchDraft() != null
-        if (!keepInHistory && !hadSavedDraft) return
-
-        val now = System.currentTimeMillis()
-        val sessionId = activeSessionId ?: UUID.randomUUID().toString().also { activeSessionId = it }
-        val snapshot = AiChatSessionSnapshot(
-            id = sessionId,
-            title = resolveConversationTitle(
-                modeEntryTitle = activeModeEntryContext?.title,
-                derivedTitle = visibleMessages.deriveChatTitle(),
-                previousTitle = oldSession?.title
-            ),
-            modeId = activeAgentMode.id,
-            modeRevision = activeAgentMode.revision,
-            modeEntryContext = savedEntry,
-            modeEntryStarted = modeEntryStarted,
-            createdAt = oldSession?.createdAt ?: now,
-            updatedAt = now,
-            isPinned = oldSession?.isPinned ?: false,
-            messages = visibleMessages.map { it.toSnapshot() },
-            loadedSkillIds = inputAttachments.loadedSkillIds(),
-            enabledMcpCapabilityIds = enabledMcpCapabilityIds.toList(),
-            uploadMessages = uploadMessages.map { it.deepCopy().asJsonObject },
-        )
-        sessions.removeAll { it.id == sessionId }
-        if (keepInHistory) {
-            sessions.add(0, snapshot)
-            sessions.sortChatSessions()
-            if (sessionId !in loadedSessionDetailIds) loadedSessionDetailIds += sessionId
-        } else {
-            loadedSessionDetailIds.remove(sessionId)
-            selectedHistoryIds.remove(sessionId)
-        }
-        val saved = saveSessionSnapshot(snapshot, makeActive = keepInHistory)
-        if (isBookSearch) bookSearchSaveJob = saved
-    }
-
-    fun cancelBookSourceLookup() {
-        val messageId = activeBookLookupMessageId ?: return
-        bookLookupRevision++
-        bookLookupJob?.cancel()
-        bookLookupJob = null
-        activeBookLookupMessageId = null
-        updateMessage(messageId) { message ->
-            val reply = message.bookSearch ?: return@updateMessage message
-            val lookup = reply.lookup ?: return@updateMessage message
-            message.copy(bookSearch = reply.copy(lookup = lookup.copy(status = AiBookSourceStatus.INTERRUPTED)))
-        }
-        persistActiveSession()
-    }
-
-    fun bookSearchScope(): String = activeModeEntryContext?.payload?.get(AI_BOOK_SEARCH_SCOPE)
-        ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty()
-
-    fun launchBookSourceLookup(
-        messageId: String,
-        candidate: AiBookSearchCandidate,
-        keyword: String = candidate.title,
-        automatically: Boolean = false,
-    ) {
-        if (activeAgentMode.id != AgentModeRegistry.BOOK_SEARCH_ID || sending || !candidate.searchable) return
-        val reply = messages.firstOrNull { it.id == messageId }?.bookSearch ?: return
-        if (candidate.key in reply.rejectedKeys) return
-        val lookupScope = bookSearchScope()
-        val attemptKey = "${candidate.key}\u0000$lookupScope"
-        if (automatically && messages.any { attemptKey in it.bookSearch?.attemptedKeys.orEmpty() }) return
-        val audioConfirmed = activeModeEntryContext?.payload.isConfirmedBookSearchAudioScope(candidate.media)
-        cancelBookSourceLookup()
-        val revision = ++bookLookupRevision
-        val sessionId = activeSessionId
-        val capabilities = enabledMcpCapabilityIds.toList()
-        activeBookLookupMessageId = messageId
-        fun isCurrent() = activeSessionId == sessionId && bookLookupRevision == revision
-        fun updateLookup(lookup: AiBookSourceLookup) {
-            updateMessage(messageId) { message ->
-                val state = message.bookSearch ?: return@updateMessage message
-                message.copy(bookSearch = state.copy(
-                    lookup = lookup,
-                    attemptedKeys = (state.attemptedKeys + attemptKey).distinct(),
-                ))
-            }
-        }
-        val running = AiBookSourceLookup(candidate.key, keyword, AiBookSourceStatus.RUNNING)
-        updateLookup(running)
-        persistActiveSession()
-        scope.launch {
-            val result = try {
-                withContext(Dispatchers.IO) {
-                    McpInternalChannel.searchPreciseBook(
-                        candidate, keyword, lookupScope, audioConfirmed, capabilities,
-                    ) { hits ->
-                        scope.launch {
-                            if (isCurrent() && activeBookLookupMessageId == messageId) {
-                                val hadHit = messages.firstOrNull { it.id == messageId }
-                                    ?.bookSearch?.lookup?.hits.orEmpty().isNotEmpty()
-                                updateLookup(running.copy(hits = hits))
-                                // Preserve verified cards if the app is interrupted during the remaining requests.
-                                if (!hadHit && hits.isNotEmpty()) persistActiveSession()
-                            }
-                        }
-                    }
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                val partial = messages.firstOrNull { it.id == messageId }?.bookSearch?.lookup?.hits.orEmpty()
-                running.copy(status = AiBookSourceStatus.FAILED, hits = partial)
-            }
-            if (isCurrent()) {
-                updateLookup(result)
-                activeBookLookupMessageId = null
-                bookLookupJob = null
-                persistActiveSession()
-            }
-        }.also { bookLookupJob = it }
+        chatSession.persist()
+        if (sessions.none { it.id == activeSessionId }) selectedHistoryIds.remove(activeSessionId)
     }
 
     fun handleBookSearchAction(messageId: String, action: AiBookSearchAction) {
         when (action) {
-            is AiBookSearchAction.Lookup -> launchBookSourceLookup(messageId, action.candidate, action.keyword)
+            is AiBookSearchAction.Lookup -> chatSession.launchBookSourceLookup(messageId, action.candidate, action.keyword)
             is AiBookSearchAction.Scope -> bookScopeSelection = messageId to action.candidate
             AiBookSearchAction.EnableMcp -> showInternalMcpSheet = true
             is AiBookSearchAction.Reject -> {
-                if (messageId == activeBookLookupMessageId) cancelBookSourceLookup()
-                updateMessage(messageId) { message ->
+                if (messageId == chatSession.activeBookLookupMessageId) chatSession.cancelBookSourceLookup()
+                chatSession.updateMessage(messageId) { message ->
                     val reply = message.bookSearch ?: return@updateMessage message
                     message.copy(bookSearch = reply.copy(
                         rejectedKeys = (reply.rejectedKeys + action.keys).distinct(),
@@ -1353,7 +1120,6 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             is AiBookSearchAction.Open -> {
                 if (bookOpenJob?.isActive == true) return
                 val hit = action.hit
-                val sessionId = activeSessionId
                 val reply = messages.firstOrNull { it.id == messageId }?.bookSearch ?: return
                 val lookup = reply.lookup?.takeIf { hit in it.hits } ?: return
                 val media = reply.candidates.firstOrNull { it.key == lookup.candidateKey }?.media ?: return
@@ -1365,14 +1131,14 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                     } catch (_: Exception) {
                         null
                     }
-                    if (sessionId != activeSessionId || messages.none {
+                    if (selectedSession.value !== chatSession || messages.none {
                             it.id == messageId && hit in it.bookSearch?.lookup?.hits.orEmpty()
                         }) return@launch
                     if (book != null) {
                         context.startActivity(Intent(context, BookInfoActivity::class.java)
                             .putExtra(EXTRA_BOOK_INFO_SEARCH_RESULT, book))
                     } else {
-                        updateMessage(messageId) { message ->
+                        chatSession.updateMessage(messageId) { message ->
                             val state = message.bookSearch ?: return@updateMessage message
                             val result = state.lookup?.takeUnless { it.status == AiBookSourceStatus.RUNNING }
                                 ?: return@updateMessage message
@@ -1404,7 +1170,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 manualMcpCapabilityIds + skillManagedCapabilityIds
             )
         )
-        refreshContextUsage()
+        chatSession.refreshContextUsage()
         persistActiveSession()
     }
 
@@ -1422,7 +1188,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 manualMcpCapabilityIds + skillManagedCapabilityIds
             )
         )
-        refreshContextUsage()
+        chatSession.refreshContextUsage()
         persistActiveSession()
     }
 
@@ -1437,133 +1203,73 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         activateSkillAttachment(attachment)
     }
 
-    fun startNewChat() {
+    fun selectRuntime(next: AiChatSessionRuntime, createdForEntry: Boolean = false) {
+        if (next.deleted) return
+        bookOpenJob?.cancel()
         bookScopeSelection = null
-        val wasBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
-        if (wasBookSearch) {
-            cancelBookSourceLookup()
-            bookOpenJob?.cancel()
-            sendingJob?.cancel()
-            sending = false
-            activeLoadingMessageId = null
-        }
-        persistActiveSession()
-        activeSessionId = UUID.randomUUID().toString()
-        activeAgentMode = initialAgentMode
-        activeModeEntryContext = initialModeEntryContext
-        val startsBookSearch = initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
-        if (wasBookSearch || startsBookSearch) input = ""
-        bookSearchDraftEdited = false
-        if (startsBookSearch) bookSearchGreetingPending = true
-        modeEntryStarted = false
-        uploadMessages.clear()
-        uploadMessages += chatClient.newSystemMessage()
-        contextCompactionCount = 0
-        contextStatusText = null
-        messages.clear()
-        inputAttachments.replaceWith(entryAttachments)
-        skillManagedCapabilityIds.replaceWith(initialSkillManagedCapabilityIds)
-        manualMcpCapabilityIds.clear()
-        enabledMcpCapabilityIds.replaceWith(initialSkillManagedCapabilityIds)
-        refreshContextUsage()
+        openingSessionId = null
+        selectedSession.value = next
+        resumeSessionId = next.id
+        aiChatSessions.select(sessionEntry, next, createdForEntry)
         selectedDrawerIndex = 2
-        saveHistory(activeSessionId)
+        sessionRestored = true
     }
 
-    fun applyLoadedSession(session: AiChatSessionSnapshot) {
-        val restoredModeIdentity = session.normalizedAgentModeIdentity()
-        val restoredMode = AgentModeRegistry.resolve(restoredModeIdentity)
-        if (restoredMode == null) {
-            Toast.makeText(
-                context,
-                "当前版本不支持 Agent Mode：${restoredModeIdentity.id}@${restoredModeIdentity.revision}",
-                Toast.LENGTH_SHORT
-            ).show()
+    fun startNewChat() {
+        persistActiveSession()
+        selectRuntime(
+            AiChatSessionRuntime(aiChatSessions, initialAgentMode, initialModeEntryContext, entryAttachments),
+            createdForEntry = true,
+        )
+    }
+
+    fun applyLoadedSession(snapshot: AiChatSessionSnapshot) {
+        if (aiChatSessions.wasDeleted(snapshot.id)) return
+        aiChatSessions.get(snapshot.id)?.let {
+            selectRuntime(it)
             return
         }
-        bookScopeSelection = null
-        val wasBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
-        if (wasBookSearch && activeSessionId != session.id) {
-            if (activeBookLookupMessageId != null) cancelBookSourceLookup() else persistActiveSession()
-            bookOpenJob?.cancel()
-            sendingJob?.cancel()
-            sending = false
-            activeLoadingMessageId = null
+        val identity = snapshot.normalizedAgentModeIdentity()
+        val mode = AgentModeRegistry.resolve(identity)
+        if (mode == null) {
+            Toast.makeText(context, "当前版本不支持 Agent Mode：${identity.id}@${identity.revision}", Toast.LENGTH_SHORT).show()
+            return
         }
-        activeSessionId = session.id
-        activeAgentMode = restoredMode
-        activeModeEntryContext = session.modeEntryContext
-        if (restoredMode.id == AgentModeRegistry.BOOK_SEARCH_ID) {
-            bookSearchGreetingPending = false
-            input = session.modeEntryContext.bookSearchDraft().orEmpty()
-            bookSearchDraftEdited = input.isNotBlank()
-        } else if (wasBookSearch) {
-            input = ""
-            bookSearchDraftEdited = false
-        }
-        modeEntryStarted = session.modeEntryStarted
-        messages.replaceWith(session.messages.map { it.toUiMessage() })
-        uploadMessages.replaceUploadMessages(session, chatClient)
-        inputAttachments.replaceWith(
-            buildModeSkillInputAttachments(
-                mode = restoredMode,
-                requestedSkillIds = session.loadedSkillIds,
-                pinnedMessages = uploadMessages
+        selectRuntime(
+            AiChatSessionRuntime(
+                owner = aiChatSessions,
+                mode = mode,
+                initialContext = snapshot.modeEntryContext,
+                initialAttachments = buildModeSkillInputAttachments(mode, snapshot.loadedSkillIds, snapshot.uploadMessages),
+                initialInput = snapshot.modeEntryContext.bookSearchDraft().orEmpty(),
+                id = snapshot.id,
+                saved = snapshot,
             )
         )
-        val restoredSkillCapabilities = resolveModeManagedCapabilities(
-            restoredMode,
-            inputAttachments
-        )
-        skillManagedCapabilityIds.replaceWith(restoredSkillCapabilities)
-        manualMcpCapabilityIds.replaceWith(
-            if (restoredMode.allowsManualMcpCapabilities) {
-                McpInternalToolCatalog.normalizeCapabilityIds(session.enabledMcpCapabilityIds)
-                    .filterNot { capabilityId -> capabilityId in restoredSkillCapabilities }
-            } else {
-                emptyList()
-            }
-        )
-        enabledMcpCapabilityIds.replaceWith(
-            McpInternalToolCatalog.normalizeCapabilityIds(
-                manualMcpCapabilityIds + skillManagedCapabilityIds
-            )
-        )
-        refreshContextUsage()
-        contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
-        contextStatusText = if (messages.any {
-                it.role == ChatRole.USER && it.deliveryState == ChatDeliveryState.RECOVERABLE
-            }) {
-            "上次请求未完成，发送新消息或点击重新生成可恢复"
-        } else {
-            null
-        }
-        selectedDrawerIndex = 2
-        saveHistory(session.id)
     }
 
     LaunchedEffect(historyLoaded) {
-        if (!historyLoaded) return@LaunchedEffect
-        if (initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID && messages.isEmpty()) {
-            val id = activeSessionId
-            if (id != null && sessions.any { it.id == id }) {
-                val restored = withContext(Dispatchers.IO) { AiChatHistoryStore.loadSession(id) }
-                if (restored != null && id == activeSessionId && messages.isEmpty()) {
-                    val pendingDraft = input
-                    val pendingDraftEdited = bookSearchDraftEdited
-                    applyLoadedSession(restored)
-                    if (pendingDraftEdited || pendingDraft.isNotBlank()) input = pendingDraft
-                    if (pendingDraftEdited) bookSearchDraftEdited = true
-                }
-            }
+        if (!historyLoaded || sessionRestored) return@LaunchedEffect
+        val target = sessionToRestore ?: return@LaunchedEffect
+        val original = selectedSession.value
+        val readResult = runCatching { aiChatSessions.readHistory { AiChatHistoryStore.loadSession(target) } }
+        val saved = readResult.getOrNull()?.takeIf { snapshot ->
+            restoreEntry?.matches(snapshot.normalizedAgentModeIdentity(), snapshot.modeEntryContext) != false
         }
-        bookSearchHistoryRestored = true
+        if (target == taskSessionId && saved == null && readResult.isSuccess) aiChatSessions.forgetTask(target)
+        if (selectedSession.value === original && !original.hasWork && original.messages.isEmpty() && saved != null) {
+            applyLoadedSession(saved)
+        }
+        sessionRestored = true
     }
 
     fun openSession(session: AiChatSessionSnapshot) {
-        if (session.id == activeSessionId) return
-        val cached = sessions.firstOrNull { it.id == session.id }
-            ?.takeIf { it.id in loadedSessionDetailIds }
+        if (session.id == activeSessionId || aiChatSessions.wasDeleted(session.id)) return
+        aiChatSessions.get(session.id)?.let { running ->
+            selectRuntime(running)
+            return
+        }
+        val cached = sessions.firstOrNull { it.id == session.id && it.id in loadedSessionDetailIds }
         if (cached != null) {
             applyLoadedSession(cached)
             return
@@ -1571,34 +1277,18 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         openingSessionId = session.id
         contextStatusText = "正在加载会话…"
         scope.launch {
-            val loadedResult = runCatching {
-                withContext(Dispatchers.IO) {
-                    AiChatHistoryStore.loadSession(session.id)
-                }
+            val loaded = runCatching {
+                aiChatSessions.readHistory { AiChatHistoryStore.loadSession(session.id) }
             }
-            if (openingSessionId != session.id) return@launch
+            if (openingSessionId != session.id || selectedSession.value !== chatSession) return@launch
             openingSessionId = null
-            val loaded = loadedResult.getOrElse {
-                contextStatusText = null
+            if (contextStatusText == "正在加载会话…") contextStatusText = null
+            loaded.onSuccess { snapshot ->
+                if (snapshot != null) applyLoadedSession(snapshot)
+                else Toast.makeText(context, "会话不存在或已被删除", Toast.LENGTH_SHORT).show()
+            }.onFailure {
                 Toast.makeText(context, "会话加载失败，请重试", Toast.LENGTH_SHORT).show()
-                return@launch
             }
-            if (loaded == null) {
-                contextStatusText = null
-                Toast.makeText(context, "会话不存在或已被删除", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            val index = sessions.indexOfFirst { it.id == loaded.id }
-            if (index >= 0) {
-                sessions[index] = loaded
-            } else {
-                sessions.add(0, loaded)
-            }
-            sessions.sortChatSessions()
-            if (loaded.id !in loadedSessionDetailIds) {
-                loadedSessionDetailIds += loaded.id
-            }
-            applyLoadedSession(loaded)
         }
     }
 
@@ -1618,9 +1308,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         }
         scope.launch {
             val details = runCatching {
-                historyWriteLock.withLock {
-                    withContext(Dispatchers.IO) { AiChatHistoryStore.loadAllSessionDetails() }
-                }
+                aiChatSessions.readHistory(AiChatHistoryStore::loadAllSessionDetails)
             }.getOrElse {
                 historyDetailsLoading = false
                 if (pendingHistoryReadyAction != null) {
@@ -1629,19 +1317,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 pendingHistoryReadyAction = null
                 return@launch
             }
-            details.forEach { detail ->
-                if (detail.id == activeSessionId) return@forEach
-                val index = sessions.indexOfFirst { it.id == detail.id }
-                if (index >= 0) {
-                    sessions[index] = detail
-                } else {
-                    sessions += detail
-                }
-                if (detail.id !in loadedSessionDetailIds) {
-                    loadedSessionDetailIds += detail.id
-                }
-            }
-            sessions.sortChatSessions()
+            aiChatSessions.mergeDetails(details)
             historyDetailsLoaded = true
             historyDetailsLoading = false
             val readyAction = pendingHistoryReadyAction
@@ -1650,524 +1326,57 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         }
     }
 
-    suspend fun confirmToolCalls(toolCalls: List<AiPendingToolCall>): Boolean {
-        if (toolCalls.isEmpty()) return true
-        return withContext(Dispatchers.Main) {
-            suspendCancellableCoroutine { continuation ->
-                val activity = context as? AiChatActivity
-                if (activity == null || activity.isFinishing) {
-                    continuation.resume(false)
-                    return@suspendCancellableCoroutine
-                }
-                val summaries = toolCalls.map { it.toWriteOperationSummary() }
-                val containsDestructiveOperation = toolCalls.any {
-                    it.sideEffect == McpToolSideEffect.DESTRUCTIVE
-                }
-                var resumed = false
-                fun resumeOnce(value: Boolean) {
-                    if (resumed) return
-                    resumed = true
-                    continuation.resume(value)
-                }
-                val dialog = ComponentDialog(activity)
-                val composeView = ComposeView(activity).apply {
-                    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-                    setContent {
-                        NgAppTheme(updateSystemBars = false) {
-                            AiToolWriteConfirmationContent(
-                                summaries = summaries,
-                                destructive = containsDestructiveOperation,
-                                onCancel = {
-                                    dialog.dismiss()
-                                    resumeOnce(false)
-                                },
-                                onConfirm = {
-                                    dialog.dismiss()
-                                    resumeOnce(true)
-                                },
-                            )
-                        }
-                    }
-                }
-                dialog.setContentView(composeView)
-                dialog.setOnCancelListener {
-                    resumeOnce(false)
-                }
-                continuation.invokeOnCancellation {
-                    dialog.dismiss()
-                }
-                dialog.show()
-                dialog.applyNgWindow(height = (activity.resources.displayMetrics.heightPixels * 0.62f).toInt())
-            }
+    val activityState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val viewingConversation = sessionRestored && activityState.isAtLeast(Lifecycle.State.RESUMED) &&
+        !statsMode && !globalSearchMode && drawerState.isClosed && chatSearch == null
+    if (viewingConversation) {
+        DisposableEffect(activeSessionId) {
+            aiChatSessions.beginViewing(activeSessionId)
+            onDispose { aiChatSessions.endViewing(activeSessionId) }
         }
     }
+    val approval = chatSession.pendingApproval.takeIf {
+        activityState.isAtLeast(Lifecycle.State.RESUMED) && !statsMode && !globalSearchMode && drawerState.isClosed
+    }
+    AiChatToolApprovalDialog(context as? AiChatActivity, approval)
+
+    fun currentModelSelection() = AiModelSelection(AiConfig.assistantProviderId, AiConfig.assistantModelId)
 
     fun sendCurrentMessages(activeUserMessageIds: List<String> = emptyList()) {
-        if (bookSearchAvailability() != AiBookSearchAvailability.READY) {
-            updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
+        if (bookSearchAvailability() != AiBookSearchAvailability.READY ||
+            !ensureSkillToolSupport() || !ensureModelGenerationRoute()
+        ) {
+            chatSession.updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
             persistActiveSession()
             return
         }
-        if (!ensureSkillToolSupport()) {
-            updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
-            return
-        }
-        if (!ensureModelGenerationRoute()) {
-            updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
-            persistActiveSession()
-            return
-        }
-        val modelSelection = AiModelSelection(AiConfig.assistantProviderId, AiConfig.assistantModelId)
-        syncModeEntryContext()
-        syncActiveSkillContext()
-        sending = true
-        val conversationId = activeSessionId
-            ?: UUID.randomUUID().toString().also { activeSessionId = it }
-        val turnId = activeUserMessageIds.firstOrNull()
-            ?: messages.asReversed().firstOrNull { message -> message.role == ChatRole.USER }?.id
-            ?: UUID.randomUUID().toString()
-        val activeSkill = inputAttachments.lastOrNull { attachment ->
-            attachment.type == AiChatInputAttachmentType.SKILL
-        }
-        val promptUsageAnchor = messages.latestPromptUsageAnchor()
-        val loadingId = UUID.randomUUID().toString()
-        val startedAt = System.currentTimeMillis()
-        activeLoadingMessageId = loadingId
-        activeLoadingStartedAt = startedAt
-        activeStreamContentTarget = ""
-        activeStreamReasoningTarget = ""
-        activeStreamToolTraceTarget = emptyList()
-        activeStreamMemoryTraceTarget = emptyList()
-        activeWebActivity = null
-        activeWebAccess = null
-        val uploadMessagesBeforeSend = uploadMessages.map { it.deepCopy().asJsonObject }
-        val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
-        val requireWebSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
-        val allowWebForTurn = requireWebSearch || activeAgentMode.id == AgentModeRegistry.GENERAL_ID
-        val webUserText = messages.lastOrNull { it.role == ChatRole.USER }?.content.orEmpty()
-        messages += ChatUiMessage(
-            id = loadingId,
-            role = ChatRole.ASSISTANT,
-            content = "正在思考...",
-            elapsedMs = 0L,
-            loading = true,
-            usageProviderId = modelSelection.providerId,
-            usageModelId = modelSelection.modelId,
-        )
-        val previousSession = sessions.firstOrNull { session -> session.id == conversationId }
-        val durableBaseSession = AiChatSessionSnapshot(
-            id = conversationId,
-            title = resolveConversationTitle(
-                modeEntryTitle = activeModeEntryContext?.title,
-                derivedTitle = messages.filterNot { it.loading }.deriveChatTitle(),
-                previousTitle = previousSession?.title
-            ),
-            modeId = activeAgentMode.id,
-            modeRevision = activeAgentMode.revision,
-            modeEntryContext = persistedModeEntryContext(),
-            modeEntryStarted = modeEntryStarted,
-            createdAt = previousSession?.createdAt ?: startedAt,
-            updatedAt = startedAt,
-            isPinned = previousSession?.isPinned == true,
-            messages = messages.filterNot { it.loading }.map(ChatUiMessage::toSnapshot),
-            loadedSkillIds = inputAttachments
-                .filter { it.type == AiChatInputAttachmentType.SKILL }
-                .map { it.id.removePrefix("skill.") },
-            enabledMcpCapabilityIds = mcpCapabilityIds,
-            uploadMessages = uploadMessagesBeforeSend,
-        )
-        scope.launch {
-            if (chatSearch == null) listState.scrollToItem(messages.lastIndex)
-        }
-        sendingJob?.cancel()
-        sendingJob = scope.launch {
-            var latestDurableUpdate: AiChatDurableContextUpdate? = null
-            val requestMessages = uploadMessagesBeforeSend
-                .map { it.deepCopy().asJsonObject }
-                .toMutableList()
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    AiChatHistoryStore.saveSessionSnapshot(durableBaseSession)
-                    chatClient.send(
-                        messages = requestMessages,
-                        conversationId = conversationId,
-                        turnId = turnId,
-                        skillId = activeSkill?.id?.removePrefix("skill.").orEmpty(),
-                        skillRevision = activeSkill?.skillRuntimeRevision.orEmpty(),
-                        skillContentHash = activeSkill?.skillContentHash.orEmpty(),
-                        availableSkillIds = activeSkill?.availableSkillIds.orEmpty(),
-                        memoryPolicy = activeAgentMode.memoryPolicy,
-                        runtimeHooks = activeAgentMode.runtimeHooks +
-                            if (activeAgentMode.allowsUserSkills) {
-                                activeSkill?.skillRuntime?.runtimeHooks.orEmpty()
-                            } else {
-                                emptyList()
-                            },
-                        promptUsageAnchor = promptUsageAnchor,
-                        allowWeb = allowWebForTurn,
-                        requireWebSearch = requireWebSearch,
-                        webUserText = webUserText,
-                        onWebUpdate = { update, access ->
-                            scope.launch {
-                                if (activeLoadingMessageId == loadingId) {
-                                    activeWebActivity = update
-                                    activeWebAccess = access
-                                }
-                            }
-                        },
-                        onStreamUpdate = { update: AiChatStreamUpdate ->
-                            scope.launch {
-                                if (activeLoadingMessageId == loadingId) {
-                                    activeStreamContentTarget = if (requireWebSearch) {
-                                        aiBookSearchVisibleText(update.content)
-                                    } else update.content
-                                    activeStreamReasoningTarget = update.reasoning.orEmpty()
-                                    activeStreamToolTraceTarget = update.toolTrace
-                                    activeStreamMemoryTraceTarget = update.memoryTrace
-                                }
-                            }
-                        },
-                        onDurableContextUpdate = { update ->
-                            latestDurableUpdate = update
-                            AiChatHistoryStore.saveDurableTurn(
-                                baseSession = durableBaseSession,
-                                assistantMessageId = loadingId,
-                                update = update,
-                                modelSelection = modelSelection,
-                            )
-                        },
-                        onContextEvent = { event: AiChatContextEvent ->
-                            scope.launch {
-                                when (event.type) {
-                                    AiChatContextEventType.STARTED -> {
-                                        event.beforeUsage?.let { contextUsage = it }
-                                        contextStatusText = "正在自动压缩上下文..."
-                                    }
-                                    AiChatContextEventType.COMPLETED -> {
-                                        val after = event.afterTokens ?: event.beforeTokens
-                                        event.afterUsage?.let { contextUsage = it }
-                                        event.compaction?.let {
-                                            contextCompactionCount = it.revision
-                                        }
-                                        contextStatusText =
-                                            "上下文已自动压缩 · ${formatContextTokens(event.beforeTokens)} → ${formatContextTokens(after)}"
-                                    }
-                                }
-                            }
-                        },
-                        // Only the host can start a book-source search after validating the reply or user selection.
-                        enabledMcpCapabilityIds = if (requireWebSearch) emptyList() else mcpCapabilityIds,
-                        selection = modelSelection,
-                        onToolConfirmationRequired = { pendingCalls ->
-                            confirmToolCalls(pendingCalls)
-                        }
-                    )
-                }
-            }
-            if (requireWebSearch && (conversationId != activeSessionId || activeLoadingMessageId != loadingId)) {
-                return@launch
-            }
-            val elapsedMs = System.currentTimeMillis() - startedAt
-            val canceled = result.exceptionOrNull() is CancellationException
-            var bookToLookup: Pair<String, AiBookSearchCandidate>? = null
-            result.onSuccess {
-                updateDeliveryState(activeUserMessageIds, ChatDeliveryState.SENT)
-                uploadMessages.clear()
-                uploadMessages.addAll(
-                    it.contextMessages.map { message -> message.deepCopy().asJsonObject }
-                )
-                val loadingIndex = messages.indexOfFirst { message -> message.id == loadingId }
-                val baseMessage = it.toUiMessage(elapsedMs, modelSelection)
-                val completedMessage = if (requireWebSearch) {
-                    val rejected = messages.flatMap { message -> message.bookSearch?.rejectedKeys.orEmpty() }.toSet()
-                    val reply = parseAiBookSearchReply(it.content, it.webActivity)?.let { parsed ->
-                        parsed.copy(rejectedKeys = parsed.candidates.map { candidate -> candidate.key }.filter { key -> key in rejected })
-                    }
-                    val unverified = reply == null || it.webActivity?.searchFailed == true ||
-                        it.webActivity?.externalError != null || it.webActivity?.sources.isNullOrEmpty()
-                    baseMessage.copy(
-                        content = aiBookSearchVisibleText(baseMessage.content).ifBlank {
-                            reply?.question?.takeIf { question -> question.isNotBlank() }
-                                ?: context.getString(R.string.ai_book_search_unverified)
-                        },
-                        bookSearch = reply,
-                        meta = if (unverified) listOfNotNull(
-                            baseMessage.meta, context.getString(R.string.ai_book_search_unverified)
-                        ).joinToString(" · ") else baseMessage.meta,
-                    ).also { message ->
-                        reply?.automaticCandidate?.let { candidate -> bookToLookup = message.id to candidate }
-                    }
-                } else baseMessage
-                val compactionMessages = it.contextCompactions.map { record ->
-                    ChatUiMessage(
-                        role = ChatRole.ASSISTANT,
-                        content = "上下文已自动压缩",
-                        contextCompaction = record
-                    )
-                }
-                if (loadingIndex >= 0) {
-                    messages.removeAt(loadingIndex)
-                    messages.addAll(loadingIndex, compactionMessages + completedMessage)
-                } else {
-                    messages += compactionMessages
-                    messages += completedMessage
-                }
-                contextUsage = it.contextUsage
-                contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
-            }.onFailure {
-                val replyEnd = it as? AiAssistantReplyEndException
-                val chatGptError = (replyEnd?.cause ?: it) as? AiChatGptException
-                if (requireWebSearch) when (chatGptError?.messageRes) {
-                    R.string.ai_chatgpt_sign_in_required,
-                    R.string.ai_chatgpt_reauthorize_required,
-                    R.string.ai_chatgpt_plan_permission_required -> configVersion++
-                    else -> Unit
-                }
-                val replyNotice = replyEnd?.let { end ->
-                    context.getString(when (end.reason) {
-                        AiAssistantReplyEndReason.TRUNCATED -> R.string.ai_assistant_reply_truncated
-                        AiAssistantReplyEndReason.INTERRUPTED -> R.string.ai_assistant_reply_interrupted
-                        AiAssistantReplyEndReason.REFUSED -> R.string.ai_assistant_reply_refused
-                    })
-                }
-                val durable = latestDurableUpdate
-                uploadMessages.clear()
-                uploadMessages.addAll(
-                    (durable?.contextMessages ?: uploadMessagesBeforeSend).map { message ->
-                        message.deepCopy().asJsonObject
-                    }
-                )
-                val savedContent = durable?.visibleContent
-                    ?.takeIf { content -> content.isNotBlank() }
-                val interruptedContent = replyEnd?.partialContent
-                    ?: activeStreamContentTarget.takeIf { savedContent == null }.orEmpty()
-                val draft = AiChatContextManager.interruptedReplyContent(interruptedContent, it)
-                val visibleInterruptedContent = interruptedContent.takeIf { content ->
-                    content.isNotBlank() && (replyEnd == null || draft != null)
-                }
-                val partialContent = listOfNotNull(savedContent, visibleInterruptedContent)
-                    .distinct().joinToString("\n\n").takeIf { content -> content.isNotBlank() }
-                if (partialContent != null || replyNotice != null) {
-                    updateMessage(loadingId) { loading ->
-                        if (draft != null) {
-                            uploadMessages += AiChatContextManager.interruptedReplyMessage(loading.id, draft)
-                        }
-                        loading.copy(
-                            content = (partialContent ?: requireNotNull(replyNotice)).let { content ->
-                                if (requireWebSearch) aiBookSearchVisibleText(content).ifBlank {
-                                    context.getString(R.string.ai_book_search_unverified)
-                                } else content
-                            },
-                            uploadContent = draft,
-                            reasoning = if (replyEnd != null) {
-                                replyEnd.partialReasoning ?: durable?.reasoning.takeIf { savedContent != null }
-                            } else {
-                                durable?.reasoning ?: activeStreamReasoningTarget.takeIf { it.isNotBlank() }
-                            },
-                            toolTrace = durable?.toolTrace ?: activeStreamToolTraceTarget,
-                            toolReceipts = durable?.toolReceipts.orEmpty(),
-                            webActivity = durable?.webActivity ?: activeWebActivity?.settledOrNull(),
-                            loading = false,
-                            meta = when {
-                                partialContent == null -> "error"
-                                replyNotice != null -> replyNotice
-                                canceled -> "已中断，可恢复"
-                                else -> "执行中断，结果已保留"
-                            }
-                        )
-                    }
-                } else {
-                    messages.removeAll { message -> message.id == loadingId }
-                }
-                contextStatusText = null
-                updateDeliveryState(
-                    activeUserMessageIds,
-                    when {
-                        canceled -> ChatDeliveryState.RECOVERABLE
-                        replyEnd != null -> ChatDeliveryState.SENT
-                        else -> ChatDeliveryState.FAILED
-                    }
-                )
-                if (!canceled && (replyEnd == null || chatGptError != null)) {
-                    val message = if (chatGptError?.messageRes == R.string.ai_chatgpt_usage_limit) {
-                        val label = context.getString(R.string.ai_chatgpt_manage_usage)
-                        "${chatGptError.message}\n\n[$label]($CHATGPT_USAGE_URL)"
-                    } else chatGptError?.message ?: it.localizedMessage ?: it.toString()
-                    messages += ChatUiMessage(
-                        role = ChatRole.ASSISTANT,
-                        content = message,
-                        meta = "error"
-                    )
-                }
-            }
-            persistActiveSession()
-            sending = false
-            sendingJob = null
-            activeLoadingMessageId = null
-            activeLoadingStartedAt = null
-            activeStreamContentTarget = ""
-            activeStreamReasoningTarget = ""
-            activeStreamToolTraceTarget = emptyList()
-            activeStreamMemoryTraceTarget = emptyList()
-            activeWebActivity = null
-            activeWebAccess = null
-            refreshContextUsage()
-            if (canceled) {
-                contextStatusText = null
-                return@launch
-            }
-            val queuedMessages = messages.filter {
-                it.role == ChatRole.USER && it.deliveryState == ChatDeliveryState.QUEUED
-            }
-            if (queuedMessages.isNotEmpty()) {
-                val queuedIds = queuedMessages.map { it.id }
-                queuedMessages.forEach { message ->
-                    uploadMessages += chatClient.newUserMessage(
-                        AiChatContextManager.removeEmbeddedSkill(
-                            message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
-                        )
-                    )
-                }
-                updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
-                refreshContextUsage()
-                persistActiveSession()
-                sendCurrentMessages(queuedIds)
-            } else {
-                bookToLookup?.let { (messageId, candidate) ->
-                    launchBookSourceLookup(messageId, candidate, automatically = true)
-                }
-            }
-        }
+        chatSession.sendCurrentMessages(activeUserMessageIds, currentModelSelection())
     }
 
     fun stopSending() {
-        if (activeBookLookupMessageId != null) cancelBookSourceLookup()
         bookOpenJob?.cancel()
-        if (!sending) return
-        sendingJob?.cancel()
+        chatSession.stopSending()
     }
 
     BackHandler(
         enabled = bookSearchMode && drawerState.isClosed && !globalSearchMode && !statsMode &&
             !exportSelectionMode && !historyManageMode && chatSearch == null,
     ) {
-        stopSending()
+        bookOpenJob?.cancel()
         persistActiveSession()
-        scope.launch {
-            bookSearchSaveJob?.join()
-            onBack()
-        }
+        onBack()
     }
 
     fun manuallyCompressContext() {
-        if (sending || manualContextCompacting) return
         if (!ensureModelGenerationRoute()) return
-        syncModeEntryContext()
-        syncActiveSkillContext()
-        manualContextCompacting = true
-        sending = true
-        val promptUsageAnchor = messages.latestPromptUsageAnchor()
-        val snapshot = uploadMessages.map { it.deepCopy().asJsonObject }.toMutableList()
-        val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
-        val conversationId = activeSessionId
-            ?: UUID.randomUUID().toString().also { activeSessionId = it }
-        val activeSkill = inputAttachments.lastOrNull { attachment ->
-            attachment.type == AiChatInputAttachmentType.SKILL
-        }
-        sendingJob = scope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    chatClient.compactContext(
-                        messages = snapshot,
-                        conversationId = conversationId,
-                        skillId = activeSkill?.id?.removePrefix("skill.").orEmpty(),
-                        skillRevision = activeSkill?.skillRuntimeRevision.orEmpty(),
-                        skillContentHash = activeSkill?.skillContentHash.orEmpty(),
-                        availableSkillIds = activeSkill?.availableSkillIds.orEmpty(),
-                        runtimeHooks = activeAgentMode.runtimeHooks +
-                            if (activeAgentMode.allowsUserSkills) {
-                                activeSkill?.skillRuntime?.runtimeHooks.orEmpty()
-                            } else {
-                                emptyList()
-                            },
-                        promptUsageAnchor = promptUsageAnchor,
-                        enabledMcpCapabilityIds = mcpCapabilityIds,
-                        onContextEvent = { event ->
-                            scope.launch {
-                                when (event.type) {
-                                    AiChatContextEventType.STARTED -> {
-                                        event.beforeUsage?.let { contextUsage = it }
-                                        contextStatusText = "正在手动压缩上下文..."
-                                    }
-
-                                    AiChatContextEventType.COMPLETED -> {
-                                        val after = event.afterTokens ?: event.beforeTokens
-                                        event.afterUsage?.let { contextUsage = it }
-                                        event.compaction?.let {
-                                            contextCompactionCount = it.revision
-                                        }
-                                        contextStatusText =
-                                            "上下文已手动压缩 · ${formatContextTokens(event.beforeTokens)} → ${formatContextTokens(after)}"
-                                    }
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-            val canceled = result.exceptionOrNull() is CancellationException
-            result.onSuccess { compacted ->
-                uploadMessages.clear()
-                uploadMessages.addAll(
-                    compacted.contextMessages.map { message -> message.deepCopy().asJsonObject }
-                )
-                contextUsage = compacted.contextUsage
-                contextCompactionCount = compacted.record.revision
-                messages += ChatUiMessage(
-                    role = ChatRole.ASSISTANT,
-                    content = "上下文已手动压缩",
-                    contextCompaction = compacted.record
-                )
-                persistActiveSession()
-            }.onFailure { error ->
-                contextStatusText = null
-                if (!canceled) {
-                    Toast.makeText(
-                        context,
-                        error.localizedMessage ?: "上下文压缩失败",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-            manualContextCompacting = false
-            sending = false
-            sendingJob = null
-            refreshContextUsage()
-            if (canceled) return@launch
-            val queuedMessages = messages.filter {
-                it.role == ChatRole.USER && it.deliveryState == ChatDeliveryState.QUEUED
-            }
-            if (queuedMessages.isNotEmpty()) {
-                val queuedIds = queuedMessages.map { it.id }
-                queuedMessages.forEach { message ->
-                    uploadMessages += chatClient.newUserMessage(
-                        AiChatContextManager.removeEmbeddedSkill(
-                            message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
-                        )
-                    )
-                }
-                updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
-                refreshContextUsage()
-                persistActiveSession()
-                sendCurrentMessages(queuedIds)
-            }
-        }
+        chatSession.manuallyCompressContext(currentModelSelection())
     }
 
     fun sendMessage(
         messageOverride: String? = null,
         uploadOverride: String? = null
     ) {
+        if (!sessionRestored || chatSession.deleted || chatSession.runningHostAction) return
         if (!ensureSkillToolSupport()) return
         val content = (messageOverride ?: input).trim()
         if (content.isBlank()) {
@@ -2177,7 +1386,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         if (bookSearchAvailability() != AiBookSearchAvailability.READY) return
         if (!ensureModelGenerationRoute()) return
         val isBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
-        if (isBookSearch) cancelBookSourceLookup()
+        if (isBookSearch) chatSession.cancelBookSourceLookup()
         input = ""
         val originalUpload = uploadOverride
             ?.trim()
@@ -2197,7 +1406,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             deliveryState = ChatDeliveryState.QUEUED,
             uploadContent = uploadContent
         )
-        val specified = if (isBookSearch && !sending) explicitAiBookSearchCandidate(content) else null
+        val specified = if (isBookSearch && !chatSession.sending) explicitAiBookSearchCandidate(content) else null
         if (specified != null) {
             messages += userMessage.copy(deliveryState = ChatDeliveryState.SENT)
             val message = ChatUiMessage(
@@ -2211,19 +1420,21 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 addProperty("role", "assistant")
                 addProperty("content", message.content)
             }
-            refreshContextUsage()
+            chatSession.refreshContextUsage()
             persistActiveSession()
-            launchBookSourceLookup(message.id, specified, automatically = true)
-            scope.launch { listState.scrollToItem(messages.lastIndex.coerceAtLeast(0)) }
+            chatSession.launchBookSourceLookup(message.id, specified, automatically = true)
+            scope.launch {
+                if (selectedSession.value === chatSession) listState.scrollToItem(messages.lastIndex.coerceAtLeast(0))
+            }
             return
         }
         messages += userMessage
         scope.launch {
-            if (chatSearch == null) listState.scrollToItem(messages.lastIndex)
+            if (selectedSession.value === chatSession && chatSearch == null) listState.scrollToItem(messages.lastIndex)
         }
         inputAttachments.removeAll { it.type == AiChatInputAttachmentType.CONTEXT }
         persistActiveSession()
-        if (sending) return
+        if (chatSession.sending) return
         val recoverableMessages = messages.filter {
             it.role == ChatRole.USER && it.deliveryState == ChatDeliveryState.RECOVERABLE
         }
@@ -2238,33 +1449,12 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 )
             )
         }
-        syncModeEntryContext()
-        syncActiveSkillContext()
-        updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
-        refreshContextUsage()
+        chatSession.syncModeEntryContext()
+        chatSession.syncActiveSkillContext()
+        chatSession.updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
+        chatSession.refreshContextUsage()
         persistActiveSession()
         sendCurrentMessages(queuedIds)
-    }
-
-    fun markInteractionResolved(
-        messageId: String,
-        interactionId: String,
-        resultLabel: String,
-        resultSelections: Map<String, String> = emptyMap()
-    ) {
-        updateMessage(messageId) { message ->
-            message.copy(
-                resolvedInteractionIds = (message.resolvedInteractionIds + interactionId).distinct(),
-                interactionResultLabels = message.interactionResultLabels +
-                    (interactionId to resultLabel.trim()),
-                interactionResultSelections = if (resultSelections.isEmpty()) {
-                    message.interactionResultSelections
-                } else {
-                    message.interactionResultSelections + (interactionId to resultSelections)
-                }
-            )
-        }
-        persistActiveSession()
     }
 
     fun submitInteraction(messageId: String, action: AiChatInteractionAction) {
@@ -2272,13 +1462,13 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             action.onCompleted(false)
             return
         }
-        if (sending) {
+        if (chatSession.sending || chatSession.runningHostAction) {
             Toast.makeText(context, "正在生成中", Toast.LENGTH_SHORT).show()
             action.onCompleted(false)
             return
         }
         if (action.interaction.type != AiChatInteractionType.MULTI_TAG_STANCE) {
-            markInteractionResolved(
+            chatSession.markInteractionResolved(
                 messageId = messageId,
                 interactionId = action.interaction.id,
                 resultLabel = action.displayText
@@ -2287,55 +1477,56 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             sendMessage(action.displayText, action.prompt)
             return
         }
-        syncModeEntryContext()
-        syncActiveSkillContext()
+        chatSession.syncModeEntryContext()
+        chatSession.syncActiveSkillContext()
         val activeSkill = AiChatContextManager.activeSkillSnapshot(uploadMessages)
         if (!action.skipped && activeSkill == null) {
             Toast.makeText(context, "当前系统工作流状态无效，请重新进入功能", Toast.LENGTH_LONG).show()
             action.onCompleted(false)
             return
         }
-        val conversationId = activeSessionId
-            ?: UUID.randomUUID().toString().also { activeSessionId = it }
+        val interaction = action.interaction
+        val selectedValues = action.selectedValues.toMap()
+        val skipped = action.skipped
+        val modelSelection = currentModelSelection()
         val turnId = UUID.randomUUID().toString()
-        scope.launch {
+        val task = chatSession.runHostAction {
             val result = runCatching {
-                if (action.skipped) {
-                    AiChatInteractionMemoryWriter.skipped(action.interaction)
+                if (skipped) {
+                    AiChatInteractionMemoryWriter.skipped(interaction)
                 } else {
                     withContext(Dispatchers.IO) {
                         AiChatInteractionMemoryWriter.write(
-                            interaction = action.interaction,
-                            selectedValues = action.selectedValues,
-                            agentMode = activeAgentMode,
+                            interaction = interaction,
+                            selectedValues = selectedValues,
+                            agentMode = mode,
                             activeSkill = requireNotNull(activeSkill),
-                            conversationId = conversationId,
+                            conversationId = id,
                             turnId = turnId
                         )
                     }
                 }
             }
             result.onSuccess { writeResult ->
+                if (deleted) return@onSuccess
                 markInteractionResolved(
                     messageId = messageId,
-                    interactionId = action.interaction.id,
+                    interactionId = interaction.id,
                     resultLabel = writeResult.displayText,
-                    resultSelections = action.selectedValues
+                    resultSelections = selectedValues
                 )
-                action.onCompleted(true)
-                uploadMessages += chatClient.newUserMessage(writeResult.continuationPrompt)
-                syncModeEntryContext()
-                syncActiveSkillContext()
-                refreshContextUsage()
-                persistActiveSession()
-                sendCurrentMessages()
+                this.uploadMessages += aiChatSessions.client.newUserMessage(writeResult.continuationPrompt)
+                sendCurrentMessages(emptyList(), modelSelection)
             }.onFailure { error ->
-                action.onCompleted(false)
-                Toast.makeText(
-                    context,
-                    error.localizedMessage ?: "阅读偏好保存失败",
-                    Toast.LENGTH_LONG
-                ).show()
+                if (!deleted && error !is CancellationException) {
+                    this.contextStatusText = error.localizedMessage ?: "阅读偏好保存失败"
+                }
+            }
+        }
+        scope.launch {
+            val result = task.await()
+            if (selectedSession.value === chatSession) {
+                action.onCompleted(result.isSuccess)
             }
         }
     }
@@ -2343,11 +1534,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     fun regenerateMessage(message: ChatUiMessage) {
         if (!ensureSkillToolSupport() || !ensureModelGenerationRoute()) return
         if (bookSearchAvailability() != AiBookSearchAvailability.READY) return
-        if (sending) {
+        if (chatSession.sending || chatSession.runningHostAction) {
             Toast.makeText(context, "正在生成中", Toast.LENGTH_SHORT).show()
             return
         }
-        if (activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID) cancelBookSourceLookup()
+        if (activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID) chatSession.cancelBookSourceLookup()
         val index = messages.indexOfFirst { it.id == message.id }
         if (index < 0) {
             return
@@ -2379,36 +1570,29 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         messages.replaceWith(truncatedMessages)
         uploadMessages.clear()
         uploadMessages.addAll(preservedHistory ?: rebuildUploadMessages(chatClient, messages))
-        syncModeEntryContext()
-        syncActiveSkillContext()
+        chatSession.syncModeEntryContext()
+        chatSession.syncActiveSkillContext()
         val activeUserIds = if (message.role == ChatRole.USER) listOf(message.id) else emptyList()
-        updateDeliveryState(activeUserIds, ChatDeliveryState.IN_FLIGHT)
+        chatSession.updateDeliveryState(activeUserIds, ChatDeliveryState.IN_FLIGHT)
         persistActiveSession()
         sendCurrentMessages(activeUserIds)
     }
 
     fun deleteMessage(message: ChatUiMessage) {
-        if (sending) {
+        if (chatSession.sending || chatSession.runningHostAction) {
             Toast.makeText(context, "正在生成中，暂不能删除消息", Toast.LENGTH_SHORT).show()
             return
         }
-        if (message.id == activeBookLookupMessageId) cancelBookSourceLookup()
+        if (message.id == chatSession.activeBookLookupMessageId) chatSession.cancelBookSourceLookup()
         val removed = messages.removeAll { it.id == message.id }
         if (!removed) {
             return
         }
         uploadMessages.clear()
         uploadMessages.addAll(rebuildUploadMessages(chatClient, messages))
-        refreshContextUsage()
-        contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
-        if (messages.any { !it.loading }) {
-            persistActiveSession()
-        } else {
-            activeSessionId?.let { sessionId ->
-                sessions.removeAll { it.id == sessionId }
-                saveHistory(sessionId)
-            }
-        }
+        chatSession.refreshContextUsage()
+        chatSession.contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
+        persistActiveSession()
     }
 
     fun toggleFavorite(message: ChatUiMessage) {
@@ -2496,7 +1680,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     }
 
     fun forkMessage(message: ChatUiMessage) {
-        if (sending) {
+        if (chatSession.sending || chatSession.runningHostAction) {
             Toast.makeText(context, "正在生成中，暂不能创建分支", Toast.LENGTH_SHORT).show()
             return
         }
@@ -2510,15 +1694,15 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             return
         }
         persistActiveSession()
-        activeSessionId = UUID.randomUUID().toString()
-        messages.replaceWith(forkedMessages)
-        uploadMessages.clear()
-        uploadMessages.addAll(rebuildUploadMessages(chatClient, messages))
-        refreshContextUsage()
-        contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
-        contextStatusText = null
-        selectedDrawerIndex = 2
-        persistActiveSession()
+        val forked = AiChatSessionRuntime(aiChatSessions, activeAgentMode, activeModeEntryContext, inputAttachments.toList())
+        forked.modeEntryStarted = modeEntryStarted
+        forked.manualMcpCapabilityIds.replaceWith(manualMcpCapabilityIds.toList())
+        forked.enabledMcpCapabilityIds.replaceWith(enabledMcpCapabilityIds.toList())
+        forked.messages.addAll(forkedMessages)
+        forked.uploadMessages.replaceWith(rebuildUploadMessages(chatClient, forked.messages))
+        forked.contextCompactionCount = AiChatContextManager.compactionRevision(forked.uploadMessages)
+        forked.persist()
+        selectRuntime(forked)
         Toast.makeText(context, "已创建分支", Toast.LENGTH_SHORT).show()
     }
 
@@ -2531,19 +1715,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         if (targetIds.isEmpty()) {
             return
         }
-        val now = System.currentTimeMillis()
-        sessions.indices.forEach { index ->
-            if (sessions[index].id in targetIds) {
-                sessions[index] = sessions[index].copy(
-                    isPinned = true,
-                    updatedAt = now
-                )
-            }
-        }
-        sessions.sortChatSessions()
-        scope.launch(Dispatchers.IO) {
-            AiChatHistoryStore.updatePinned(targetIds, isPinned = true, updatedAt = now)
-        }
+        aiChatSessions.pin(targetIds, System.currentTimeMillis())
         Toast.makeText(context, "已置顶 ${targetIds.size} 条聊天记录", Toast.LENGTH_SHORT).show()
     }
 
@@ -2566,32 +1738,16 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         }
         val wasActive = activeSessionId in targetIds
         val deleteCount = sessions.count { it.id in targetIds }
-        sessions.removeAll { it.id in targetIds }
-        loadedSessionDetailIds.removeAll(targetIds)
+        aiChatSessions.delete(targetIds)
         selectedHistoryIds.removeAll(targetIds)
-        scope.launch(Dispatchers.IO) {
-            AiChatHistoryStore.deleteSessions(targetIds)
-        }
         if (wasActive) {
-            val nextSession = sessions.firstOrNull()
-            if (nextSession != null) {
-                openSession(nextSession)
-            } else {
-                activeSessionId = UUID.randomUUID().toString()
-                activeAgentMode = initialAgentMode
-                activeModeEntryContext = initialModeEntryContext
-                modeEntryStarted = false
-                messages.clear()
-                uploadMessages.clear()
-                uploadMessages += chatClient.newSystemMessage()
-                inputAttachments.replaceWith(entryAttachments)
-                contextCompactionCount = 0
-                contextStatusText = null
-                manualContextCompacting = false
-                refreshContextUsage()
-                selectedDrawerIndex = 2
-                saveHistory(activeSessionId)
-            }
+            val next = sessions.firstOrNull()
+            if (next == null) {
+                selectRuntime(
+                    AiChatSessionRuntime(aiChatSessions, initialAgentMode, initialModeEntryContext, entryAttachments),
+                    createdForEntry = true,
+                )
+            } else openSession(next)
         } else {
             saveHistory(activeSessionId)
         }
@@ -2612,6 +1768,12 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             }
             return
         }
+        aiChatSessions.get(itemSession.id)?.let { session ->
+            session.updateMessage(item.messageId) { it.copy(favorite = false) }
+            session.persist()
+            Toast.makeText(context, "已取消收藏", Toast.LENGTH_SHORT).show()
+            return
+        }
         val sessionIndex = sessions.indexOfFirst { it.id == itemSession.id }
         if (sessionIndex < 0) {
             return
@@ -2626,7 +1788,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             }
         )
         sessions[sessionIndex] = updatedSession
-        saveSessionSnapshot(updatedSession)
+        aiChatSessions.save(updatedSession)
         Toast.makeText(context, "已取消收藏", Toast.LENGTH_SHORT).show()
     }
 
@@ -2654,7 +1816,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             action.onCompleted(false)
             return
         }
-        if (sending || modeEntryStarted || messages.isNotEmpty()) {
+        if (chatSession.sending || modeEntryStarted || messages.isNotEmpty()) {
             action.onCompleted(false)
             return
         }
@@ -2671,12 +1833,12 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             return
         }
         modeEntryStarted = true
-        syncModeEntryContext()
-        syncActiveSkillContext()
+        chatSession.syncModeEntryContext()
+        chatSession.syncActiveSkillContext()
         persistActiveSession()
         val contextSnapshot = activeModeEntryContext
         val workKey = contextSnapshot.payloadString("work_key")
-        scope.launch {
+        val task = chatSession.runHostAction {
             val memoryResult = runCatching {
                 withContext(Dispatchers.IO) {
                     appDb.agentMemoryDao.search(
@@ -2692,7 +1854,8 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                     )
                 }
             }
-            messages += ChatUiMessage(
+            if (deleted) return@runHostAction
+            this.messages += ChatUiMessage(
                 role = ChatRole.ASSISTANT,
                 content = buildBookScanContinueEntryContent(
                     context = contextSnapshot,
@@ -2701,9 +1864,14 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 )
             )
             refreshContextUsage()
-            persistActiveSession()
-            action.onCompleted(true)
-            if (chatSearch == null) listState.scrollToItem(messages.lastIndex)
+            persist()
+        }
+        scope.launch {
+            task.await()
+            if (selectedSession.value === chatSession) {
+                action.onCompleted(true)
+                if (chatSearch == null) listState.scrollToItem(messages.lastIndex)
+            }
         }
     }
 
@@ -2724,16 +1892,16 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             return false
         }
         modeEntryStarted = true
-        syncModeEntryContext()
-        syncActiveSkillContext()
+        chatSession.syncModeEntryContext()
+        chatSession.syncActiveSkillContext()
         uploadMessages += chatClient.newUserMessage(MODE_ENTRY_START_PROMPT)
-        refreshContextUsage()
+        chatSession.refreshContextUsage()
         persistActiveSession()
         sendCurrentMessages()
         return true
     }
 
-    val modeEntryStateDecision = if (!sending) {
+    val modeEntryStateDecision = if (sessionRestored && !sending) {
         resolveAgentModeEntryLaunch(
             policy = activeAgentMode.entryPolicy,
             hasRequiredContext = activeModeEntryContext != null,
@@ -3113,11 +2281,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                     if (bookSearchMode) bookSearchGreetingPending = false
                                 },
                                  backdrop = controlsBackdrop,
-                                messageInputEnabled = modeEntryConfirmation == null &&
+                                 messageInputEnabled = sessionRestored && !chatSession.runningHostAction && modeEntryConfirmation == null &&
                                     skillToolErrorText == null && bookSearchAvailability == AiBookSearchAvailability.READY,
-                                sendEnabled = modeEntryConfirmation == null && skillToolErrorText == null &&
+                                 sendEnabled = sessionRestored && !chatSession.runningHostAction && modeEntryConfirmation == null && skillToolErrorText == null &&
                                     bookSearchAvailability == AiBookSearchAvailability.READY,
-                                sending = sending || activeBookLookupMessageId != null,
+                                sending = sending || chatSession.activeBookLookupMessageId != null,
                                 inputNotice = bookSearchNotice,
                                 inputHint = if (bookSearchMode) stringResource(
                                     if (messages.isEmpty()) R.string.ai_book_search_hint else R.string.ai_book_search_follow_up
@@ -3197,7 +2365,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 },
                                 onRemoveAttachment = { attachment ->
                                     inputAttachments.removeAll { it.id == attachment.id }
-                                    refreshContextUsage()
+                                    chatSession.refreshContextUsage()
                                 },
                                 onRemoveSkill = { skill ->
                                     if (skillInputPolicy.removable) {
@@ -3208,7 +2376,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                                 manualMcpCapabilityIds
                                             )
                                         )
-                                        refreshContextUsage()
+                                        chatSession.refreshContextUsage()
                                         persistActiveSession()
                                     }
                                     }
@@ -3361,7 +2529,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         ContextUsageDialog(
             usage = contextUsage,
             compactionCount = maxOf(
-                contextCompactionCount,
+                chatSession.contextCompactionCount,
                 messages.count { it.contextCompaction != null }
             ),
             sessionUsage = messages.contextSessionUsage(),
@@ -3384,7 +2552,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 if (inputAttachments.none { it.id == attachment.id }) {
                     inputAttachments += attachment
                 }
-                refreshContextUsage()
+                chatSession.refreshContextUsage()
                 showContextAttachmentSheet = false
             },
             onDismiss = { showContextAttachmentSheet = false }
@@ -3505,7 +2673,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                     }
                 })
                 bookScopeSelection = null
-                launchBookSourceLookup(messageId, candidate)
+                chatSession.launchBookSourceLookup(messageId, candidate)
             },
             onDismiss = { bookScopeSelection = null },
         )
@@ -3569,6 +2737,45 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 modelSheetLaunchGate.release()
             },
         )
+    }
+}
+
+@Composable
+private fun AiChatToolApprovalDialog(activity: AiChatActivity?, pending: AiChatToolApproval?) {
+    val presenter = remember { Any() }
+    val approval = pending?.takeIf { it.presenter == null || it.presenter === presenter } ?: return
+    if (activity == null || activity.isFinishing || activity.isDestroyed || approval.response.isCompleted) return
+    DisposableEffect(activity, approval) {
+        approval.presenter = presenter
+        val summaries = approval.calls.map { it.toWriteOperationSummary() }
+        val destructive = approval.calls.any { it.sideEffect == McpToolSideEffect.DESTRUCTIVE }
+        val dialog = ComponentDialog(activity)
+        fun resolve(confirmed: Boolean) {
+            approval.response.complete(confirmed)
+            dialog.dismiss()
+        }
+        val composeView = ComposeView(activity).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    AiToolWriteConfirmationContent(
+                        summaries = summaries,
+                        destructive = destructive,
+                        onCancel = { resolve(false) },
+                        onConfirm = { resolve(true) },
+                    )
+                }
+            }
+        }
+        dialog.setContentView(composeView)
+        dialog.setOnCancelListener { resolve(false) }
+        dialog.show()
+        dialog.applyNgWindow(height = (activity.resources.displayMetrics.heightPixels * 0.62f).toInt())
+        onDispose {
+            dialog.setOnCancelListener(null)
+            dialog.dismiss()
+            if (approval.presenter === presenter) approval.presenter = null
+        }
     }
 }
 
@@ -5074,7 +4281,7 @@ private fun rememberChatSearchMatches(
 }
 
 // Render the same text as the message view without binding images to a View.
-private fun aiChatSearchMarkdown(context: Context): Markwon = Markwon.builder(context)
+internal fun aiChatSearchMarkdown(context: Context): Markwon = Markwon.builder(context)
     .usePlugin(HtmlPlugin.create())
     .usePlugin(TablePlugin.create(context))
     .build()
@@ -7656,7 +6863,7 @@ private fun JsonArray.allElements(predicate: (JsonElement) -> Boolean): Boolean 
     return (0 until size()).all { index -> predicate(get(index)) }
 }
 
-private fun AgentModeEntryContext?.payloadString(key: String): String {
+internal fun AgentModeEntryContext?.payloadString(key: String): String {
     return runCatching {
         this?.payload
             ?.get(key)
@@ -9582,7 +8789,7 @@ private fun RikkaAssistantAvatar(
     }
 }
 
-private fun AiChatTurnResult.toUiMessage(elapsedMs: Long, modelSelection: AiModelSelection): ChatUiMessage {
+internal fun AiChatTurnResult.toUiMessage(elapsedMs: Long, modelSelection: AiModelSelection): ChatUiMessage {
     val meta = buildList {
         usage?.promptTokens?.let { add("↑ ${formatNumber(it)} tokens") }
         usage?.completionTokens?.let { add("↓ ${formatNumber(it)} tokens") }
@@ -9802,14 +9009,14 @@ private fun <T> MutableList<T>.replaceWith(newItems: List<T>) {
     addAll(newItems)
 }
 
-private fun MutableList<AiChatSessionSnapshot>.sortChatSessions() {
+internal fun MutableList<AiChatSessionSnapshot>.sortChatSessions() {
     sortWith(
         compareByDescending<AiChatSessionSnapshot> { it.isPinned }
             .thenByDescending { it.updatedAt }
     )
 }
 
-private fun MutableList<JsonObject>.replaceUploadMessages(
+internal fun MutableList<JsonObject>.replaceUploadMessages(
     session: AiChatSessionSnapshot,
     chatClient: AiChatClient
 ) {
@@ -9932,7 +9139,7 @@ private fun buildModeSkillInputAttachments(
     return attachments
 }
 
-private fun resolveModeManagedCapabilities(
+internal fun resolveModeManagedCapabilities(
     mode: AgentModeDefinition,
     attachments: List<AiChatInputAttachment>
 ): List<String> {
@@ -10077,14 +9284,14 @@ private fun buildRuntimeRevisionToken(
         ?: "$id@$version"
 }
 
-private fun List<AiChatInputAttachment>.loadedSkillIds(): List<String> {
+internal fun List<AiChatInputAttachment>.loadedSkillIds(): List<String> {
     return filter { it.type == AiChatInputAttachmentType.SKILL }
         .map { it.id.removePrefix("skill.").trim() }
         .filter { it.isNotBlank() }
         .distinct()
 }
 
-private fun buildUserUploadContent(
+internal fun buildUserUploadContent(
     userContent: String,
     attachments: List<AiChatInputAttachment>
 ): String {
@@ -10207,7 +9414,7 @@ private fun formatChatSearchTime(timeMillis: Long): String {
     return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timeMillis))
 }
 
-private fun List<ChatUiMessage>.deriveChatTitle(): String? {
+internal fun List<ChatUiMessage>.deriveChatTitle(): String? {
     val source = firstOrNull { it.role == ChatRole.USER }?.content
         ?: firstOrNull { it.content.isNotBlank() }?.content
         ?: return null
@@ -10536,7 +9743,7 @@ private fun String?.parseAiTokenStats(): AiTokenStats {
     )
 }
 
-private fun List<ChatUiMessage>.latestPromptUsageAnchor(): AiChatPromptUsageAnchor? {
+internal fun List<ChatUiMessage>.latestPromptUsageAnchor(): AiChatPromptUsageAnchor? {
     val latestCompactionIndex = indexOfLast { it.contextCompaction != null }
     val anchorIndex = indices.lastOrNull { index ->
         val message = get(index)
@@ -10615,7 +9822,7 @@ private fun AiChatMessageSnapshot.drawerPreview(): String {
         ?: "收藏消息"
 }
 
-private fun ChatUiMessage.toSnapshot(): AiChatMessageSnapshot {
+internal fun ChatUiMessage.toSnapshot(): AiChatMessageSnapshot {
     return AiChatMessageSnapshot(
         id = id,
         role = when (role) {
@@ -10651,7 +9858,7 @@ private fun ChatUiMessage.toSnapshot(): AiChatMessageSnapshot {
     )
 }
 
-private fun AiChatMessageSnapshot.toUiMessage(): ChatUiMessage {
+internal fun AiChatMessageSnapshot.toUiMessage(): ChatUiMessage {
     return ChatUiMessage(
         id = id.ifBlank { UUID.randomUUID().toString() },
         role = when (role) {
@@ -10700,7 +9907,7 @@ private fun AiChatMessageSnapshot.toUiMessage(): ChatUiMessage {
     )
 }
 
-private data class ChatUiMessage(
+internal data class ChatUiMessage(
     val id: String = UUID.randomUUID().toString(),
     val role: ChatRole,
     val content: String,
@@ -10831,12 +10038,12 @@ private enum class ChatExportFormat(val mimeType: String) {
     IMAGE("image/png")
 }
 
-private enum class ChatRole {
+internal enum class ChatRole {
     USER,
     ASSISTANT
 }
 
-private enum class ChatDeliveryState(val snapshotValue: String) {
+internal enum class ChatDeliveryState(val snapshotValue: String) {
     SENT(AiChatMessageSnapshot.DELIVERY_SENT),
     QUEUED(AiChatMessageSnapshot.DELIVERY_QUEUED),
     IN_FLIGHT(AiChatMessageSnapshot.DELIVERY_IN_FLIGHT),
@@ -10855,7 +10062,7 @@ private enum class ChatDeliveryState(val snapshotValue: String) {
     }
 }
 
-private fun formatContextTokens(tokens: Int): String {
+internal fun formatContextTokens(tokens: Int): String {
     return "${formatContextTokenValue(tokens)} tokens"
 }
 

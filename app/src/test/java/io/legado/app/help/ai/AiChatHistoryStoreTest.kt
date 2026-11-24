@@ -120,6 +120,24 @@ class AiChatHistoryStoreTest {
     }
 
     @Test
+    fun durableReplyStaysBeforeMessagesQueuedDuringTheTurn() {
+        val base = AiChatSessionSnapshot(
+            id = "conversation", title = "测试", createdAt = 1, updatedAt = 1,
+            messages = listOf(
+                AiChatMessageSnapshot("first", "user", "已发送"),
+                AiChatMessageSnapshot("queued", "user", "排队中", deliveryState = AiChatMessageSnapshot.DELIVERY_QUEUED),
+            ),
+        )
+        val merged = AiChatHistoryStore.mergeDurableTurn(
+            base, "reply", AiChatDurableContextUpdate(emptyList(), "阶段结果", null),
+            now = 2, assistantMessageIndex = 1,
+        )
+
+        assertEquals(listOf("first", "reply", "queued"), merged.messages.map { it.id })
+        assertEquals(AiChatMessageSnapshot.DELIVERY_QUEUED, merged.messages.last().deliveryState)
+    }
+
+    @Test
     fun laterDurableUpdateReplacesDraftInsteadOfDuplicatingIt() {
         val existingDraft = AiChatMessageSnapshot("assistant-draft", "assistant", "旧正文")
         val base = AiChatSessionSnapshot(

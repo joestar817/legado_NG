@@ -135,10 +135,11 @@ class AiChatClient internal constructor(
         runtimeHooks: List<AgentHookBinding> = emptyList(),
         promptUsageAnchor: AiChatPromptUsageAnchor? = null,
         enabledMcpCapabilityIds: List<String> = emptyList(),
+        selection: AiModelSelection = AiModelSelection(AiConfig.assistantProviderId, AiConfig.assistantModelId),
         onContextEvent: (AiChatContextEvent) -> Unit = {}
     ): AiChatManualCompactionResult {
-        val selection = runCatching { AiConfig.requireAssistantModel() }.getOrElse {
-            throw IllegalStateException("请先在模型设置中选择聊天模型")
+        check(selection.providerId.isNotBlank() && selection.modelId.isNotBlank()) {
+            "请先在模型设置中选择聊天模型"
         }
         val setting = AiProviderStore.provider(selection.providerId)
             ?: error(appCtx.getString(R.string.ai_assistant_model_reselect))
@@ -231,7 +232,7 @@ class AiChatClient internal constructor(
         runtimeHooks: List<AgentHookBinding> = emptyList(),
         promptUsageAnchor: AiChatPromptUsageAnchor? = null,
         onStreamUpdate: (AiChatStreamUpdate) -> Unit = {},
-        onDurableContextUpdate: (AiChatDurableContextUpdate) -> Unit = {},
+        onDurableContextUpdate: suspend (AiChatDurableContextUpdate) -> Unit = {},
         onContextEvent: (AiChatContextEvent) -> Unit = {},
         enabledMcpCapabilityIds: List<String> = emptyList(),
         allowWeb: Boolean = false,
@@ -239,6 +240,7 @@ class AiChatClient internal constructor(
         webUserText: String? = null,
         onWebUpdate: (AiWebActivity, AiWebAccess) -> Unit = { _, _ -> },
         selection: AiModelSelection = AiModelSelection(AiConfig.assistantProviderId, AiConfig.assistantModelId),
+        onToolActivity: (String?) -> Unit = {},
         onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
     ): AiChatTurnResult {
         check(selection.providerId.isNotBlank() && selection.modelId.isNotBlank()) {
@@ -764,36 +766,41 @@ class AiChatClient internal constructor(
 
                         is AgentToolExecutionBeginOutcome.Started -> {
                             startedIntent = begin.intent
-                            if (call.externalTool != null) {
-                                requireNotNull(externalWeb).execute(call.externalTool, call.arguments)
-                            } else runCatching {
-                                AiAgentSkillTools.call(
-                                    name = call.toolName,
-                                    arguments = call.arguments,
-                                    activeSkillId = skillId,
-                                    contentHash = skillContentHash,
-                                    availableSkillIds = normalizedAvailableSkillIds(
-                                        skillId,
-                                        availableSkillIds
-                                    ),
-                                    activeSkill = activeSkill
-                                ) ?: McpInternalChannel.callTool(
-                                    call.toolName,
-                                    call.arguments,
-                                    enabledMcpCapabilityIds,
-                                    McpToolExecutionContext(
-                                        conversationId = conversationId,
-                                        turnId = turnId,
-                                        skillRevision = skillRevision,
-                                        skillContentHash = skillContentHash,
-                                        allowedMemoryRanges = memoryPolicy?.allowedRanges.orEmpty()
+                            onToolActivity(call.toolName)
+                            try {
+                                if (call.externalTool != null) {
+                                    requireNotNull(externalWeb).execute(call.externalTool, call.arguments)
+                                } else runCatching {
+                                    AiAgentSkillTools.call(
+                                        name = call.toolName,
+                                        arguments = call.arguments,
+                                        activeSkillId = skillId,
+                                        contentHash = skillContentHash,
+                                        availableSkillIds = normalizedAvailableSkillIds(
+                                            skillId,
+                                            availableSkillIds
+                                        ),
+                                        activeSkill = activeSkill
+                                    ) ?: McpInternalChannel.callTool(
+                                        call.toolName,
+                                        call.arguments,
+                                        enabledMcpCapabilityIds,
+                                        McpToolExecutionContext(
+                                            conversationId = conversationId,
+                                            turnId = turnId,
+                                            skillRevision = skillRevision,
+                                            skillContentHash = skillContentHash,
+                                            allowedMemoryRanges = memoryPolicy?.allowedRanges.orEmpty()
+                                        )
                                     )
-                                )
-                            }.getOrElse {
-                                JsonObject().apply {
-                                    addProperty("ok", false)
-                                    addProperty("error", it.localizedMessage ?: "MCP tool failed")
+                                }.getOrElse {
+                                    JsonObject().apply {
+                                        addProperty("ok", false)
+                                        addProperty("error", it.localizedMessage ?: "MCP tool failed")
+                                    }
                                 }
+                            } finally {
+                                onToolActivity(null)
                             }
                         }
                     }
