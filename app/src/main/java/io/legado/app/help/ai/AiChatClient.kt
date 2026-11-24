@@ -238,10 +238,11 @@ class AiChatClient internal constructor(
         requireWebSearch: Boolean = false,
         webUserText: String? = null,
         onWebUpdate: (AiWebActivity, AiWebAccess) -> Unit = { _, _ -> },
+        selection: AiModelSelection = AiModelSelection(AiConfig.assistantProviderId, AiConfig.assistantModelId),
         onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
     ): AiChatTurnResult {
-        val selection = runCatching { AiConfig.requireAssistantModel() }.getOrElse {
-            throw IllegalStateException("请先在模型设置中选择聊天模型")
+        check(selection.providerId.isNotBlank() && selection.modelId.isNotBlank()) {
+            "请先在模型设置中选择聊天模型"
         }
         val setting = AiProviderStore.provider(selection.providerId)
             ?: error(appCtx.getString(R.string.ai_assistant_model_reselect))

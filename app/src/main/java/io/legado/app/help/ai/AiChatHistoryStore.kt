@@ -34,7 +34,7 @@ object AiChatHistoryStore {
     fun loadIndex(): AiChatHistoryState {
         return synchronized(lock) {
             migrateLegacyFileIfNeeded()
-            val sessions = appDb.aiChatDao.getConversationMetadata(MAX_SESSIONS)
+            val sessions = selectChatHistoryMetadata(MAX_SESSIONS, appDb.aiChatDao::getConversationMetadata)
                 .map { it.toSummarySnapshot() }
             val activeId = appCtx.getPrefString(PreferKey.aiChatActiveSessionId)
                 ?.takeIf { id -> sessions.any { it.id == id } }
@@ -95,9 +95,9 @@ object AiChatHistoryStore {
 
     fun loadAllSessionDetails(): List<AiChatSessionSnapshot> {
         return synchronized(lock) {
-            appDb.aiChatDao.getConversations(MAX_SESSIONS)
+            val dao = appDb.aiChatDao
+            dao.readConversations(selectChatHistoryMetadata(MAX_SESSIONS, dao::getConversationMetadata))
                 .map { it.toSnapshot() }
-                .filter { it.messages.isNotEmpty() || it.modeEntryContext != null }
         }
     }
 
@@ -123,7 +123,8 @@ object AiChatHistoryStore {
     fun saveDurableTurn(
         baseSession: AiChatSessionSnapshot,
         assistantMessageId: String,
-        update: AiChatDurableContextUpdate
+        update: AiChatDurableContextUpdate,
+        modelSelection: AiModelSelection,
     ) {
         if (baseSession.id.isBlank() || assistantMessageId.isBlank()) return
         synchronized(lock) {
@@ -132,7 +133,8 @@ object AiChatHistoryStore {
                     baseSession = baseSession,
                     assistantMessageId = assistantMessageId,
                     update = update,
-                    now = System.currentTimeMillis()
+                    now = System.currentTimeMillis(),
+                    modelSelection = modelSelection,
                 ).sanitize()
             )
         }
@@ -142,7 +144,8 @@ object AiChatHistoryStore {
         baseSession: AiChatSessionSnapshot,
         assistantMessageId: String,
         update: AiChatDurableContextUpdate,
-        now: Long
+        now: Long,
+        modelSelection: AiModelSelection? = null,
     ): AiChatSessionSnapshot {
         val messages = baseSession.messages
             .filterNot { message -> message.id == assistantMessageId }
@@ -161,7 +164,9 @@ object AiChatHistoryStore {
                 toolTrace = update.toolTrace,
                 toolReceipts = update.toolReceipts,
                 webActivity = update.webActivity,
-                deliveryState = AiChatMessageSnapshot.DELIVERY_IN_FLIGHT
+                deliveryState = AiChatMessageSnapshot.DELIVERY_IN_FLIGHT,
+                usageProviderId = modelSelection?.providerId,
+                usageModelId = modelSelection?.modelId,
             )
         }
         return baseSession.copy(
@@ -393,6 +398,31 @@ object AiChatHistoryStore {
                 message
             }
         }
+    }
+}
+
+internal fun hasChatHistoryContent(
+    hasMessages: Boolean,
+    modeEntryStarted: Boolean,
+    bookSearchDraft: String? = null,
+): Boolean = hasMessages || modeEntryStarted || !bookSearchDraft.isNullOrBlank()
+
+internal fun selectChatHistoryMetadata(
+    limit: Int,
+    loadPage: (limit: Int, offset: Int) -> List<AiChatConversationMetadata>,
+): List<AiChatConversationMetadata> = buildList {
+    var offset = 0
+    while (size < limit) {
+        val page = loadPage(limit, offset)
+        // The index omits message bodies. A missing preview is not evidence of an empty session.
+        val listed = page.asSequence().filter { metadata ->
+            hasChatHistoryContent(metadata.hasMessageNodes, metadata.modeEntryStarted) ||
+                (metadata.assistantId.trim() == AgentModeRegistry.BOOK_SEARCH_ID &&
+                    AgentModeEntryContext.fromJsonOrNull(metadata.modeEntryContext).bookSearchDraft() != null)
+        }
+        addAll(listed.take(limit - size))
+        if (page.size < limit) break
+        offset += page.size
     }
 }
 

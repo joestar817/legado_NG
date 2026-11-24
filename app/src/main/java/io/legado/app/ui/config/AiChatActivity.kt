@@ -11,6 +11,9 @@ import io.legado.app.help.ai.AiBookSourceLookup
 import io.legado.app.help.ai.AiBookSourceStatus
 import io.legado.app.help.ai.aiBookSearchVisibleText
 import io.legado.app.help.ai.bookSearchAvailability
+import io.legado.app.help.ai.bookSearchDraft
+import io.legado.app.help.ai.bookSearchDraftForHistory
+import io.legado.app.help.ai.hasChatHistoryContent
 import io.legado.app.help.ai.explicitAiBookSearchCandidate
 import io.legado.app.help.ai.isConfirmedBookSearchAudioScope
 import io.legado.app.help.ai.parseAiBookSearchReply
@@ -86,6 +89,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -122,6 +126,7 @@ import androidx.compose.material.icons.automirrored.rounded.CallSplit
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddComment
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Close
@@ -143,8 +148,6 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Image as ImageIcon
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -298,7 +301,9 @@ import io.legado.app.help.ai.webUrl
 import io.legado.app.help.ai.withInlineLinks
 import io.legado.app.help.ai.AiModelAbility
 import io.legado.app.help.ai.AiModelGenerationIssue
+import io.legado.app.help.ai.AiModelSelection
 import io.legado.app.help.ai.AiPendingToolCall
+import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.ai.AiSkillCapabilityGrantStore
@@ -430,6 +435,8 @@ private const val MODE_ENTRY_START_PROMPT =
         "不要复述本条内部触发消息，不要输出中间过程播报。"
 
 private const val AI_CHAT_DRAWER_WIDTH_RATIO = 0.65f
+private val AiChatComposerBottomPadding = 4.dp
+private val AiChatComposerCornerRadius = 20.dp
 
 private val MODE_ENTRY_CONTEXT_TOKEN =
     Regex("""\{\{context\.(title|payload\.[A-Za-z0-9_]+)\}\}""")
@@ -454,11 +461,6 @@ internal fun renderModeEntryConfirmationTemplate(
         }
     }.trim()
 }
-
-internal fun shouldPersistActiveSession(
-    hasVisibleMessages: Boolean,
-    modeEntryStarted: Boolean
-): Boolean = hasVisibleMessages || modeEntryStarted
 
 internal fun buildModeEntryConfirmation(
     mode: AgentModeDefinition,
@@ -699,6 +701,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         rememberSaveable { mutableStateOf(initialInput) }
     } else remember { mutableStateOf(initialInput) }
     var input by inputState
+    var bookSearchDraftEdited by rememberSaveable { mutableStateOf(false) }
     var bookSearchGreetingPending by rememberSaveable { mutableStateOf(true) }
     var bookSearchHistoryRestored by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
@@ -767,6 +770,9 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     }
     val selectedModelIconRes = remember(configVersion) {
         AiAssistantConfigUi.selectedModelIconRes()
+    }
+    val messageModelProviders = remember(configVersion) {
+        AiProviderStore.providers().associateBy { it.id }
     }
     val selectedReasoningEnabled = remember(configVersion) {
         AiAssistantConfigUi.selectedReasoningEnabled()
@@ -1195,9 +1201,9 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     fun persistedModeEntryContext(): AgentModeEntryContext? {
         val entry = activeModeEntryContext ?: return null
         if (activeAgentMode.id != AgentModeRegistry.BOOK_SEARCH_ID) return entry
+        val draft = bookSearchDraftForHistory(input, messages.any { !it.loading }, bookSearchDraftEdited)
         return entry.copy(payload = entry.payload.deepCopy().apply {
-            val draft = input.take(4000).filter { !it.isISOControl() || it in "\n\r\t" }
-            if (draft.isBlank()) remove(AI_BOOK_SEARCH_DRAFT) else addProperty(AI_BOOK_SEARCH_DRAFT, draft)
+            if (draft == null) remove(AI_BOOK_SEARCH_DRAFT) else addProperty(AI_BOOK_SEARCH_DRAFT, draft)
         })
     }
 
@@ -1205,10 +1211,15 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         val visibleMessages = messages.filterNot { it.loading }
         val oldSession = sessions.firstOrNull { it.id == activeSessionId }
         val isBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
-        val hasBookSearchDraft = isBookSearch && (input.isNotBlank() || oldSession != null)
-        if (!hasBookSearchDraft && !shouldPersistActiveSession(visibleMessages.isNotEmpty(), modeEntryStarted)) {
-            return
-        }
+        val savedEntry = persistedModeEntryContext()
+        val keepInHistory = hasChatHistoryContent(
+            hasMessages = visibleMessages.isNotEmpty(),
+            modeEntryStarted = modeEntryStarted,
+            bookSearchDraft = if (isBookSearch) savedEntry.bookSearchDraft() else null,
+        )
+        val hadSavedDraft = isBookSearch && oldSession?.modeEntryContext.bookSearchDraft() != null
+        if (!keepInHistory && !hadSavedDraft) return
+
         val now = System.currentTimeMillis()
         val sessionId = activeSessionId ?: UUID.randomUUID().toString().also { activeSessionId = it }
         val snapshot = AiChatSessionSnapshot(
@@ -1220,7 +1231,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             ),
             modeId = activeAgentMode.id,
             modeRevision = activeAgentMode.revision,
-            modeEntryContext = persistedModeEntryContext(),
+            modeEntryContext = savedEntry,
             modeEntryStarted = modeEntryStarted,
             createdAt = oldSession?.createdAt ?: now,
             updatedAt = now,
@@ -1231,12 +1242,15 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             uploadMessages = uploadMessages.map { it.deepCopy().asJsonObject },
         )
         sessions.removeAll { it.id == sessionId }
-        sessions.add(0, snapshot)
-        sessions.sortChatSessions()
-        if (sessionId !in loadedSessionDetailIds) {
-            loadedSessionDetailIds += sessionId
+        if (keepInHistory) {
+            sessions.add(0, snapshot)
+            sessions.sortChatSessions()
+            if (sessionId !in loadedSessionDetailIds) loadedSessionDetailIds += sessionId
+        } else {
+            loadedSessionDetailIds.remove(sessionId)
+            selectedHistoryIds.remove(sessionId)
         }
-        val saved = saveSessionSnapshot(snapshot, makeActive = true)
+        val saved = saveSessionSnapshot(snapshot, makeActive = keepInHistory)
         if (isBookSearch) bookSearchSaveJob = saved
     }
 
@@ -1372,8 +1386,8 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         }
     }
 
-    LaunchedEffect(activeSessionId, input, bookSearchMode, historyLoaded) {
-        if (bookSearchMode && historyLoaded && (input.isNotBlank() || messages.isNotEmpty())) {
+    LaunchedEffect(activeSessionId, input, bookSearchMode, bookSearchHistoryRestored, bookSearchDraftEdited) {
+        if (bookSearchMode && bookSearchHistoryRestored && (bookSearchDraftEdited || messages.isNotEmpty())) {
             delay(350)
             persistActiveSession()
         }
@@ -1439,6 +1453,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         activeModeEntryContext = initialModeEntryContext
         val startsBookSearch = initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
         if (wasBookSearch || startsBookSearch) input = ""
+        bookSearchDraftEdited = false
         if (startsBookSearch) bookSearchGreetingPending = true
         modeEntryStarted = false
         uploadMessages.clear()
@@ -1480,10 +1495,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         activeModeEntryContext = session.modeEntryContext
         if (restoredMode.id == AgentModeRegistry.BOOK_SEARCH_ID) {
             bookSearchGreetingPending = false
-            input = session.modeEntryContext?.payload?.get(AI_BOOK_SEARCH_DRAFT)
-                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty()
+            input = session.modeEntryContext.bookSearchDraft().orEmpty()
+            bookSearchDraftEdited = input.isNotBlank()
         } else if (wasBookSearch) {
             input = ""
+            bookSearchDraftEdited = false
         }
         modeEntryStarted = session.modeEntryStarted
         messages.replaceWith(session.messages.map { it.toUiMessage() })
@@ -1531,11 +1547,13 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         if (initialAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID && messages.isEmpty()) {
             val id = activeSessionId
             if (id != null && sessions.any { it.id == id }) {
-                val pendingDraft = input
                 val restored = withContext(Dispatchers.IO) { AiChatHistoryStore.loadSession(id) }
                 if (restored != null && id == activeSessionId && messages.isEmpty()) {
+                    val pendingDraft = input
+                    val pendingDraftEdited = bookSearchDraftEdited
                     applyLoadedSession(restored)
-                    if (pendingDraft.isNotBlank()) input = pendingDraft
+                    if (pendingDraftEdited || pendingDraft.isNotBlank()) input = pendingDraft
+                    if (pendingDraftEdited) bookSearchDraftEdited = true
                 }
             }
         }
@@ -1600,8 +1618,8 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         }
         scope.launch {
             val details = runCatching {
-                withContext(Dispatchers.IO) {
-                    AiChatHistoryStore.loadAllSessionDetails()
+                historyWriteLock.withLock {
+                    withContext(Dispatchers.IO) { AiChatHistoryStore.loadAllSessionDetails() }
                 }
             }.getOrElse {
                 historyDetailsLoading = false
@@ -1699,6 +1717,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             persistActiveSession()
             return
         }
+        val modelSelection = AiModelSelection(AiConfig.assistantProviderId, AiConfig.assistantModelId)
         syncModeEntryContext()
         syncActiveSkillContext()
         sending = true
@@ -1731,7 +1750,9 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             role = ChatRole.ASSISTANT,
             content = "正在思考...",
             elapsedMs = 0L,
-            loading = true
+            loading = true,
+            usageProviderId = modelSelection.providerId,
+            usageModelId = modelSelection.modelId,
         )
         val previousSession = sessions.firstOrNull { session -> session.id == conversationId }
         val durableBaseSession = AiChatSessionSnapshot(
@@ -1811,7 +1832,8 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                             AiChatHistoryStore.saveDurableTurn(
                                 baseSession = durableBaseSession,
                                 assistantMessageId = loadingId,
-                                update = update
+                                update = update,
+                                modelSelection = modelSelection,
                             )
                         },
                         onContextEvent = { event: AiChatContextEvent ->
@@ -1835,6 +1857,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                         },
                         // Only the host can start a book-source search after validating the reply or user selection.
                         enabledMcpCapabilityIds = if (requireWebSearch) emptyList() else mcpCapabilityIds,
+                        selection = modelSelection,
                         onToolConfirmationRequired = { pendingCalls ->
                             confirmToolCalls(pendingCalls)
                         }
@@ -1854,7 +1877,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                     it.contextMessages.map { message -> message.deepCopy().asJsonObject }
                 )
                 val loadingIndex = messages.indexOfFirst { message -> message.id == loadingId }
-                val baseMessage = it.toUiMessage(elapsedMs)
+                val baseMessage = it.toUiMessage(elapsedMs, modelSelection)
                 val completedMessage = if (requireWebSearch) {
                     val rejected = messages.flatMap { message -> message.bookSearch?.rejectedKeys.orEmpty() }.toSet()
                     val reply = parseAiBookSearchReply(it.content, it.webActivity)?.let { parsed ->
@@ -2449,10 +2472,20 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             Toast.makeText(context, "请选择要导出的消息", Toast.LENGTH_SHORT).show()
             return
         }
+        val defaultAssistantLabel = context.getString(R.string.ai_assistant)
+        val senderLabel: (ChatUiMessage) -> String = { message ->
+            if (message.role == ChatRole.USER) "用户"
+            else resolveChatMessageModel(message.usageProviderId, message.usageModelId, messageModelProviders)
+                .label ?: defaultAssistantLabel
+        }
         runCatching {
             when (format) {
-                ChatExportFormat.MARKDOWN -> exportChatMessagesAsMarkdown(context, currentTitle, selectedMessages)
-                ChatExportFormat.IMAGE -> exportChatMessagesAsImage(context, currentTitle, selectedMessages)
+                ChatExportFormat.MARKDOWN -> exportChatMessagesAsMarkdown(
+                    context, buildChatExportMarkdown(currentTitle, selectedMessages, senderLabel)
+                )
+                ChatExportFormat.IMAGE -> exportChatMessagesAsImage(
+                    context, buildChatExportPlainText(currentTitle, selectedMessages, senderLabel)
+                )
             }
         }.onSuccess { file ->
             shareChatExportFile(context, file, format.mimeType)
@@ -2597,25 +2630,24 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         Toast.makeText(context, "已取消收藏", Toast.LENGTH_SHORT).show()
     }
 
-    val chatBackgroundDrawable = remember(context) {
+    val theme = NgTheme.snapshot
+    val chatBackgroundDrawable = remember(context, theme.isDark) {
         runCatching {
             ThemeConfig.getBgImage(context, context.resources.displayMetrics)
         }.getOrNull()
     }
-    val theme = NgTheme.snapshot
-    val dayWallpaperBackdrop = if (!theme.isDark && !theme.isEInk) {
+    val wallpaperBackdrop = if (!theme.isEInk) {
         rememberNgLiquidGlassBackdrop()
     } else {
         null
     }
-    val dayChatBackdrop = dayWallpaperBackdrop.takeUnless { globalSearchMode || statsMode }
+    val chatBackdrop = wallpaperBackdrop.takeUnless { globalSearchMode || statsMode }
     // Bubbles sample the wallpaper. The floating controls sample the conversation below them.
-    val dayControlsBackdrop = if (dayChatBackdrop != null) {
+    val controlsBackdrop = if (chatBackdrop != null) {
         rememberNgLiquidGlassBackdrop()
     } else {
         null
     }
-    val controlsBackdrop = dayControlsBackdrop ?: dayChatBackdrop
 
     fun showBookScanContinueEntry(action: AiChatInteractionAction) {
         if (!ensureSkillToolSupport()) {
@@ -2822,7 +2854,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         gesturesEnabled = search == null || drawerState.isOpen,
         drawerContent = {
             RikkaChatDrawer(
-                dayWallpaperBackdrop = dayWallpaperBackdrop,
+                wallpaperBackdrop = wallpaperBackdrop,
                 selectedIndex = selectedDrawerIndex,
                 historyGroups = drawerHistoryGroups,
                 historyLoaded = historyLoaded,
@@ -2914,15 +2946,15 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            if (dayChatBackdrop == null && !globalSearchMode && !statsMode) {
+            if (chatBackdrop == null && !globalSearchMode && !statsMode) {
                 AiChatBackground(
                     drawable = chatBackgroundDrawable,
-                    backdrop = dayWallpaperBackdrop,
+                    backdrop = wallpaperBackdrop,
                     showMask = true,
                 )
             }
             if (globalSearchMode) {
-                val searchBackdrop = dayWallpaperBackdrop ?: rememberNgLiquidGlassBackdrop()
+                val searchBackdrop = wallpaperBackdrop ?: rememberNgLiquidGlassBackdrop()
                 AiChatBackground(
                     drawable = chatBackgroundDrawable,
                     backdrop = searchBackdrop,
@@ -2931,7 +2963,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 NgLiquidGlassBackdropProvider(searchBackdrop) {
                     GlobalMessageSearchPage(
                         query = globalSearchQuery,
-                        dayBackdrop = dayWallpaperBackdrop,
+                        backdrop = wallpaperBackdrop,
                         onQueryChange = { globalSearchQuery = it },
                         sessions = sessions,
                         activeSessionId = activeSessionId,
@@ -2955,7 +2987,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                     )
                 }
             } else if (statsMode) {
-                val statsBackdrop = dayWallpaperBackdrop ?: rememberNgLiquidGlassBackdrop()
+                val statsBackdrop = wallpaperBackdrop ?: rememberNgLiquidGlassBackdrop()
                 AiChatBackground(
                     drawable = chatBackgroundDrawable,
                     backdrop = statsBackdrop,
@@ -3011,7 +3043,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 title = currentTitle,
                                 modelLabel = selectedModelLabel,
                                 bookSearchMode = bookSearchMode,
-                                dayBackdrop = controlsBackdrop,
+                                 backdrop = controlsBackdrop,
                                 onOpenMenu = { scope.launch { drawerState.open() } },
                                 onOpenSearch = {
                                     chatSearch = AiChatConversationSearchState(
@@ -3024,7 +3056,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                         } else {
                             AiChatConversationSearchBar(
                                 search = search,
-                                backdrop = controlsBackdrop,
+                                 backdrop = controlsBackdrop,
                                 resultIndex = searchResultIndex,
                                 resultCount = searchMatches?.messages?.size ?: 0,
                                 onBack = ::backFromChatSearch,
@@ -3050,7 +3082,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 ExportSelectionFloatingBar(
                                     selectedCount = selectedExportMessageIds.size,
                                     selectionAvailable = messages.any { !it.loading },
-                                    backdrop = controlsBackdrop,
+                                     backdrop = controlsBackdrop,
                                     onCancel = ::cancelExportSelection,
                                     onSelectAll = ::selectAllExportMessages,
                                     onInvert = ::invertExportSelection,
@@ -3072,12 +3104,15 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 value = input,
                                 onValueChange = {
                                     input = it
-                                    if (bookSearchMode) bookSearchGreetingPending = false
+                                    if (bookSearchMode) {
+                                        bookSearchDraftEdited = true
+                                        bookSearchGreetingPending = false
+                                    }
                                 },
                                 onInputFocused = {
                                     if (bookSearchMode) bookSearchGreetingPending = false
                                 },
-                                dayBackdrop = controlsBackdrop,
+                                 backdrop = controlsBackdrop,
                                 messageInputEnabled = modeEntryConfirmation == null &&
                                     skillToolErrorText == null && bookSearchAvailability == AiBookSearchAvailability.READY,
                                 sendEnabled = modeEntryConfirmation == null && skillToolErrorText == null &&
@@ -3183,15 +3218,15 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 ) { padding ->
                     Box(
                         modifier = Modifier.fillMaxSize().then(
-                            dayControlsBackdrop?.let {
+                            controlsBackdrop?.let {
                                 Modifier.ngRecordLiquidGlassBackdrop(it)
                             } ?: Modifier
                         )
                     ) {
-                        if (dayChatBackdrop != null) {
+                        if (chatBackdrop != null) {
                             AiChatBackground(
                                 drawable = chatBackgroundDrawable,
-                                backdrop = dayChatBackdrop,
+                                backdrop = chatBackdrop,
                                 showMask = false,
                             )
                         }
@@ -3200,11 +3235,11 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 search = search,
                                 results = searchMatches,
                                 padding = padding,
-                                backdrop = dayChatBackdrop,
-                                assistantLabel = selectedModelLabel,
-                                assistantAvatar = {
+                                backdrop = chatBackdrop,
+                                messageModelProviders = messageModelProviders,
+                                assistantAvatar = { modelIconRes ->
                                     RikkaAssistantAvatar(
-                                        iconRes = currentAssistantModelIconRes(),
+                                        iconRes = modelIconRes,
                                         modifier = Modifier.size(24.dp),
                                     )
                                 },
@@ -3237,9 +3272,10 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                         val greetingSessionId = activeSessionId
                         RikkaChatList(
                             padding = padding,
-                            dayBackdrop = dayChatBackdrop,
+                            backdrop = chatBackdrop,
                             state = listState,
                             messages = messages,
+                            messageModelProviders = messageModelProviders,
                             entryInteraction = modeEntryConfirmation,
                             bookSearchMode = bookSearchMode,
                             bookSearchGuide = if (
@@ -3564,20 +3600,15 @@ private fun AiChatStatsPage(
                     }
                 }
             } else if (loading) {
-                Surface(
+                AiStatsCardSurface(
                     modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(18.dp),
-                    color = colorResource(R.color.ng_surface_card),
                 ) {
                     NgDotsLoadingIndicator(Modifier.size(56.dp))
                 }
             } else {
-                Surface(
-                    onClick = onRetry,
+                AiStatsCardSurface(
                     modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(18.dp),
-                    color = colorResource(R.color.ng_surface_card),
-                    contentColor = colorResource(R.color.ng_on_surface),
+                    onClick = onRetry,
                 ) {
                     Text(
                         text = stringResource(R.string.load_error_retry),
@@ -3588,6 +3619,24 @@ private fun AiChatStatsPage(
             }
         }
     }
+}
+
+@Composable
+private fun AiStatsCardSurface(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val cornerRadius = 18.dp
+    val shape = RoundedCornerShape(cornerRadius)
+    NgVisualSurface(
+        modifier = if (onClick == null) modifier else modifier.clip(shape).clickable(onClick = onClick),
+        role = NgMaterialRole.CONTENT,
+        cornerRadius = cornerRadius,
+        shape = shape,
+        style = NgGlassDefaults.neutralStyle(containerAlpha = 0.98f),
+        content = content,
+    )
 }
 
 @Composable
@@ -3604,13 +3653,7 @@ private fun AiTokenActivityCard(tokenActivityPerDay: Map<LocalDate, Long>) {
         )
     }
     val selectedBar = bars.getOrNull(selectedIndex)
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = colorResource(R.color.ng_surface_card)
-        ),
-        shape = RoundedCornerShape(18.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    AiStatsCardSurface(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
@@ -3639,7 +3682,7 @@ private fun AiTokenActivityCard(tokenActivityPerDay: Map<LocalDate, Long>) {
                     "${it.rangeLabel} · ${formatAiStatTokens(it.value)} Token"
                 } ?: "暂无 Token 活动",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             TokenActivityBarChart(
                 bars = bars,
@@ -3660,7 +3703,8 @@ private fun TokenActivityModeLabel(
         text = text,
         style = MaterialTheme.typography.bodySmall,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (selected) 0.90f else 0.46f),
+        color = if (selected) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
@@ -3724,7 +3768,8 @@ private fun TokenActivityBarChart(
                 Text(
                     text = bar.axisLabel,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (selected) 0.90f else 0.56f),
+                    color = if (selected) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     softWrap = false
                 )
@@ -3759,13 +3804,13 @@ private fun AiChatStatsGrid(stats: AiChatStats) {
         ) {
             AiStatCard(
                 modifier = Modifier.weight(1f),
-                icon = Icons.Rounded.Psychology,
+                icon = Icons.Rounded.ArrowUpward,
                 label = "输入 Token",
                 value = formatAiStatTokens(stats.totalPromptTokens)
             )
             AiStatCard(
                 modifier = Modifier.weight(1f),
-                icon = Icons.Rounded.Psychology,
+                icon = Icons.Rounded.ArrowDownward,
                 label = "输出 Token",
                 value = formatAiStatTokens(stats.totalCompletionTokens)
             )
@@ -3789,14 +3834,7 @@ private fun AiStatCard(
     label: String,
     value: String
 ) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = colorResource(R.color.ng_surface_card),
-            contentColor = colorResource(R.color.ng_on_surface)
-        ),
-        shape = RoundedCornerShape(18.dp)
-    ) {
+    AiStatsCardSurface(modifier = modifier) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -3835,12 +3873,12 @@ private fun AiChatToolbar(
     title: String,
     modelLabel: String,
     bookSearchMode: Boolean,
-    dayBackdrop: NgLiquidGlassBackdrop?,
+    backdrop: NgLiquidGlassBackdrop?,
     onOpenMenu: () -> Unit,
     onOpenSearch: () -> Unit,
     onNewChat: () -> Unit,
 ) {
-    val iconSize = if (dayBackdrop != null) Modifier.size(20.dp) else Modifier
+    val iconSize = if (backdrop != null) Modifier.size(20.dp) else Modifier
     val navigation = @Composable {
         IconButton(onClick = onOpenMenu) {
             Icon(Icons.Rounded.Menu, contentDescription = "Menu", modifier = iconSize)
@@ -3875,14 +3913,14 @@ private fun AiChatToolbar(
         }
         IconButton(onClick = onNewChat) {
             Icon(
-                imageVector = if (dayBackdrop != null) Icons.Rounded.Add else Icons.Rounded.AddComment,
+                imageVector = if (backdrop != null) Icons.Rounded.Add else Icons.Rounded.AddComment,
                 contentDescription = "New chat",
                 modifier = iconSize,
             )
         }
     }
 
-    if (dayBackdrop == null) {
+    if (backdrop == null) {
         Surface(color = MaterialTheme.colorScheme.background.copy(alpha = 0.86f)) {
             TopAppBar(
                 modifier = Modifier.statusBarsPadding(),
@@ -3893,7 +3931,7 @@ private fun AiChatToolbar(
             )
         }
     } else {
-        AiChatDayToolbarSurface(dayBackdrop) {
+        AiChatFloatingToolbarSurface(backdrop) {
             navigation()
             Box(Modifier.weight(1f).padding(end = 4.dp)) { titleContent() }
             actions()
@@ -3908,9 +3946,10 @@ private fun BoxScope.AiChatBackground(
     showMask: Boolean,
 ) {
     Box(
-        modifier = Modifier.matchParentSize().then(
-            backdrop?.let { Modifier.ngRecordLiquidGlassBackdrop(it) } ?: Modifier
-        )
+        modifier = Modifier
+            .matchParentSize()
+            .then(backdrop?.let { Modifier.ngRecordLiquidGlassBackdrop(it) } ?: Modifier)
+            .background(MaterialTheme.colorScheme.background),
     ) {
         NgThemeGradientBackground(modifier = Modifier.fillMaxSize())
         if (drawable != null) {
@@ -3941,7 +3980,7 @@ private fun AiChatBackgroundMask() {
 @Composable
 private fun GlobalMessageSearchPage(
     query: String,
-    dayBackdrop: NgLiquidGlassBackdrop?,
+    backdrop: NgLiquidGlassBackdrop?,
     onQueryChange: (String) -> Unit,
     sessions: List<AiChatSessionSnapshot>,
     activeSessionId: String?,
@@ -4001,6 +4040,7 @@ private fun GlobalMessageSearchPage(
                     Surface(
                         shape = RoundedCornerShape(18.dp),
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        contentColor = colorResource(R.color.ng_on_surface),
                     ) {
                         Text(
                             text = stringResource(R.string.ai_chat_find_empty),
@@ -4022,7 +4062,7 @@ private fun GlobalMessageSearchPage(
                         GlobalSearchResultRow(
                             result = result,
                             query = keyword,
-                            backdrop = dayBackdrop,
+                            backdrop = backdrop,
                             onClick = { onOpenResult(result) },
                         )
                     }
@@ -4085,7 +4125,7 @@ private fun GlobalSearchResultRow(
 
 @Composable
 private fun RikkaChatDrawer(
-    dayWallpaperBackdrop: NgLiquidGlassBackdrop?,
+    wallpaperBackdrop: NgLiquidGlassBackdrop?,
     selectedIndex: Int,
     historyGroups: List<DrawerHistoryGroup>,
     historyLoaded: Boolean,
@@ -4109,8 +4149,8 @@ private fun RikkaChatDrawer(
     onOpenSettings: () -> Unit,
     onNewChat: () -> Unit
 ) {
-    ChatDrawerSurface(dayWallpaperBackdrop) {
-        val dayStyle = useDayChatDrawerStyle
+    ChatDrawerSurface(wallpaperBackdrop) {
+        val standardStyle = useStandardChatDrawerStyle
         val drawerContentColor = drawerPrimaryContentColor()
         CompositionLocalProvider(LocalContentColor provides drawerContentColor) {
             Column(
@@ -4119,29 +4159,29 @@ private fun RikkaChatDrawer(
                     .statusBarsPadding()
                     .navigationBarsPadding()
                     .padding(
-                        horizontal = if (dayStyle) 13.dp else 6.dp,
-                        vertical = if (dayStyle) 12.dp else 8.dp,
+                        horizontal = if (standardStyle) 13.dp else 6.dp,
+                        vertical = if (standardStyle) 12.dp else 8.dp,
                     ),
-                verticalArrangement = Arrangement.spacedBy(if (dayStyle) 4.dp else 6.dp),
+                verticalArrangement = Arrangement.spacedBy(if (standardStyle) 4.dp else 6.dp),
             ) {
-                if (!dayStyle) Spacer(Modifier.height(8.dp))
+                if (!standardStyle) Spacer(Modifier.height(8.dp))
                 DrawerActionRow(
                     icon = Icons.Rounded.Search,
-                    dayIconRes = R.drawable.ic_search,
+                    standardIconRes = R.drawable.ic_search,
                     label = "搜索聊天",
                     selected = selectedIndex == 1,
                     onClick = { onSelect(1) },
                 )
                 DrawerActionRow(
                     icon = Icons.Rounded.History,
-                    dayIconRes = R.drawable.ic_mingcute_time_line,
+                    standardIconRes = R.drawable.ic_mingcute_time_line,
                     label = "聊天历史",
                     selected = selectedIndex == 2,
                     onClick = { onSelect(2) },
                 )
                 DrawerActionRow(
                     icon = Icons.Rounded.Favorite,
-                    dayIconRes = R.drawable.ic_star,
+                    standardIconRes = R.drawable.ic_star,
                     label = "收藏内容",
                     selected = selectedIndex == 3,
                     onClick = { onSelect(3) },
@@ -4149,9 +4189,9 @@ private fun RikkaChatDrawer(
                 HorizontalDivider(
                     modifier = Modifier.padding(
                         horizontal = 6.dp,
-                        vertical = if (dayStyle) 8.dp else 6.dp,
+                        vertical = if (standardStyle) 8.dp else 6.dp,
                     ),
-                    color = if (dayStyle) drawerDividerColor() else drawerContentColor.copy(alpha = 0.35f),
+                    color = if (standardStyle) drawerDividerColor() else drawerContentColor.copy(alpha = 0.35f),
                 )
                 Box(modifier = Modifier.weight(1f)) {
                     when (selectedIndex) {
@@ -4192,7 +4232,7 @@ private fun RikkaChatDrawer(
 
 @Composable
 private fun ChatDrawerSurface(
-    dayWallpaperBackdrop: NgLiquidGlassBackdrop?,
+    wallpaperBackdrop: NgLiquidGlassBackdrop?,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val drawerWidth = LocalConfiguration.current.screenWidthDp.dp * AI_CHAT_DRAWER_WIDTH_RATIO
@@ -4201,12 +4241,12 @@ private fun ChatDrawerSurface(
             modifier = Modifier.fillMaxHeight().width(drawerWidth),
             shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
-            role = if (dayWallpaperBackdrop != null) NgMaterialRole.CONTROL else NgMaterialRole.SOFT_SURFACE,
+            role = if (wallpaperBackdrop != null) NgMaterialRole.CONTROL else NgMaterialRole.SOFT_SURFACE,
             content = content,
         )
     }
-    if (dayWallpaperBackdrop != null) {
-        NgLiquidGlassBackdropProvider(dayWallpaperBackdrop, content = surface)
+    if (wallpaperBackdrop != null) {
+        NgLiquidGlassBackdropProvider(wallpaperBackdrop, content = surface)
     } else {
         surface()
     }
@@ -4217,7 +4257,7 @@ private fun DrawerBottomActions(
     onOpenStats: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    val showLabels = useDayChatDrawerStyle
+    val showLabels = useStandardChatDrawerStyle
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -4291,17 +4331,17 @@ private fun DrawerBottomActionButton(
     }
 }
 
-private val useDayChatDrawerStyle: Boolean
-    @Composable get() = !NgTheme.snapshot.isDark && !NgTheme.snapshot.isEInk
+private val useStandardChatDrawerStyle: Boolean
+    @Composable get() = !NgTheme.snapshot.isEInk
 
 @Composable
 private fun drawerPrimaryContentColor(): Color = ngDrawerPrimaryTextColor(
-    Color(if (useDayChatDrawerStyle) NgTheme.colors.onSurface else NgTheme.colors.primary),
+    Color(if (useStandardChatDrawerStyle) NgTheme.colors.onSurface else NgTheme.colors.primary),
 )
 
 @Composable
 private fun drawerSecondaryContentColor(): Color = ngDrawerSecondaryTextColor(
-    if (useDayChatDrawerStyle) Color(NgTheme.colors.onSurfaceVariant)
+    if (useStandardChatDrawerStyle) Color(NgTheme.colors.onSurfaceVariant)
     else Color(NgTheme.colors.primary).copy(alpha = 0.78f),
 )
 
@@ -4337,7 +4377,7 @@ private fun DrawerHistoryContent(
         mutableStateListOf(*groupTitles.toTypedArray())
     }
     val totalCount = groups.sumOf { it.items.size }
-    val sectionTitle = if (useDayChatDrawerStyle) "会话" else "聊天历史"
+    val sectionTitle = if (useStandardChatDrawerStyle) "会话" else "聊天历史"
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 10.dp),
@@ -4454,21 +4494,21 @@ private fun DrawerHistoryGroupHeader(
     onPinGroup: () -> Unit,
     onDeleteGroup: () -> Unit
 ) {
-    val dayStyle = useDayChatDrawerStyle
+    val standardStyle = useStandardChatDrawerStyle
     val primaryContentColor = drawerPrimaryContentColor()
     val secondaryContentColor = drawerSecondaryContentColor()
     Surface(
         onClick = onToggle,
-        color = if (dayStyle) Color.Transparent else MaterialTheme.colorScheme.surface.copy(alpha = 0.22f),
+        color = if (standardStyle) Color.Transparent else MaterialTheme.colorScheme.surface.copy(alpha = 0.22f),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier.padding(
-                start = if (dayStyle) 10.dp else 8.dp,
-                top = if (dayStyle) 4.dp else 5.dp,
+                start = if (standardStyle) 10.dp else 8.dp,
+                top = if (standardStyle) 4.dp else 5.dp,
                 end = 2.dp,
-                bottom = if (dayStyle) 4.dp else 5.dp,
+                bottom = if (standardStyle) 4.dp else 5.dp,
             ),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -4479,10 +4519,10 @@ private fun DrawerHistoryGroupHeader(
                     Icons.AutoMirrored.Rounded.KeyboardArrowRight
                 },
                 contentDescription = null,
-                modifier = Modifier.size(if (dayStyle) 18.dp else 20.dp),
+                modifier = Modifier.size(if (standardStyle) 18.dp else 20.dp),
                 tint = primaryContentColor
             )
-            if (dayStyle) Spacer(Modifier.width(6.dp))
+            if (standardStyle) Spacer(Modifier.width(6.dp))
             Text(
                 text = group.title,
                 modifier = Modifier.weight(1f),
@@ -4497,7 +4537,7 @@ private fun DrawerHistoryGroupHeader(
                 color = secondaryContentColor,
                 style = MaterialTheme.typography.bodySmall
             )
-            if (dayStyle) Spacer(Modifier.width(4.dp))
+            if (standardStyle) Spacer(Modifier.width(4.dp))
             DrawerGroupMoreMenu(
                 onPinGroup = onPinGroup,
                 onDeleteGroup = onDeleteGroup
@@ -4513,15 +4553,15 @@ private fun DrawerPlainTextButton(
     onClick: () -> Unit
 ) {
     val textColor = drawerAccentContentColor(enabled)
-    val dayStyle = useDayChatDrawerStyle
+    val standardStyle = useStandardChatDrawerStyle
     Text(
         text = text,
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = if (dayStyle) 9.dp else 6.dp, vertical = 3.dp),
+            .padding(horizontal = if (standardStyle) 9.dp else 6.dp, vertical = 3.dp),
         color = textColor,
-        fontWeight = if (dayStyle) FontWeight.Medium else FontWeight.SemiBold,
+        fontWeight = if (standardStyle) FontWeight.Medium else FontWeight.SemiBold,
         style = MaterialTheme.typography.bodySmall,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
@@ -4572,7 +4612,7 @@ private fun DrawerFavoriteContent(
                                 text = item.title,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (useDayChatDrawerStyle) drawerPrimaryContentColor()
+                                color = if (useStandardChatDrawerStyle) drawerPrimaryContentColor()
                                     else drawerAccentContentColor(),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -4601,50 +4641,50 @@ private fun DrawerSectionTitle(
     text: String,
     modifier: Modifier = Modifier
 ) {
-    val dayStyle = useDayChatDrawerStyle
+    val standardStyle = useStandardChatDrawerStyle
     Text(
         text = text,
-        color = if (dayStyle) drawerSecondaryContentColor() else drawerAccentContentColor(),
+        color = if (standardStyle) drawerSecondaryContentColor() else drawerAccentContentColor(),
         fontWeight = FontWeight.SemiBold,
         style = MaterialTheme.typography.bodySmall,
-        modifier = modifier.padding(horizontal = if (dayStyle) 11.dp else 6.dp, vertical = 3.dp),
+        modifier = modifier.padding(horizontal = if (standardStyle) 11.dp else 6.dp, vertical = 3.dp),
     )
 }
 
 @Composable
 private fun DrawerActionRow(
     icon: ImageVector,
-    @DrawableRes dayIconRes: Int,
+    @DrawableRes standardIconRes: Int,
     label: String,
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    val dayStyle = useDayChatDrawerStyle
-    val contentColor = if (dayStyle && selected) drawerAccentContentColor() else drawerPrimaryContentColor()
-    val selectedColor = if (dayStyle) drawerAccentContentColor().copy(alpha = 0.16f)
+    val standardStyle = useStandardChatDrawerStyle
+    val contentColor = if (standardStyle && selected) drawerAccentContentColor() else drawerPrimaryContentColor()
+    val selectedColor = if (standardStyle) drawerAccentContentColor().copy(alpha = 0.16f)
         else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
     Surface(
         onClick = onClick,
         color = if (selected) selectedColor else Color.Transparent,
-        shape = RoundedCornerShape(if (dayStyle) 12.dp else 18.dp),
+        shape = RoundedCornerShape(if (standardStyle) 12.dp else 18.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = if (dayStyle) 8.dp else 9.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = if (standardStyle) 8.dp else 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Icon(
-                painter = if (dayStyle) painterResource(dayIconRes) else rememberVectorPainter(icon),
+                painter = if (standardStyle) painterResource(standardIconRes) else rememberVectorPainter(icon),
                 contentDescription = null,
                 modifier = Modifier.size(22.dp),
-                tint = if (dayStyle && !selected) drawerSecondaryContentColor() else contentColor,
+                tint = if (standardStyle && !selected) drawerSecondaryContentColor() else contentColor,
             )
             Text(
                 text = label,
-                style = if (dayStyle) MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp)
+                style = if (standardStyle) MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp)
                     else MaterialTheme.typography.bodyMedium,
-                fontWeight = if (dayStyle && selected) FontWeight.SemiBold else null,
+                fontWeight = if (standardStyle && selected) FontWeight.SemiBold else null,
                 color = contentColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -4730,15 +4770,15 @@ private fun DrawerMoreMenu(
     onDelete: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val dayStyle = useDayChatDrawerStyle
-    val contentColor = if (dayStyle) drawerSecondaryContentColor() else drawerPrimaryContentColor()
+    val standardStyle = useStandardChatDrawerStyle
+    val contentColor = if (standardStyle) drawerSecondaryContentColor() else drawerPrimaryContentColor()
     Box {
         IconButton(
             onClick = { expanded = true },
             modifier = Modifier.size(32.dp)
         ) {
             Icon(
-                imageVector = if (dayStyle) Icons.Rounded.MoreVert else Icons.Rounded.MoreHoriz,
+                imageVector = if (standardStyle) Icons.Rounded.MoreVert else Icons.Rounded.MoreHoriz,
                 contentDescription = "更多",
                 modifier = Modifier.size(20.dp),
                 tint = contentColor
@@ -4777,15 +4817,15 @@ private fun DrawerGroupMoreMenu(
     onDeleteGroup: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val dayStyle = useDayChatDrawerStyle
-    val contentColor = if (dayStyle) drawerSecondaryContentColor() else drawerPrimaryContentColor()
+    val standardStyle = useStandardChatDrawerStyle
+    val contentColor = if (standardStyle) drawerSecondaryContentColor() else drawerPrimaryContentColor()
     Box {
         IconButton(
             onClick = { expanded = true },
-            modifier = Modifier.size(if (dayStyle) 36.dp else 30.dp)
+            modifier = Modifier.size(if (standardStyle) 36.dp else 30.dp)
         ) {
             Icon(
-                imageVector = if (dayStyle) Icons.Rounded.MoreVert else Icons.Rounded.MoreHoriz,
+                imageVector = if (standardStyle) Icons.Rounded.MoreVert else Icons.Rounded.MoreHoriz,
                 contentDescription = "分组操作",
                 modifier = Modifier.size(18.dp),
                 tint = contentColor
@@ -4821,9 +4861,10 @@ private fun DrawerGroupMoreMenu(
 @Composable
 private fun RikkaChatList(
     padding: PaddingValues,
-    dayBackdrop: NgLiquidGlassBackdrop?,
+    backdrop: NgLiquidGlassBackdrop?,
     state: LazyListState,
     messages: List<ChatUiMessage>,
+    messageModelProviders: Map<String, AiProviderSetting>,
     entryInteraction: AiChatInteraction?,
     bookSearchMode: Boolean,
     bookSearchGuide: (@Composable () -> Unit)?,
@@ -4843,10 +4884,19 @@ private fun RikkaChatList(
     onEntryInteractionSubmit: (AiChatInteractionAction) -> Unit,
     onInteractionSubmit: (String, AiChatInteractionAction) -> Unit,
 ) {
-    val horizontalPadding = if (dayBackdrop == null) 16.dp else AiChatDayHorizontalPadding
+    val horizontalPadding = if (backdrop == null) 16.dp else AiChatHorizontalPadding
     val selectionStartReduction = if (selectionMode) 8.dp else 0.dp
+    // Keep scrolling messages inside the rounded outer edges of the floating controls.
     val viewportInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical)
-    val listPadding = if (dayBackdrop == null) {
+        .add(
+            WindowInsets(
+                top = AiChatToolbarTopPadding + AiChatToolbarCornerRadius,
+                bottom = if (searchLocation == null) {
+                    AiChatComposerBottomPadding + AiChatComposerCornerRadius
+                } else 0.dp,
+            ),
+        )
+    val listPadding = if (backdrop == null) {
         PaddingValues(
             start = horizontalPadding - selectionStartReduction,
             top = padding.calculateTopPadding() + 10.dp,
@@ -4868,17 +4918,17 @@ private fun RikkaChatList(
         state = state,
         modifier = Modifier.fillMaxSize().then(
             when {
-                dayBackdrop != null -> Modifier.windowInsetsPadding(viewportInsets)
+                backdrop != null -> Modifier.windowInsetsPadding(viewportInsets)
                 searchLocation != null -> Modifier.navigationBarsPadding().imePadding()
                 else -> Modifier
             }
         ),
         contentPadding = listPadding,
-        verticalArrangement = Arrangement.spacedBy(if (dayBackdrop == null) 16.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(if (backdrop == null) 16.dp else 12.dp),
     ) {
         if (bookSearchGuide != null) {
             item(key = "book-search-guide") {
-                AiChatMessageSurface(isUser = false, dayBackdrop = dayBackdrop, actionsMenu = null) {
+                AiChatMessageSurface(isUser = false, backdrop = backdrop, actionsMenu = null) {
                     bookSearchGuide()
                 }
             }
@@ -4899,7 +4949,8 @@ private fun RikkaChatList(
             val renderMessage: @Composable () -> Unit = {
                 RikkaMessageItem(
                     message = message,
-                    dayBackdrop = dayBackdrop,
+                    backdrop = backdrop,
+                    messageModelProviders = messageModelProviders,
                     assistantLabelWeight = if (bookSearchMode) FontWeight.Normal else FontWeight.SemiBold,
                     interactionPolicy = interactionPolicy,
                     searchLocation = messageLocation,
@@ -4966,7 +5017,13 @@ private fun ExportMessageCheckbox(
     )
 }
 
-private data class ChatSearchSource(val id: String, val isUser: Boolean, val content: String)
+private data class ChatSearchSource(
+    val id: String,
+    val isUser: Boolean,
+    val content: String,
+    val providerId: String? = null,
+    val modelId: String? = null,
+)
 
 @Composable
 private fun rememberChatSearchMatches(
@@ -4983,7 +5040,10 @@ private fun rememberChatSearchMatches(
                 if (message.loading || message.contextCompaction != null || message.content.isBlank()) {
                     null
                 } else {
-                    ChatSearchSource(message.id, message.role == ChatRole.USER, message.content)
+                    ChatSearchSource(
+                        message.id, message.role == ChatRole.USER, message.content,
+                        message.usageProviderId, message.usageModelId,
+                    )
                 }
             }
             query to sources
@@ -4996,7 +5056,14 @@ private fun rememberChatSearchMatches(
                     val parts = parsedMessages.getOrPut(source) { source.searchableParts(markdown) }
                     parts.firstNotNullOfOrNull { (part, text) ->
                         val match = keyword.findIn(text) ?: return@firstNotNullOfOrNull null
-                        AiChatSearchMatch(source.id, source.isUser, part, keyword.excerpt(text, match.range))
+                        AiChatSearchMatch(
+                            messageId = source.id,
+                            isUser = source.isUser,
+                            part = part,
+                            excerpt = keyword.excerpt(text, match.range),
+                            providerId = source.providerId,
+                            modelId = source.modelId,
+                        )
                     }
                 }
                 AiChatSearchMatches(keyword, results)
@@ -5049,7 +5116,8 @@ private fun ChatSearchSource.searchableParts(markdown: Markwon): List<Pair<AiCha
 @Composable
 private fun RikkaMessageItem(
     message: ChatUiMessage,
-    dayBackdrop: NgLiquidGlassBackdrop?,
+    backdrop: NgLiquidGlassBackdrop?,
+    messageModelProviders: Map<String, AiProviderSetting>,
     assistantLabelWeight: FontWeight,
     interactionPolicy: AiChatInteractionPolicyContract?,
     searchLocation: AiChatSearchLocation?,
@@ -5075,7 +5143,7 @@ private fun RikkaMessageItem(
     }
     var confirmAction by remember { mutableStateOf<PendingMessageAction?>(null) }
     val actionsMenu: (@Composable (() -> Unit) -> Unit)? =
-        if (hasUserActions && dayBackdrop != null) {
+        if (hasUserActions && backdrop != null) {
             { onDismissRequest ->
                 ChatMessageActionsMenu(
                     message = message,
@@ -5091,10 +5159,10 @@ private fun RikkaMessageItem(
         } else {
             null
         }
-    AiChatMessageSurface(isUser, dayBackdrop, actionsMenu) {
+    AiChatMessageSurface(isUser, backdrop, actionsMenu) {
         if (isUser) {
             val body = remember(message.content) { AnnotatedString(message.content) }
-            if (dayBackdrop != null) {
+            if (backdrop != null) {
                 SearchableChatText(
                     text = body,
                     modifier = Modifier.align(Alignment.Start),
@@ -5131,7 +5199,7 @@ private fun RikkaMessageItem(
                     style = MaterialTheme.typography.labelSmall
                 )
             }
-            if (hasUserActions && dayBackdrop == null) {
+            if (hasUserActions && backdrop == null) {
                 MessageActions(
                     message = message,
                     clipboard = clipboard,
@@ -5144,7 +5212,14 @@ private fun RikkaMessageItem(
                 )
             }
         } else {
-            AssistantMessageHeader(assistantLabelWeight)
+            val model = remember(message.usageProviderId, message.usageModelId, messageModelProviders) {
+                resolveChatMessageModel(message.usageProviderId, message.usageModelId, messageModelProviders)
+            }
+            AssistantMessageHeader(
+                fontWeight = assistantLabelWeight,
+                modelLabel = model.label ?: stringResource(R.string.ai_assistant),
+                modelIconRes = model.iconRes,
+            )
             if (message.loading) {
                 ThinkingLoadingLine(message.webActivity?.activeAction)
                 if (!message.reasoning.isNullOrBlank()) {
@@ -5277,12 +5352,12 @@ private fun RikkaMessageItem(
 @Composable
 private fun AiChatMessageSurface(
     isUser: Boolean,
-    dayBackdrop: NgLiquidGlassBackdrop?,
+    backdrop: NgLiquidGlassBackdrop?,
     actionsMenu: (@Composable (() -> Unit) -> Unit)?,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val alignment = if (isUser) Alignment.End else Alignment.Start
-    if (dayBackdrop == null) {
+    if (backdrop == null) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = alignment,
@@ -5341,7 +5416,7 @@ private fun AiChatMessageSurface(
             } else {
                 PaddingValues(horizontal = 12.dp, vertical = 10.dp)
             },
-            liquidBackdrop = dayBackdrop,
+            liquidBackdrop = backdrop,
         ) {
             Column(
                 horizontalAlignment = alignment,
@@ -6027,8 +6102,8 @@ private fun ThinkingDots() {
 @Composable
 private fun AssistantMessageHeader(
     fontWeight: FontWeight,
-    modelLabel: String = currentAssistantModelLabel(),
-    @DrawableRes modelIconRes: Int = currentAssistantModelIconRes(),
+    modelLabel: String,
+    @DrawableRes modelIconRes: Int,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -7857,11 +7932,10 @@ private fun ChatMessageActionsMenu(
         action()
     }
 
-    val theme = NgTheme.snapshot
     NgFunctionMenu(
         expanded = true,
         onDismissRequest = onDismissRequest,
-        containerColor = Color.White.takeUnless { theme.isDark || theme.isEInk },
+        containerColor = aiChatContentCardColor().takeUnless { NgTheme.snapshot.isEInk },
         actions = listOfNotNull(
             onCopy?.let {
                 NgFunctionMenuAction(
@@ -7917,8 +7991,7 @@ private fun MessageConfirmDialog(
         PendingMessageAction.REGENERATE -> "确定要重新生成此消息吗？"
         PendingMessageAction.DELETE -> "确定要删除这条消息吗？"
     }
-    val theme = NgTheme.snapshot
-    if (theme.isDark || theme.isEInk) {
+    if (NgTheme.snapshot.isEInk) {
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text(title) },
@@ -8097,11 +8170,7 @@ private fun MessageActionButton(
             .size(16.dp),
         contentAlignment = Alignment.Center
     ) {
-        CompositionLocalProvider(LocalContentColor provides colorResource(R.color.ng_on_surface)) {
-            Box(contentAlignment = Alignment.Center) {
-                content()
-            }
-        }
+        content()
     }
 }
 
@@ -8445,7 +8514,7 @@ private fun RikkaChatInput(
     value: String,
     onValueChange: (String) -> Unit,
     onInputFocused: () -> Unit,
-    dayBackdrop: NgLiquidGlassBackdrop?,
+    backdrop: NgLiquidGlassBackdrop?,
     messageInputEnabled: Boolean,
     sendEnabled: Boolean,
     sending: Boolean,
@@ -8486,14 +8555,14 @@ private fun RikkaChatInput(
     val sendButtonColor = remember(sendPrimary, isDark) {
         Color(NgSolidButtonPalette.resolveContainer(sendPrimary.toArgb(), Color.White.toArgb(), isDark))
     }
-    val composerPadding = if (dayBackdrop == null) {
+    val composerPadding = if (backdrop == null) {
         PaddingValues(8.dp)
     } else {
         PaddingValues(
-            start = AiChatDayHorizontalPadding,
+            start = AiChatHorizontalPadding,
             top = 10.dp,
-            end = AiChatDayHorizontalPadding,
-            bottom = 4.dp,
+            end = AiChatHorizontalPadding,
+            bottom = AiChatComposerBottomPadding,
         )
     }
     Surface(color = Color.Transparent) {
@@ -8503,7 +8572,7 @@ private fun RikkaChatInput(
                 .navigationBarsPadding()
                 .padding(composerPadding)
         ) {
-            AiChatComposerSurface(dayBackdrop) {
+            AiChatComposerSurface(backdrop) {
                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                     CompactSkillStatusRow(
                         skills = skills,
@@ -8530,7 +8599,7 @@ private fun RikkaChatInput(
                             onInputFocused = onInputFocused,
                             messageInputEnabled = messageInputEnabled,
                             hasSkillError = skillErrorText != null,
-                            compact = dayBackdrop != null,
+                            compact = backdrop != null,
                             inputHint = inputHint,
                         )
                     }
@@ -8628,10 +8697,10 @@ private fun RikkaChatInput(
 
 @Composable
 private fun AiChatComposerSurface(
-    dayBackdrop: NgLiquidGlassBackdrop?,
+    backdrop: NgLiquidGlassBackdrop?,
     content: @Composable () -> Unit,
 ) {
-    if (dayBackdrop == null) {
+    if (backdrop == null) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(28.dp),
@@ -8643,9 +8712,9 @@ private fun AiChatComposerSurface(
         NgVisualSurface(
             modifier = Modifier.fillMaxWidth(),
             role = NgMaterialRole.CONTROL,
-            cornerRadius = 20.dp,
+            cornerRadius = AiChatComposerCornerRadius,
             style = NgGlassDefaults.neutralStyle(containerAlpha = 1f),
-            liquidBackdrop = dayBackdrop,
+            liquidBackdrop = backdrop,
         ) {
             content()
         }
@@ -9396,8 +9465,8 @@ private fun InputModelIcon(
         color = Color.Transparent
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Image(
-                painter = painterResource(iconRes),
+            AiModelLogo(
+                iconRes = iconRes,
                 contentDescription = stringResource(R.string.ai_model_select),
                 modifier = Modifier.size(ChatInputIconSize)
             )
@@ -9423,7 +9492,11 @@ private fun InputDrawableIcon(
                 painter = painterResource(iconRes),
                 contentDescription = description,
                 modifier = Modifier.size(ChatInputIconSize),
-                tint = if (active) MaterialTheme.colorScheme.primary else Color.Unspecified
+                tint = when {
+                    active -> MaterialTheme.colorScheme.primary
+                    NgTheme.snapshot.isDark -> MaterialTheme.colorScheme.onSurface
+                    else -> Color.Unspecified
+                }
             )
         }
     }
@@ -9500,15 +9573,16 @@ private fun RikkaAssistantAvatar(
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center
     ) {
-        Image(
-            painter = painterResource(iconRes),
+        AiModelLogo(
+            iconRes = iconRes,
             contentDescription = null,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(20.dp),
+            onDark = MaterialTheme.colorScheme.onPrimaryContainer,
         )
     }
 }
 
-private fun AiChatTurnResult.toUiMessage(elapsedMs: Long): ChatUiMessage {
+private fun AiChatTurnResult.toUiMessage(elapsedMs: Long, modelSelection: AiModelSelection): ChatUiMessage {
     val meta = buildList {
         usage?.promptTokens?.let { add("↑ ${formatNumber(it)} tokens") }
         usage?.completionTokens?.let { add("↓ ${formatNumber(it)} tokens") }
@@ -9533,8 +9607,8 @@ private fun AiChatTurnResult.toUiMessage(elapsedMs: Long): ChatUiMessage {
         localPromptTokens = null,
         contextAnchorTokens = contextCalibration?.contextTokens,
         localContextAnchorTokens = contextCalibration?.localContextTokens,
-        usageProviderId = contextCalibration?.providerId,
-        usageModelId = contextCalibration?.modelId
+        usageProviderId = modelSelection.providerId,
+        usageModelId = modelSelection.modelId,
     )
 }
 
@@ -9573,14 +9647,6 @@ private fun formatNumber(value: Int): String {
     return "%,d".format(value)
 }
 
-private fun currentAssistantModelLabel(): String {
-    return AiAssistantConfigUi.selectedModelLabel()
-}
-
-private fun currentAssistantModelIconRes(): Int {
-    return AiAssistantConfigUi.selectedModelIconRes()
-}
-
 private fun shareChatMessage(context: Context, message: ChatUiMessage) {
     val text = message.content.ifBlank { message.reasoning.orEmpty() }.trim()
     if (text.isBlank()) {
@@ -9599,21 +9665,18 @@ private fun shareChatMessage(context: Context, message: ChatUiMessage) {
 
 private fun exportChatMessagesAsMarkdown(
     context: Context,
-    title: String,
-    messages: List<ChatUiMessage>
+    markdown: String,
 ): File {
     val file = createChatExportFile(context, "md")
-    file.writeText(buildChatExportMarkdown(title, messages), Charsets.UTF_8)
+    file.writeText(markdown, Charsets.UTF_8)
     return file
 }
 
 private fun exportChatMessagesAsImage(
     context: Context,
-    title: String,
-    messages: List<ChatUiMessage>
+    text: String,
 ): File {
     val file = createChatExportFile(context, "png")
-    val text = buildChatExportPlainText(title, messages)
     val bitmap = renderChatExportBitmap(text)
     FileOutputStream(file).use { output ->
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
@@ -9650,16 +9713,18 @@ private fun createChatExportFile(context: Context, extension: String): File {
     }
 }
 
-private fun buildChatExportMarkdown(title: String, messages: List<ChatUiMessage>): String {
+private fun buildChatExportMarkdown(
+    title: String,
+    messages: List<ChatUiMessage>,
+    senderLabel: (ChatUiMessage) -> String,
+): String {
     return buildString {
         append("# ").append(title).append("\n\n")
         append("*导出时间：")
             .append(SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
             .append("*\n\n")
         messages.forEach { message ->
-            append("## ")
-                .append(if (message.role == ChatRole.USER) "用户" else currentAssistantModelLabel())
-                .append("\n\n")
+            append("## ").append(senderLabel(message)).append("\n\n")
             if (!message.reasoning.isNullOrBlank()) {
                 append("> 已思考")
                 message.elapsedMs?.let { append(" ").append(formatElapsedSeconds(it)) }
@@ -9682,13 +9747,17 @@ private fun buildChatExportMarkdown(title: String, messages: List<ChatUiMessage>
     }
 }
 
-private fun buildChatExportPlainText(title: String, messages: List<ChatUiMessage>): String {
+private fun buildChatExportPlainText(
+    title: String,
+    messages: List<ChatUiMessage>,
+    senderLabel: (ChatUiMessage) -> String,
+): String {
     return buildString {
         append(title).append("\n")
         append(SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
         append("\n\n")
         messages.forEach { message ->
-            append(if (message.role == ChatRole.USER) "用户" else currentAssistantModelLabel()).append("：\n")
+            append(senderLabel(message)).append("：\n")
             if (!message.reasoning.isNullOrBlank()) {
                 append("已思考")
                 message.elapsedMs?.let { append(" ").append(formatElapsedSeconds(it)) }
@@ -10220,8 +10289,8 @@ private fun AiChatSessionSnapshot.drawerIdentity(
         .asReversed()
         .firstOrNull { it.content.isNotBlank() }
         ?.drawerPreview()
-        .orEmpty()
-        .takeUnless { it == title || it == titleText }
+        ?.takeIf { it.isNotBlank() && it != title && it != titleText }
+        ?: "草稿".takeIf { modeId == AgentModeRegistry.BOOK_SEARCH_ID && modeEntryContext.bookSearchDraft() != null }
     val subtitle = listOfNotNull(
         formatDrawerHistoryTime(updatedAt),
         preview

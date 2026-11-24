@@ -3,7 +3,6 @@ package io.legado.app.ui.config
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -573,10 +572,10 @@ private fun AiModelSelectionTab(
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(
-                painter = painterResource(page.iconRes),
-                contentDescription = null,
+            AiModelLogo(
+                iconRes = page.iconRes,
                 modifier = Modifier.size(20.dp),
+                onDark = ngDrawerPrimaryTextColor(Color(NgTheme.colors.onSurface)),
             )
             Text(
                 text = page.label,
@@ -675,9 +674,8 @@ private fun AiModelSelectionCard(
                     .padding(7.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Image(
-                    painter = painterResource(model.iconRes),
-                    contentDescription = null,
+                AiModelLogo(
+                    iconRes = model.iconRes,
                     modifier = Modifier.fillMaxSize(),
                 )
             }

@@ -62,6 +62,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgLiquidGlassBackdrop
 import io.legado.app.ui.design.components.compose.NgMaterialRole
@@ -69,7 +70,9 @@ import io.legado.app.ui.design.components.compose.NgVisualSurface
 import kotlinx.coroutines.CompletableDeferred
 import kotlin.math.roundToInt
 
-internal val AiChatDayHorizontalPadding = 8.dp
+internal val AiChatHorizontalPadding = 8.dp
+internal val AiChatToolbarTopPadding = 8.dp
+internal val AiChatToolbarCornerRadius = 14.dp
 
 internal class AiChatConversationSearchState(
     val entryIndex: Int,
@@ -96,6 +99,8 @@ internal data class AiChatSearchMatch(
     val isUser: Boolean,
     val part: AiChatSearchPart,
     val excerpt: String,
+    val providerId: String?,
+    val modelId: String?,
 )
 
 internal data class AiChatSearchMatches(
@@ -134,7 +139,7 @@ internal class AiChatSearchLocation(
 }
 
 @Composable
-internal fun AiChatDayToolbarSurface(
+internal fun AiChatFloatingToolbarSurface(
     backdrop: NgLiquidGlassBackdrop,
     content: @Composable RowScope.() -> Unit,
 ) {
@@ -142,10 +147,10 @@ internal fun AiChatDayToolbarSurface(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = AiChatDayHorizontalPadding)
-            .padding(top = 8.dp),
+            .padding(horizontal = AiChatHorizontalPadding)
+            .padding(top = AiChatToolbarTopPadding),
         role = NgMaterialRole.CONTROL,
-        cornerRadius = 14.dp,
+        cornerRadius = AiChatToolbarCornerRadius,
         style = NgGlassDefaults.bookDetailStyle(
             containerColor = colorResource(R.color.ng_bookshelf_manage_header_surface),
         ),
@@ -251,7 +256,7 @@ internal fun AiChatConversationSearchBar(
         }
     }
     if (backdrop != null) {
-        AiChatDayToolbarSurface(backdrop, content)
+        AiChatFloatingToolbarSurface(backdrop, content)
     } else {
         Surface(color = MaterialTheme.colorScheme.background) {
             Row(
@@ -336,8 +341,8 @@ internal fun AiChatConversationSearchResults(
     results: AiChatSearchMatches?,
     padding: PaddingValues,
     backdrop: NgLiquidGlassBackdrop?,
-    assistantLabel: String,
-    assistantAvatar: @Composable () -> Unit,
+    messageModelProviders: Map<String, AiProviderSetting>,
+    assistantAvatar: @Composable (Int) -> Unit,
     onOpenMessage: (AiChatSearchMatch, AiChatSearchQuery) -> Unit,
 ) {
     if (search.query.isBlank()) return
@@ -348,7 +353,7 @@ internal fun AiChatConversationSearchResults(
             .navigationBarsPadding()
             .imePadding()
             .padding(top = padding.calculateTopPadding() + 12.dp)
-            .padding(horizontal = AiChatDayHorizontalPadding),
+            .padding(horizontal = AiChatHorizontalPadding),
     ) {
         val status = when {
             results == null -> R.string.ai_chat_find_searching
@@ -360,6 +365,7 @@ internal fun AiChatConversationSearchResults(
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                contentColor = colorResource(R.color.ng_on_surface),
             ) {
                 Text(
                     text = stringResource(status),
@@ -386,11 +392,18 @@ internal fun AiChatConversationSearchResults(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(results.messages, key = { it.messageId }) { match ->
+                    val model = if (match.isUser) {
+                        null
+                    } else {
+                        remember(match.providerId, match.modelId, messageModelProviders) {
+                            resolveChatMessageModel(match.providerId, match.modelId, messageModelProviders)
+                        }
+                    }
                     ChatSearchResultCard(
                         match = match,
                         query = results.query,
                         backdrop = backdrop,
-                        assistantLabel = assistantLabel,
+                        assistantModel = model,
                         assistantAvatar = assistantAvatar,
                         onClick = { onOpenMessage(match, results.query) },
                     )
@@ -405,8 +418,8 @@ private fun ChatSearchResultCard(
     match: AiChatSearchMatch,
     query: AiChatSearchQuery,
     backdrop: NgLiquidGlassBackdrop?,
-    assistantLabel: String,
-    assistantAvatar: @Composable () -> Unit,
+    assistantModel: AiChatMessageModel?,
+    assistantAvatar: @Composable (Int) -> Unit,
     onClick: () -> Unit,
 ) {
     val content: @Composable () -> Unit = {
@@ -423,9 +436,10 @@ private fun ChatSearchResultCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    if (!match.isUser) assistantAvatar()
+                    if (assistantModel != null) assistantAvatar(assistantModel.iconRes)
                     Text(
-                        text = if (match.isUser) stringResource(R.string.ai_chat_find_you) else assistantLabel,
+                        text = if (match.isUser) stringResource(R.string.ai_chat_find_you)
+                        else assistantModel?.label ?: stringResource(R.string.ai_assistant),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,

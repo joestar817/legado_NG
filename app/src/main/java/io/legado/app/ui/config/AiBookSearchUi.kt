@@ -152,9 +152,9 @@ internal fun AiBookSearchReplyContent(
                     minCardHeight = 78.dp,
                     coverWidth = 45.dp,
                     coverHeight = 64.dp,
-                    cardBackgroundColorRes = R.color.ng_search_result_card_surface,
                     cardStrokeColorRes = R.color.ng_search_result_card_stroke,
                     showIntro = false,
+                    onAccent = if (NgTheme.snapshot.isDark) MaterialTheme.colorScheme.onPrimary else Color.White,
                 )
             }
             AiBookSearchLookupStatus(lookup, current, mcpEnabled, actionsEnabled, onAction)

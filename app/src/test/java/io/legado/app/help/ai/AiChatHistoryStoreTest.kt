@@ -1,15 +1,69 @@
 package io.legado.app.help.ai
 
 import com.google.gson.JsonObject
+import io.legado.app.data.dao.AiChatConversationMetadata
 import io.legado.app.utils.GSON
 import io.legado.app.help.ai.runtime.ToolApprovalStatus
 import io.legado.app.help.ai.runtime.ToolExecutionReceipt
 import io.legado.app.help.ai.runtime.ToolExecutionStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AiChatHistoryStoreTest {
+
+    @Test
+    fun bookSearchPrefillDoesNotBecomeAHistoryDraftUntilEdited() {
+        assertNull(bookSearchDraftForHistory("搜索栏预填", hasMessages = false, userEdited = false))
+        assertEquals("我记得男主的名字", bookSearchDraftForHistory(
+            "我记得男主的名字", hasMessages = false, userEdited = true,
+        ))
+        assertNull(bookSearchDraftForHistory("  \n", hasMessages = false, userEdited = true))
+        assertEquals("补充线索", bookSearchDraftForHistory("补充线索", hasMessages = true, userEdited = false))
+    }
+
+    @Test
+    fun historySkipsEmptyEntriesBeforeApplyingItsLimit() {
+        fun bookSearchDraft(value: String?) = AgentModeEntryContext(
+            contextId = AgentModeRegistry.BOOK_SEARCH_ID,
+            title = "AI 搜书",
+            payload = JsonObject().apply {
+                addProperty(AI_BOOK_SEARCH_SCOPE, "测试书源")
+                if (value != null) addProperty(AI_BOOK_SEARCH_DRAFT, value)
+            },
+        ).toJson()
+
+        val empty = AiChatConversationMetadata(
+            id = "welcome-only",
+            assistantId = AgentModeRegistry.BOOK_SEARCH_ID,
+            agentModeRevision = "",
+            modeEntryContext = bookSearchDraft(null),
+            modeEntryStarted = false,
+            title = "AI 搜书",
+            createAt = 0,
+            updateAt = 0,
+            isPinned = false,
+            customSystemPrompt = "",
+            loadedSkillIds = "[]",
+            enabledMcpCapabilityIds = "[]",
+            webEnabled = true,
+            hasMessageNodes = false,
+        )
+        val index = listOf(
+            empty,
+            empty.copy(id = "cleared-draft", modeEntryContext = bookSearchDraft("  ")),
+            empty.copy(id = "sent", hasMessageNodes = true),
+            empty.copy(id = "draft", modeEntryContext = bookSearchDraft("还有一句原文")),
+            empty.copy(id = "started-workflow", modeEntryStarted = true),
+        )
+
+        val listed = selectChatHistoryMetadata(limit = 3) { limit, offset ->
+            index.drop(offset).take(limit)
+        }
+
+        assertEquals(listOf("sent", "draft", "started-workflow"), listed.map { it.id })
+    }
 
     @Test
     fun durableTurnCreatesRecoverableAuthoritativeAssistantNode() {
@@ -49,13 +103,17 @@ class AiChatHistoryStoreTest {
                 toolReceipts = listOf(receipt),
                 pendingReceiptIds = listOf("receipt-1")
             ),
-            now = 2
+            now = 2,
+            modelSelection = AiModelSelection("deepseek", "deepseek-flash"),
         )
 
         val draft = merged.messages.last()
         assertEquals("assistant-draft", draft.id)
         assertEquals("## 完整报告\n\n正文", draft.content)
         assertEquals(AiChatMessageSnapshot.DELIVERY_IN_FLIGHT, draft.deliveryState)
+        assertEquals("deepseek", draft.usageProviderId)
+        assertEquals("deepseek-flash", draft.usageModelId)
+        assertNull(draft.promptTokens)
         assertEquals(listOf(receipt), draft.toolReceipts)
         assertTrue(draft.meta.orEmpty().contains("未提交检查点"))
         assertEquals("provider context", merged.uploadMessages.single().get("content").asString)

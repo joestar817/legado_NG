@@ -103,6 +103,7 @@ internal fun SearchResultCard(
     cardBorderWidth: Dp = 0.8.dp,
     coverBitmapCache: SearchCoverBitmapCache? = null,
     showIntro: Boolean = true,
+    onAccent: Color = Color.White,
 ) {
     val context = LocalContext.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -116,7 +117,6 @@ internal fun SearchResultCard(
     val primaryText = colorResource(R.color.primaryText)
     val secondaryText = colorResource(R.color.secondaryText)
     val accent = Color(NgTheme.colors.primary)
-    val onAccent = Color.White
     val textStyle = SearchCardTextStyle
 
     Row(

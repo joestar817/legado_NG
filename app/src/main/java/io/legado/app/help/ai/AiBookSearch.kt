@@ -195,5 +195,14 @@ internal const val AI_BOOK_SEARCH_SCOPE = "search_scope"
 internal const val AI_BOOK_SEARCH_AUDIO_SCOPE_MEDIA = "audio_scope_media"
 internal const val AI_BOOK_SEARCH_DRAFT = "draft"
 
+internal fun AgentModeEntryContext?.bookSearchDraft(): String? = this?.payload?.get(AI_BOOK_SEARCH_DRAFT)
+    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+    ?.asString?.takeIf { it.isNotBlank() }
+
+internal fun bookSearchDraftForHistory(input: String, hasMessages: Boolean, userEdited: Boolean): String? {
+    if (!hasMessages && !userEdited) return null
+    return input.take(4000).filter { !it.isISOControl() || it in "\n\r\t" }.takeIf { it.isNotBlank() }
+}
+
 internal fun JsonObject?.isConfirmedBookSearchAudioScope(media: AiBookSearchMedia?): Boolean =
     media?.sourceType == BookSourceType.audio && this?.field(AI_BOOK_SEARCH_AUDIO_SCOPE_MEDIA, 16) == media.name

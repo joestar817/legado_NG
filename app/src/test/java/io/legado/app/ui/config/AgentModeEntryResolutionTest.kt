@@ -10,6 +10,7 @@ import io.legado.app.help.ai.AgentModeEntryStartBehavior
 import io.legado.app.help.ai.AgentModeRegistry
 import io.legado.app.help.ai.AiChatInteractionParser
 import io.legado.app.help.ai.AiChatInteractionType
+import io.legado.app.help.ai.hasChatHistoryContent
 import io.legado.app.help.ai.resolveAgentModeEntryLaunch
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -124,9 +125,9 @@ class AgentModeEntryResolutionTest {
 
     @Test
     fun merelyShowingEntryCardDoesNotCreateAnEmptyHistorySession() {
-        assertEquals(false, shouldPersistActiveSession(false, false))
-        assertEquals(true, shouldPersistActiveSession(false, true))
-        assertEquals(true, shouldPersistActiveSession(true, false))
+        assertEquals(false, hasChatHistoryContent(false, false))
+        assertEquals(true, hasChatHistoryContent(false, true))
+        assertEquals(true, hasChatHistoryContent(true, false))
     }
 
     @Test

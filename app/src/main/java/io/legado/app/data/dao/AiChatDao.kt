@@ -8,23 +8,22 @@ import androidx.room.Transaction
 import io.legado.app.data.entities.AiChatConversation
 import io.legado.app.data.entities.AiChatMessageNode
 
+private const val CONVERSATION_METADATA_SQL =
+    "select id, assistantId, agentModeRevision, modeEntryContext, modeEntryStarted, " +
+        "title, createAt, updateAt, isPinned, customSystemPrompt, loadedSkillIds, " +
+        "enabledMcpCapabilityIds, webEnabled, " +
+        "exists (select 1 from aiChatMessageNodes where conversationId = aiChatConversations.id) " +
+        "as hasMessageNodes from aiChatConversations"
+
 @Dao
 interface AiChatDao {
 
     @Query(
-        "select id, assistantId, agentModeRevision, modeEntryContext, modeEntryStarted, " +
-            "title, createAt, updateAt, isPinned, " +
-            "customSystemPrompt, loadedSkillIds, enabledMcpCapabilityIds, webEnabled from aiChatConversations " +
-            "order by isPinned desc, updateAt desc limit :limit"
+        "$CONVERSATION_METADATA_SQL order by isPinned desc, updateAt desc, id limit :limit offset :offset"
     )
-    fun getConversationMetadata(limit: Int = 100): List<AiChatConversationMetadata>
+    fun getConversationMetadata(limit: Int = 100, offset: Int = 0): List<AiChatConversationMetadata>
 
-    @Query(
-        "select id, assistantId, agentModeRevision, modeEntryContext, modeEntryStarted, " +
-            "title, createAt, updateAt, isPinned, " +
-            "customSystemPrompt, loadedSkillIds, enabledMcpCapabilityIds, webEnabled " +
-            "from aiChatConversations where id = :id"
-    )
+    @Query("$CONVERSATION_METADATA_SQL where id = :id")
     fun getConversationMetadata(id: String): AiChatConversationMetadata?
 
     @Query("select length(uploadMessages) from aiChatConversations where id = :id")
@@ -37,11 +36,12 @@ interface AiChatDao {
     fun getUploadMessagesChunk(id: String, start: Int, length: Int): String?
 
     @Transaction
-    fun getConversations(limit: Int = 100): List<AiChatConversation> {
-        return getConversationMetadata(limit).map { metadata ->
-            metadata.toConversation(readUploadMessages(metadata.id))
-        }
-    }
+    fun getConversations(limit: Int = 100): List<AiChatConversation> =
+        readConversations(getConversationMetadata(limit))
+
+    @Transaction
+    fun readConversations(metadata: List<AiChatConversationMetadata>): List<AiChatConversation> =
+        metadata.map { it.toConversation(readUploadMessages(it.id)) }
 
     @Transaction
     fun getConversation(id: String): AiChatConversation? {
@@ -110,6 +110,7 @@ data class AiChatConversationMetadata(
     val loadedSkillIds: String,
     val enabledMcpCapabilityIds: String,
     val webEnabled: Boolean,
+    val hasMessageNodes: Boolean,
 ) {
     fun toConversation(uploadMessages: String): AiChatConversation {
         return AiChatConversation(
