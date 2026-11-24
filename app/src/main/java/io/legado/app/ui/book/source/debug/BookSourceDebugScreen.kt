@@ -67,7 +67,9 @@ import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarBackButton
+import io.legado.app.ui.design.components.compose.NgFormFieldGroup
 import io.legado.app.ui.design.components.compose.NgFormPanel
+import io.legado.app.ui.design.components.compose.NgFormPanelVariant
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSearchBarActionButton
@@ -307,12 +309,8 @@ private fun BookSourceDebugHelp(
     onTocClick: () -> Unit,
     onContentClick: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colorResource(R.color.ng_surface_card))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    NgFormFieldGroup(
+        modifier = Modifier.padding(start = 12.dp, top = 6.dp, end = 12.dp),
     ) {
         DebugHelpSection(title = "调试搜索>>输入关键字，如：") {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -414,7 +412,6 @@ private fun BookSourceDebugPhaseRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .background(Color(NgTheme.colors.background))
             .padding(horizontal = 10.dp),
     ) {
         DebugPhaseRail(
@@ -426,6 +423,7 @@ private fun BookSourceDebugPhaseRow(
             lineColor = lineColor,
         )
         NgFormPanel(
+            variant = NgFormPanelVariant.LIQUID_GLASS,
             modifier = Modifier
                 .weight(1f)
                 .padding(top = 8.dp, bottom = 8.dp)
@@ -450,7 +448,7 @@ private fun BookSourceDebugPhaseRow(
                     )
                     NgStatusTag(
                         text = item.durationText,
-                        variant = NgStatusTagVariant.NEUTRAL,
+                        variant = NgStatusTagVariant.INFO,
                         style = NgStatusTagStyle.REGULAR,
                     )
                     Spacer(Modifier.width(6.dp))

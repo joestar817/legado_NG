@@ -1,5 +1,6 @@
 package io.legado.app.ui.design.components.compose
 
+import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -149,7 +150,7 @@ fun NgFormGroup(
     }
 }
 
-enum class NgFormPanelVariant { STANDARD, LARGE_ROUNDED, SOURCE_EDITOR }
+enum class NgFormPanelVariant { STANDARD, LARGE_ROUNDED, SOURCE_EDITOR, LIQUID_GLASS }
 
 /** 不附带外部标题的连续亮白表单底板。 */
 @Composable
@@ -167,13 +168,30 @@ fun NgFormPanel(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val radius = when (variant) {
-        NgFormPanelVariant.STANDARD, NgFormPanelVariant.SOURCE_EDITOR -> NgTheme.shapes.mediumDp
+        NgFormPanelVariant.STANDARD,
+        NgFormPanelVariant.SOURCE_EDITOR,
+        NgFormPanelVariant.LIQUID_GLASS -> NgTheme.shapes.mediumDp
         NgFormPanelVariant.LARGE_ROUNDED -> NgTheme.shapes.largeDp
     }
     val shape = RoundedCornerShape(radius.dp)
     val cardColor = if (variant == NgFormPanelVariant.SOURCE_EDITOR) {
         Color(NgTheme.colors.cardContainer).copy(alpha = 1f)
     } else ngDrawerContentCardColor()
+    if (variant == NgFormPanelVariant.LIQUID_GLASS &&
+        NgTheme.usesLiquidGlass &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        hasCurrentNgLiquidGlassBackdrop()
+    ) {
+        NgVisualSurface(
+            modifier = modifier.fillMaxWidth(),
+            role = NgMaterialRole.CONTENT,
+            cornerRadius = radius.dp,
+            shape = shape,
+            style = NgGlassDefaults.bookDetailStyle(cardColor),
+            content = content,
+        )
+        return
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
