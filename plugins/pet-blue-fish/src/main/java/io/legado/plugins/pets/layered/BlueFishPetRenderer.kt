@@ -132,7 +132,7 @@ class BlueFishPetRenderer(private val bitmaps: Map<String, Bitmap>) : PetRendere
         canvas.concat(rootMatrix)
         canvas.drawBitmap(surface, null, surfaceRect, paint)
         canvas.restore()
-        if (visual.stage == BlueFishStage.THINKING || visual.stage == BlueFishStage.AHA) {
+        if (visual.showBubble && (visual.stage == BlueFishStage.THINKING || visual.stage == BlueFishStage.AHA)) {
             drawBubble(canvas, frame, visual)
         }
     }

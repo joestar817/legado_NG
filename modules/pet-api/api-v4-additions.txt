@@ -1,0 +1,2 @@
+io.legado.pet.api.PetPlacementSession public abstract boolean isParked();
+public interface io.legado.pet.api.PetPlacementSession extends io.legado.pet.api.PetSession

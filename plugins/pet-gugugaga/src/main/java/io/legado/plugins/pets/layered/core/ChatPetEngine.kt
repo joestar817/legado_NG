@@ -1,7 +1,9 @@
 package io.legado.plugins.pets.layered.core
 
+import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.roundToLong
+import kotlin.math.sin
 
 internal data class PetActionRun(
     val id: PetActionId,
@@ -71,6 +73,7 @@ class PetEngineSnapshot internal constructor(
  * lifecycle suspension, navigation, and supplying elapsed foreground time.
  */
 class ChatPetEngine(override val definition: PetCharacterDefinition = GuguGagaCharacter.definition) : PetController {
+    override val activityAnimation = PetActivityAnimation(PetActionSampler.spec(PetActionId.WAVE).durationMs)
     private var state = PetSavedState()
     private var pointer: PetPointerState? = null
     private var pendingPlacement: PetPlacement? = null
@@ -88,12 +91,28 @@ class ChatPetEngine(override val definition: PetCharacterDefinition = GuguGagaCh
     val sceneMs get() = state.sceneMs
     val currentAction get() = state.action?.id
     val hiddenAnchorX get() = widthDp + definition.hiddenReach
+    override val isParked get() = stableMode == PetStableMode.FREE &&
+        (phase == PetPhase.IDLE || phase == PetPhase.ACTION)
 
     override fun frame(): PetFrame {
         val activePointer = pointer
         if (state.phase == PetPhase.PRESSED && activePointer != null) return activePointer.frozenFrame
         if (state.phase == PetPhase.DOCKING) return dockingFrame()
         val pose = if (state.mode == PetStableMode.FREE) PetPose.FULL else PetPose.PEEK
+        if (activePointer == null && activityAnimation.takesOver(state.phase)) {
+            val elapsed = activityAnimation.elapsedMs
+            val completion = activityAnimation.completionElapsedMs
+            val bounce = completion?.let { sin((it / 740.0).coerceAtMost(1.0) * PI).toFloat() } ?: 0f
+            val motion = when {
+                completion != null && pose == PetPose.FULL -> PetActionSampler.sample(PetActionId.WAVE, completion, pose)
+                completion != null -> PetMotion(head = -6f * bounce, blink = bounce)
+                activityAnimation.workActivity != null -> PetActionSampler.work(elapsed)
+                else -> PetMotion(blink = PetActionSampler.blink((elapsed % 9000L) / 1000.0, 3.2).toFloat())
+            }
+            val originalReveal = if (state.action?.id == PetActionId.PEEK_LOOK) actionMotion().reveal else 0f
+            return poseFrame(pose, state.position.copy(y = state.position.y - 5f * bounce),
+                motion.copy(reveal = originalReveal))
+        }
         val elapsed = state.sceneMs - state.phaseStartMs
         val motion = when (state.phase) {
             PetPhase.ACTION -> actionMotion()
@@ -232,6 +251,10 @@ class ChatPetEngine(override val definition: PetCharacterDefinition = GuguGagaCh
     override fun advance(deltaMs: Long) {
         require(deltaMs >= 0L)
         if (widthDp <= 0f || heightDp <= 0f || state.phase == PetPhase.PRESSED || deltaMs == 0L) return
+        if (pointer == null && activityAnimation.takesOver(state.phase)) {
+            activityAnimation.advance(deltaMs)
+            return
+        }
         state = state.copy(sceneMs = state.sceneMs + deltaMs)
         if (state.phase == PetPhase.DRAGGING) {
             state = state.copy(dragHead = state.headTarget + (state.dragHead - state.headTarget) * exp(-deltaMs / 90.0).toFloat())
@@ -281,6 +304,7 @@ class ChatPetEngine(override val definition: PetCharacterDefinition = GuguGagaCh
     /** Null suspends drawing. Idle wakes at the next blink/action rather than polling. */
     override fun nextFrameDelayMs(): Long? {
         if (widthDp <= 0f || heightDp <= 0f || state.phase == PetPhase.PRESSED) return null
+        if (pointer == null && activityAnimation.takesOver(state.phase)) return 33L
         if (state.phase != PetPhase.IDLE) return 16L
         val elapsed = state.sceneMs - state.phaseStartMs
         val cycle = elapsed % 9000L

@@ -1,5 +1,6 @@
 package io.legado.plugins.pets.layered.core
 
+import kotlin.math.PI
 import kotlin.math.roundToLong
 import kotlin.math.sin
 
@@ -9,6 +10,7 @@ import kotlin.math.sin
  */
 class BlueFishPetEngine : PetController {
     override val definition = BlueFishCharacter.definition
+    override val activityAnimation = PetActivityAnimation(BlueFishMotion.AHA_MS)
     override var widthDp = 0f
         private set
     override var heightDp = 0f
@@ -49,8 +51,40 @@ class BlueFishPetEngine : PetController {
     val stableMode get() = state.mode
     val phase get() = if (pointer != null && !isDragging) PetPhase.PRESSED else state.phase
     val sceneMs get() = state.clock
+    override val isParked get() = stableMode == PetStableMode.FREE &&
+        (phase == PetPhase.IDLE || phase == PetPhase.ACTION)
 
     override fun frame(): PetFrame {
+        val base = idleFrame()
+        if (pointer != null || !activityAnimation.takesOver(state.phase)) return base
+        val elapsed = activityAnimation.elapsedMs
+        val completion = activityAnimation.completionElapsedMs
+        val working = activityAnimation.workActivity != null
+        if (completion == null && !working &&
+            (state.action == Action.SCOOTER || state.phase == PetPhase.DOCKING || state.phase == PetPhase.SETTLING)
+        ) return base
+
+        val bounce = completion?.let { sin((it / 700.0).coerceAtMost(1.0) * PI).toFloat() } ?: 0f
+        val position = if (state.action == Action.SCOOTER) {
+            PetPoint(safeX(base.anchor.x), safeY(base.anchor.y))
+        } else base.anchor
+        val anchor = position.copy(y = position.y - 6f * bounce)
+        val visual = when {
+            base.pose == PetPose.PEEK -> BlueFishMotion.peek(elapsed, elapsed).copy(
+                angle = when {
+                    completion != null -> -.045f * bounce
+                    working -> .025f + sin(elapsed / 230.0).toFloat() * .014f
+                    else -> 0f
+                },
+            )
+            completion != null -> BlueFishMotion.sequence(elapsed, BlueFishMotion.THINKING_MS + completion)
+            working -> BlueFishMotion.sequence(elapsed, elapsed % BlueFishMotion.THINKING_MS)
+            else -> BlueFishMotion.idle(elapsed)
+        }
+        return makeFrame(anchor, visual.copy(showBubble = false))
+    }
+
+    private fun idleFrame(): PetFrame {
         pointer?.let {
             return if (!it.dragging) it.frozen else makeFrame(state.position, suspendedVisual())
         }
@@ -225,6 +259,10 @@ class BlueFishPetEngine : PetController {
             if (it.dragging) state = state.copy(clock = state.clock + deltaMs)
             return
         }
+        if (activityAnimation.takesOver(state.phase)) {
+            activityAnimation.advance(deltaMs)
+            return
+        }
         state = state.copy(clock = state.clock + deltaMs)
         // Anchor transitions to deadlines so irregular foreground frames do not
         // skip a bite, extend a phase, or change the next random idle deadline.
@@ -277,6 +315,7 @@ class BlueFishPetEngine : PetController {
         if (widthDp <= 0f || heightDp <= 0f) return null
         val active = pointer
         if (active != null && !active.dragging) return null
+        if (active == null && activityAnimation.takesOver(state.phase)) return 33L
         return if (active?.dragging == true || state.phase == PetPhase.SETTLING || state.phase == PetPhase.DOCKING ||
             state.action == Action.RELIEF || state.action == Action.SCOOTER) 16L else 33L
     }

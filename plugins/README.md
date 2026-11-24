@@ -1,17 +1,17 @@
-# 阅读 NG 宠物 SDK 2.1.0
+# 阅读 NG 宠物 SDK 4.0.0
 
 一个作者工程包含一份 pet.json、Kotlin 或 Java 源码，以及可选的原始素材。构建工具会由 pet.json 生成包内运行清单及可选展示信息，检查编译后的入口，输出可本地导入或上架的单层 ZIP。
 
 ## 获取 SDK 和创建项目
 
-在阅读工程中用 Windows PowerShell 生成 SDK。发布给作者的是 build/outputs/pet-sdk/pet-sdk-2.1.0.zip，内含固定接口 JAR、打包工具、Gradle wrapper 和光球模板。阅读 App 的构建仅依赖基础接口模块。
+在阅读工程中用 Windows PowerShell 生成 SDK。产物为 build/outputs/pet-sdk/pet-sdk-4.0.0.zip，内含接口 JAR、打包工具、Gradle wrapper 和光球模板。
 
     $env:GRADLE_USER_HOME = 'D:\code\.gradle-legado'
     .\gradlew.bat :modules:pet-api:exportPetSdk --no-parallel
 
 以下步骤在作者机器上执行。安装 JDK 17 和带 android-36 平台的 Android SDK，将 ANDROID_HOME 指向其目录。把 SDK 解压到工具目录，将 template 复制为独立的插件工程。
 
-    Expand-Archive -LiteralPath .\pet-sdk-2.1.0.zip -DestinationPath .\pet-sdk
+    Expand-Archive -LiteralPath .\pet-sdk-4.0.0.zip -DestinationPath .\pet-sdk
     Copy-Item -LiteralPath .\pet-sdk\template -Destination .\my-orb -Recurse
     $builder = (Resolve-Path .\pet-sdk).Path
     $pet = (Resolve-Path .\my-orb).Path
@@ -26,17 +26,30 @@
 | id | 同一插件的稳定身份。小写字母开头，随后可用小写字母、数字和下划线，总长不超过 64。none 与 button 为保留值 |
 | name | 安装后显示的名称 |
 | versionCode | 每次发布新包递增的整数，须与目录版本一致 |
+| apiVersion | 默认 2。实现会话活动接口时填写 3，使用停驻接口时填写 4。导入需要同级或更高版本的宿主 API |
 | entryClass | 实现 io.legado.pet.api.PetPlugin 的公开类的 JVM 二进制名称，例如 example.OrbPlugin 或 example.Factory$Orb。入口提供公开无参构造函数，其 id 与清单相同 |
 | sharedSources | 可选的作者共享源码相对目录，由这些源码编译出的角色逻辑归插件所有 |
 | info | 可选的离线展示信息对象，字段和限制见下节 |
 
-SDK 工具固定输出 schemaVersion=2、kind=pet、apiVersion=2。包内携带插件自己的 Kotlin 运行依赖。发布校验检查入口实现、主应用内部类型引用和重复打入的 SDK 类。插件可按照需要在 src/main/assets/ 下放置文件，素材保留作者提供的字节。
+SDK 工具输出 schemaVersion=2、kind=pet 和选择的 apiVersion。包内携带插件自己的 Kotlin 运行依赖。发布校验检查入口实现、主应用内部类型引用和重复打入的 SDK 类。插件可按照需要在 src/main/assets/ 下放置文件，素材保留作者提供的字节。
 
-PetPlugin.createSession 在后台准备资源。宿主将当前会话移交给界面线程后，以视口 dp 派发绘制和输入。会话自行绘制、计算命中并决定下帧时间，release 返回 true 表达激活意图，聊天导航归宿主负责。宿主隐藏窗口时暂停驱动并通知 setVisible，切换后调用 close 释放资源。saveState 可返回最多 4096 字节的角色私有数据，自行维护数据版本并处理空数据或不支持的版本。
+PetPlugin.createSession 在后台准备资源。宿主将当前会话移交给界面线程后，以视口 dp 派发绘制和输入。会话自行绘制、计算命中并决定下帧时间，release 返回 true 表达激活意图，宠物菜单和导航归宿主负责。宿主隐藏窗口时暂停驱动并通知 setVisible，切换后调用 close 释放资源。saveState 可返回最多 4096 字节的角色私有数据，自行维护数据版本并处理空数据或不支持的版本。
+
+## 会话活动
+
+API 3 在原有 PetSession 上增加可选的 PetActivitySession。宿主识别该接口后在界面线程调用它。API 2 包仍可打开菜单，展开期间宿主暂停其动画时钟。
+
+- `setPositionHeld` 控制菜单展开期间的位置。可以保留原地动画，宿主在首次拖动前会解除锁定。
+- `setWorkActivity` 传入当前工作类型。空值表示待机，`PetActivities.WORK` 播放通用工作循环。`PetActivities.BOOK_SOURCE_REPAIR` 预留给书源维修。遇到没有专用动作的工作类型时，播放通用工作动作，缺少通用动作时使用待机。
+- `playReaction` 接收一次性事件。`PetActivities.COMPLETED` 播放一次完成动作，再恢复当时的工作或待机。遇到未实现的事件时可以忽略。
+
+任务进度和会话跳转由阅读 NG 处理。宠物包收到的只有动作标识和位置控制。
+
+API 4 增加可选的 `PetPlacementSession`。宿主在绘制后读取 `isParked`，宠物停在屏内时返回 `true`，原地工作或完成动画也属于停驻。拖动、落地过渡、吸边及游走时返回 `false`。宿主结合运行中会话和菜单状态决定是否自动显示进度。早期包可继续通过铃铛查看会话。
 
 ## 离线展示信息
 
-SDK 2.1.0 继续使用 API 2 和 `pet-api-2.0.0.jar`，没有新增运行接口。可在作者配置 `pet.json` 中加入可选 `info` 对象：
+可在作者配置 `pet.json` 中加入可选 `info` 对象。
 
 ```json
 {
@@ -81,8 +94,8 @@ SDK 2.1.0 继续使用 API 2 和 `pet-api-2.0.0.jar`，没有新增运行接口�
 
 ## 两只已有宠物
 
-本仓库的 pet-gugugaga、pet-blue-fish 都是独立作者工程，共用的旧角色绘制与动画工具位于 pet-layered/src/main/java。以这两个工程各自的绝对目录作为 petProject，就能使用与模板相同的 SDK 命令构建 gugugaga-4.zip 与 blue_fish-3.zip。
+本仓库的 pet-gugugaga、pet-blue-fish 都是独立作者工程，共用的角色绘制与动画工具位于 pet-layered/src/main/java。以这两个工程各自的绝对目录作为 petProject，就能使用与模板相同的 SDK 命令构建 gugugaga-6.zip 与 blue_fish-5.zip。
 
-咕嘎 2.2（内部版本 4）和蓝色大肥鱼 2.1（内部版本 3）新增包内展示版本、作者、介绍与静态预览。预览直接复制已有透明详情 PNG；咕嘎沿用已恢复的 13 张原始 PNG，蓝鱼沿用已有角色素材，均保留原文件字节，不做 Q95 重编码。两包接口仍为 API 2。
+咕嘎 2.4（内部版本 6）和蓝色大肥鱼 2.3（内部版本 5）通过 API 4 提供停驻状态，并使用会话活动接口播放工作和完成动作。
 
 资源中心按 pet 类型、包内身份、摘要和接口版本校验这些 ZIP。下载或本地导入后由用户显式启用。插件与宿主同进程运行并含可执行代码，导入时应确认来源可信。

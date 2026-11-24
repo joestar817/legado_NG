@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.RectF
+import io.legado.pet.api.PetActivitySession
 import io.legado.pet.api.PetAssets
+import io.legado.pet.api.PetPlacementSession
 import io.legado.pet.api.PetSession
 import java.nio.ByteBuffer
 
@@ -12,12 +14,25 @@ import java.nio.ByteBuffer
 class LayeredPetSession private constructor(
     private val controller: PetController,
     private val renderer: PetRenderer,
-) : PetSession {
+) : PetActivitySession, PetPlacementSession {
     override fun resize(widthDp: Float, heightDp: Float) = controller.resize(widthDp, heightDp)
-    override fun setVisible(visible: Boolean) { if (!visible) controller.cancel() }
+    override fun setVisible(visible: Boolean) {
+        if (!visible) {
+            controller.cancel()
+            controller.activityAnimation.clearReaction()
+        }
+    }
+    override fun setPositionHeld(held: Boolean) {
+        controller.activityAnimation.positionHeld = held
+    }
+    override fun setWorkActivity(activityId: String?) {
+        controller.activityAnimation.workActivity = activityId
+    }
+    override fun playReaction(reactionId: String) = controller.activityAnimation.playReaction(reactionId)
     override fun draw(canvas: Canvas) =
         renderer.draw(canvas, controller.frame(), controller.widthDp, controller.heightDp)
     override val hitBounds: RectF get() = renderer.hitBounds
+    override val isParked: Boolean get() = controller.isParked
     override fun hitTest(x: Float, y: Float) = renderer.hitTest(PetPoint(x, y))
     override fun press(x: Float, y: Float, eventTimeMs: Long) { controller.press(x, y, eventTimeMs) }
     override fun move(x: Float, y: Float, eventTimeMs: Long, dragging: Boolean) =

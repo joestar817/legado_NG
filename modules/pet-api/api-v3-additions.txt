@@ -1,0 +1,9 @@
+io.legado.pet.api.PetActivitySession public abstract void playReaction(java.lang.String);
+io.legado.pet.api.PetActivitySession public abstract void setPositionHeld(boolean);
+io.legado.pet.api.PetActivitySession public abstract void setWorkActivity(java.lang.String);
+io.legado.pet.api.PetActivities public static final io.legado.pet.api.PetActivities INSTANCE;
+io.legado.pet.api.PetActivities public static final java.lang.String BOOK_SOURCE_REPAIR;
+io.legado.pet.api.PetActivities public static final java.lang.String COMPLETED;
+io.legado.pet.api.PetActivities public static final java.lang.String WORK;
+public final class io.legado.pet.api.PetActivities
+public interface io.legado.pet.api.PetActivitySession extends io.legado.pet.api.PetSession

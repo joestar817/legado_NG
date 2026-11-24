@@ -3,10 +3,11 @@ import java.util.zip.ZipFile
 
 // Capture the JVM-visible public surface used by existing compiled plugins.
 def releaseAar = layout.buildDirectory.file('outputs/aar/pet-api-release.aar')
+def snapshots = [file('api-v2.txt'), file('api-v3-additions.txt'), file('api-v4-additions.txt')]
 tasks.register('verifyPetAbi') {
     dependsOn 'bundleReleaseAar'
     inputs.file(releaseAar)
-    inputs.file(file('api-v2.txt'))
+    inputs.files(snapshots)
     doLast {
         def jar = new File(temporaryDir, 'pet-api.jar')
         new ZipFile(releaseAar.get().asFile).withCloseable { archive ->
@@ -36,9 +37,9 @@ tasks.register('verifyPetAbi') {
                 actual << "${owner} ${line}".toString()
             }
         }
-        def expected = file('api-v2.txt').readLines('UTF-8').findAll { it }.sort()
+        def expected = snapshots.collectMany { it.readLines('UTF-8').findAll { line -> line } }.sort()
         if (actual.sort() != expected) {
-            throw new GradleException("Frozen pet API v2 changed. Removed: ${expected - actual}; added: ${actual - expected}")
+            throw new GradleException("Pet API differs from the frozen signatures. Removed: ${expected - actual}; added: ${actual - expected}")
         }
     }
 }

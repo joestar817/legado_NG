@@ -1,5 +1,6 @@
 package io.legado.plugins.pets.layered.core
 
+import io.legado.pet.api.PetActivities
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -10,6 +11,65 @@ import kotlin.math.PI
 
 /** Native state and sampling contracts; artwork rendering remains a separate check. */
 class BlueFishPetEngineTest {
+    @Test
+    fun onlyParkedFreePoseAllowsAutomaticTasks() {
+        val engine = edgeEngine()
+        engine.activityAnimation.workActivity = PetActivities.WORK
+        assertFalse(engine.isParked)
+
+        val anchor = engine.frame().anchor
+        assertTrue(engine.press(anchor.x, anchor.y))
+        engine.move(180f, 400f, 100L, true)
+        assertFalse(engine.isParked)
+        assertFalse(engine.release(180f, 400f))
+        engine.advance(BlueFishPetEngine.RECOVER_MS - 1L)
+        assertFalse(engine.isParked)
+        engine.advance(1L)
+        assertTrue(engine.isParked)
+        assertStage(engine, BlueFishStage.THINKING)
+
+        drag(engine, PetPoint(WIDTH - 10f, 400f))
+        assertFalse(engine.isParked)
+        engine.advance(BlueFishPetEngine.DOCK_MS)
+        assertFalse(engine.isParked)
+    }
+
+    @Test
+    fun workKeepsAStationaryThinkingPoseAndCompletionReturnsToTheCurrentState() {
+        val engine = freeEngine()
+        val animation = engine.activityAnimation
+        val anchor = engine.frame().anchor
+        animation.workActivity = PetActivities.BOOK_SOURCE_REPAIR
+        engine.advance(BlueFishMotion.SEQUENCE_MS * 2)
+        assertEquals(anchor, engine.frame().anchor)
+        assertStage(engine, BlueFishStage.THINKING)
+        assertFalse(engine.frame().blueFish!!.showBubble)
+        animation.playReaction("unknown")
+        assertStage(engine, BlueFishStage.THINKING)
+        animation.playReaction(PetActivities.COMPLETED)
+        engine.advance(350L)
+        assertStage(engine, BlueFishStage.AHA)
+        assertTrue(engine.frame().anchor.y < anchor.y)
+        engine.advance(BlueFishMotion.AHA_MS)
+        assertStage(engine, BlueFishStage.THINKING)
+        animation.workActivity = null
+        assertStage(engine, BlueFishStage.IDLE)
+        assertEquals(anchor, engine.frame().anchor)
+    }
+
+    @Test
+    fun openingTheMenuHoldsTheDockAndResumesTheOriginalIdleClock() {
+        val engine = edgeEngine()
+        val start = engine.frame().anchor
+        engine.activityAnimation.positionHeld = true
+        engine.advance(100_000L)
+        assertEquals(0L, engine.sceneMs)
+        assertEquals(start, engine.frame().anchor)
+        engine.activityAnimation.positionHeld = false
+        engine.advance(6_000L)
+        assertTrue(engine.frame().anchor.x < start.x)
+    }
+
     @Test
     fun startsDockedAndOnlyRevealsTheAcceptedHeadSlice() {
         val engine = edgeEngine()

@@ -1,15 +1,16 @@
 {
   "id": "blue_fish",
   "name": "蓝色大肥鱼",
-  "versionCode": 3,
+  "versionCode": 5,
+  "apiVersion": 4,
   "entryClass": "io.legado.plugins.pets.blue_fish.BlueFishPlugin",
   "sharedSources": [
     "../pet-layered/src/main/java"
   ],
   "info": {
-    "versionName": "2.1",
+    "versionName": "2.3",
     "author": "阅读 NG",
-    "description": "蓝色大肥鱼，支持点击、拖动和多种日常动作。",
+    "description": "蓝色大肥鱼。AI 助理工作时进入专注姿态，后台任务完成后做出回应。",
     "preview": "pet-preview.png"
   }
 }

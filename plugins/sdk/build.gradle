@@ -11,7 +11,7 @@ plugins {
 def sourceRoot = file(providers.gradleProperty('petProject').getOrElse('template')).canonicalFile
 def configFile = new File(sourceRoot, 'pet.json')
 def config = new JsonSlurper().parse(configFile, 'UTF-8')
-def allowed = ['id', 'name', 'versionCode', 'entryClass', 'sharedSources', 'info'] as Set
+def allowed = ['id', 'name', 'versionCode', 'entryClass', 'sharedSources', 'info', 'apiVersion'] as Set
 if (!(config instanceof Map) || !allowed.containsAll(config.keySet()) ||
     !(config.id instanceof String) || !(config.id ==~ /[a-z][a-z0-9_]{0,63}/) ||
     config.id in ['none', 'button'] || !(config.name instanceof String) ||
@@ -20,6 +20,10 @@ if (!(config instanceof Map) || !allowed.containsAll(config.keySet()) ||
     !(config.entryClass instanceof String) ||
     !(config.entryClass ==~ /(?:[A-Za-z_$][A-Za-z0-9_$]*\.)+[A-Za-z_$][A-Za-z0-9_$]*/)) {
     throw new GradleException("Invalid plugin identity, entry or release version in ${configFile}")
+}
+def apiVersion = config.get('apiVersion', 2)
+if (!(apiVersion instanceof Integer) || !(apiVersion in [2, 3, 4])) {
+    throw new GradleException('apiVersion must be 2, 3 or 4')
 }
 def sharedRoots = config.get('sharedSources', [])
 if (!(sharedRoots instanceof List) || !sharedRoots.every { it instanceof String && new File(sourceRoot, it).isDirectory() }) {
@@ -30,11 +34,11 @@ ext.petInfoValidator = petInfoValidator
 def packageInfo = config.containsKey('info') ? petInfoValidator.fromAuthor(config.info) : null
 petInfoValidator.validateAssets(sourceRoot, packageInfo)
 
-def sdkJar = file('lib/pet-api-2.0.0.jar')
-if (!sdkJar.isFile()) throw new GradleException('Build from the extracted pet-sdk-2.1.0 distribution')
+def sdkJar = file('lib/pet-api-4.0.0.jar')
+if (!sdkJar.isFile()) throw new GradleException('Build from the extracted pet-sdk-4.0.0 distribution')
 layout.buildDirectory.set(new File(sourceRoot, 'build'))
 def generatedAssets = layout.buildDirectory.dir('generated/pet/assets')
-def packageManifest = [schemaVersion: 2, kind: 'pet', apiVersion: 2, id: config.id,
+def packageManifest = [schemaVersion: 2, kind: 'pet', apiVersion: apiVersion, id: config.id,
     name: config.name, versionCode: config.versionCode, entryClass: config.entryClass]
 def generateManifest = tasks.register('generatePetManifest') {
     inputs.property('manifest', JsonOutput.toJson(packageManifest))

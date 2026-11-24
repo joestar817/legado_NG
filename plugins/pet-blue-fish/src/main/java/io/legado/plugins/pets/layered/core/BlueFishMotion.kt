@@ -24,6 +24,7 @@ data class BlueFishVisual(
     val landingProgress: Float = 0f,
     val landingOffsetY: Float = 0f,
     val scooter: BlueFishScooterVisual? = null,
+    val showBubble: Boolean = true,
 )
 
 /** Pure sampling of the accepted local v3 animation, independent of frame rate. */

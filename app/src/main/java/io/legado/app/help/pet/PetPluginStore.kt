@@ -75,6 +75,9 @@ internal object PetIdentity {
     const val CAPABILITY = "pet.api.2"
 
     fun valid(id: String) = id != "button" && id != "none" && identifier.matches(id)
+
+    fun supports(manifest: PetPluginManifest) =
+        manifest.schemaVersion == 2 && manifest.kind == "pet" && manifest.apiVersion in 2..4
 }
 
 /** Share platform types and the public SDK. Dependencies bundled by the author are plugin-local. */
@@ -93,7 +96,7 @@ internal object PetPackageInspector {
         name.none { Character.isISOControl(it) || it == ':' }
 
     fun validate(manifest: PetPluginManifest) {
-        require(manifest.schemaVersion == 2 && manifest.kind == "pet" && manifest.apiVersion == 2) { "宠物插件版本不兼容" }
+        require(PetIdentity.supports(manifest)) { "宠物插件版本不兼容" }
         require(PetIdentity.valid(manifest.id) && manifest.name.isNotBlank() && manifest.versionCode > 0 &&
             entryClass.matches(manifest.entryClass)) { "宠物插件信息无效" }
     }
@@ -204,7 +207,7 @@ internal object PetPluginStore {
         var failure: PetFailure? = null
         val status = when {
             !file.isFile -> PetLocalStatus.MISSING.also { failure = PetFailure("package", "安装包文件缺失") }
-            receipt.manifest.apiVersion != 2 || receipt.manifest.schemaVersion != 2 ->
+            !PetIdentity.supports(receipt.manifest) ->
                 PetLocalStatus.INCOMPATIBLE.also { failure = PetFailure("api", "宠物接口版本不兼容") }
             else -> try {
                 require(!file.canWrite() && hash(file) == receipt.sha256)
@@ -293,7 +296,7 @@ internal object PetPluginStore {
         .distinct()
         .filter(PetIdentity::valid)
         .mapNotNull(::installed)
-        .filter { it.manifest.apiVersion == 2 && packageFile(it).isFile }
+        .filter { PetIdentity.supports(it.manifest) && packageFile(it).isFile }
         .map { PetChoice(it.manifest.id, it.manifest.name) }
         .sortedWith(compareBy(PetChoice::name, PetChoice::id))
 
@@ -314,7 +317,7 @@ internal object PetPluginStore {
     @Synchronized
     fun load(id: String): PetPluginHandle? {
         val record = installed(id) ?: return null
-        if (record.manifest.apiVersion != 2) {
+        if (!PetIdentity.supports(record.manifest)) {
             failures[id] = PetFailure("api", "宠物接口版本不兼容")
             return null
         }

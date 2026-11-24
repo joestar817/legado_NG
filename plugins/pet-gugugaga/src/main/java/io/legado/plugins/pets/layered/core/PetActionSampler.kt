@@ -18,6 +18,16 @@ object PetActionSampler {
 
     fun spec(id: PetActionId): PetActionSpec = specs.getValue(id)
 
+    fun work(elapsedMs: Long): PetMotion {
+        val tap = sin(2.0 * PI * (elapsedMs % 780L) / 780.0).toFloat()
+        return PetMotion(
+            head = 4f + 1.5f * tap,
+            leftArm = 28f + 12f * tap,
+            rightArm = -28f + 12f * tap,
+            blink = blink((elapsedMs % 3800L) / 1000.0, 1.3).toFloat(),
+        )
+    }
+
     fun sample(id: PetActionId, elapsedMs: Long, pose: PetPose): PetMotion {
         val spec = spec(id)
         if (elapsedMs <= 0L || elapsedMs >= spec.durationMs || pose !in spec.poses) return PetMotion.ZERO

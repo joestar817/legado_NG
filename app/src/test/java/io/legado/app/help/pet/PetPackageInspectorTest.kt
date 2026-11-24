@@ -8,14 +8,20 @@ import java.util.zip.ZipOutputStream
 
 class PetPackageInspectorTest {
     @Test fun supportedManifestAndCompiledPackageAreRequired() {
-        val file = archive("classes.dex" to PetDexFixtures.minimal(), "assets/plugin.json" to manifest().toByteArray())
-        try { assertEquals("test_pet", PetPackageInspector.inspect(file).id) } finally { file.delete() }
+        for (api in listOf(2, 3, 4)) {
+            val file = archive("classes.dex" to PetDexFixtures.minimal(), "assets/plugin.json" to manifest(api).toByteArray())
+            try {
+                val manifest = PetPackageInspector.inspect(file)
+                assertEquals("test_pet", manifest.id)
+                assertEquals(api, manifest.apiVersion)
+            } finally { file.delete() }
+        }
     }
 
     @Test fun missingCodeAndUnsupportedApiAreRejected() {
         for (entries in listOf(
             arrayOf("assets/plugin.json" to manifest().toByteArray()),
-            arrayOf("classes.dex" to PetDexFixtures.minimal(), "assets/plugin.json" to manifest(3).toByteArray()),
+            arrayOf("classes.dex" to PetDexFixtures.minimal(), "assets/plugin.json" to manifest(5).toByteArray()),
         )) {
             val file = archive(*entries)
             try { assertTrue(runCatching { PetPackageInspector.inspect(file) }.isFailure) } finally { file.delete() }

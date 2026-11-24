@@ -7,6 +7,8 @@ interface PetController {
     val heightDp: Float
     val isPressed: Boolean
     val isDragging: Boolean
+    val isParked: Boolean
+    val activityAnimation: PetActivityAnimation
 
     fun resize(widthDp: Float, heightDp: Float)
     fun frame(): PetFrame

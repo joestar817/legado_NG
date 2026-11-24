@@ -1,15 +1,16 @@
 {
   "id": "gugugaga",
   "name": "咕嘎",
-  "versionCode": 4,
+  "versionCode": 6,
+  "apiVersion": 4,
   "entryClass": "io.legado.plugins.pets.gugugaga.GuguGagaPlugin",
   "sharedSources": [
     "../pet-layered/src/main/java"
   ],
   "info": {
-    "versionName": "2.2",
+    "versionName": "2.4",
     "author": "阅读 NG",
-    "description": "咕嘎宠物，支持点击、拖动和日常陪伴。",
+    "description": "咕嘎宠物。AI 助理工作时做出专注动作，后台任务完成后挥手回应。",
     "preview": "pet-preview.png"
   }
 }

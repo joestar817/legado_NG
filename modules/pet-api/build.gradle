@@ -21,18 +21,18 @@ apply from: 'verify-abi.gradle'
 // This distribution is the entire build-time dependency of an independently authored pet.
 tasks.register('exportPetSdk', Zip) {
     dependsOn 'verifyPetAbi'
-    archiveFileName = 'pet-sdk-2.1.0.zip'
+    archiveFileName = 'pet-sdk-4.0.0.zip'
     destinationDirectory = rootProject.layout.buildDirectory.dir('outputs/pet-sdk')
     preserveFileTimestamps = false
     reproducibleFileOrder = true
     from({ zipTree(layout.buildDirectory.file('outputs/aar/pet-api-release.aar').get().asFile) }) {
         include 'classes.jar'
         into 'lib'
-        rename { 'pet-api-2.0.0.jar' }
+        rename { 'pet-api-4.0.0.jar' }
     }
     from(rootProject.file('plugins/sdk')) { exclude '**/build/**', '**/.gradle/**', '**/local.properties' }
     from(rootProject.file('plugins/README.md'))
-    from(file('api-v2.txt')) { into 'lib' }
+    from(files('api-v2.txt', 'api-v3-additions.txt', 'api-v4-additions.txt')) { into 'lib' }
     from(rootProject.file('gradle/wrapper')) { into 'gradle/wrapper' }
     from(rootProject.file('gradlew.bat'))
     from(rootProject.file('gradlew')) {

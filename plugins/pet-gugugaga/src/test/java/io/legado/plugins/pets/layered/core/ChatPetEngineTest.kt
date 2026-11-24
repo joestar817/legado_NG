@@ -1,5 +1,6 @@
 package io.legado.plugins.pets.layered.core
 
+import io.legado.pet.api.PetActivities
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,6 +10,67 @@ import org.junit.Test
 /** Pure core contracts. View hit masks, density, lifecycle, and visual QA are separate. */
 class ChatPetEngineTest {
     private val definition = GuguGagaCharacter.definition
+
+    @Test
+    fun onlyParkedFreePoseAllowsAutomaticTasks() {
+        val engine = edgeEngine()
+        engine.activityAnimation.workActivity = PetActivities.WORK
+        assertFalse(engine.isParked)
+
+        val anchor = engine.frame().anchor
+        assertTrue(engine.press(anchor.x, anchor.y))
+        engine.move(180f, 400f, 100L, dragThresholdExceeded = true)
+        assertFalse(engine.isParked)
+        assertFalse(engine.release(180f, 400f))
+        engine.advance(ChatPetEngine.SETTLE_MS - 1L)
+        assertFalse(engine.isParked)
+        engine.advance(1L)
+        assertTrue(engine.isParked)
+        engine.activityAnimation.positionHeld = true
+        engine.advance(200L)
+        assertTrue(engine.isParked)
+        engine.activityAnimation.positionHeld = false
+
+        dragTo(engine, PetPoint(WIDTH - 10f, 400f))
+        assertFalse(engine.isParked)
+        engine.advance(ChatPetEngine.DOCK_MS)
+        assertFalse(engine.isParked)
+    }
+
+    @Test
+    fun workLoopsInPlaceAndCompletionWavesOnce() {
+        val engine = freeEngine()
+        val animation = engine.activityAnimation
+        val anchor = engine.frame().anchor
+        animation.workActivity = PetActivities.WORK
+        val initialMotion = engine.frame().motion
+        engine.advance(195L)
+        assertPoint(anchor, engine.frame().anchor)
+        assertTrue(engine.frame().motion.leftArm != initialMotion.leftArm)
+        animation.playReaction(PetActivities.COMPLETED)
+        engine.advance(800L)
+        assertTrue(engine.frame().motion.rightArm < -90f)
+        engine.advance(1_200L)
+        assertTrue(engine.frame().motion.rightArm in -40f..-16f)
+        animation.workActivity = null
+        assertEquals(PetMotion.ZERO, engine.frame().motion)
+    }
+
+    @Test
+    fun holdingTheMenuFreezesAnInProgressPeekAtItsCurrentPosition() {
+        val engine = edgeEngine()
+        while (engine.currentAction != PetActionId.PEEK_LOOK && engine.sceneMs < 60_000L) engine.advance(40L)
+        engine.advance(900L)
+        val position = engine.frame().anchor
+        val time = engine.sceneMs
+        engine.activityAnimation.positionHeld = true
+        engine.advance(30_000L)
+        assertEquals(time, engine.sceneMs)
+        assertPoint(position, engine.frame().anchor)
+        engine.activityAnimation.positionHeld = false
+        engine.advance(900L)
+        assertTrue(engine.frame().anchor.x < position.x)
+    }
 
     @Test
     fun fullCallRaisesBothHandsAndKeepsTheFeetFixed() {

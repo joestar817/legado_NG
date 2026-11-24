@@ -59,6 +59,14 @@ ext.verifyPetZip = { File apk, Map manifest, Map info = null ->
         if (definitions.keySet().any { it.startsWith('Lio/legado/pet/api/') }) {
             throw new GradleException('Plugin contains host SDK definitions; use compileOnly for the SDK')
         }
+        if (manifest.apiVersion < 3 && types.any {
+            it in ['Lio/legado/pet/api/PetActivitySession;', 'Lio/legado/pet/api/PetActivities;']
+        }) {
+            throw new GradleException('Pet activity types require apiVersion=3')
+        }
+        if (manifest.apiVersion < 4 && 'Lio/legado/pet/api/PetPlacementSession;' in types) {
+            throw new GradleException('Pet placement requires apiVersion=4')
+        }
         def hostReferences = types.collect { it.replaceFirst(/^\[+/, '') }.findAll { it.startsWith('Lio/legado/app/') && !definitions.containsKey(it) }
         if (hostReferences) throw new GradleException("Plugin depends on App internals: ${hostReferences}")
         // entryClass is a JVM binary name. Only package separators change; nested types keep their dollar sign.
@@ -73,7 +81,7 @@ ext.verifyPetZip = { File apk, Map manifest, Map info = null ->
             if (reachable.add(current)) pending.addAll(definitions[current]?.parents ?: [])
         }
         if (!reachable.contains('Lio/legado/pet/api/PetPlugin;')) {
-            throw new GradleException('Entry class does not implement SDK v2 PetPlugin')
+            throw new GradleException('Entry class does not implement the PetPlugin interface')
         }
     }
 }
