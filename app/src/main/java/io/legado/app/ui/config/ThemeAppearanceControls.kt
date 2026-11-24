@@ -206,41 +206,64 @@ internal fun ThemeBackgroundSetting(
         expanded = expanded, onClick = { expanded = !expanded },
     )
     AnimatedVisibility(expanded) {
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp)) {
-            val stacked = maxWidth < 280.dp || LocalDensity.current.fontScale > 1.2f
-            val entry: @Composable (Boolean, Modifier) -> Unit = { dark, modifier ->
-                val label = stringResource(if (dark) R.string.ng_theme_dark_background else R.string.ng_theme_light_background)
-                val summary = if (dark) nightSummary else daySummary
-                Row(
-                    modifier = modifier.clip(RoundedCornerShape(10.dp))
-                        .clickable(role = Role.Button, onClick = if (dark) onOpenNight else onOpenDay)
-                        .semantics(mergeDescendants = true) { contentDescription = "$label, $summary" }
-                        .heightIn(min = 48.dp).padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
+        ThemeDayNightSettingsRow(
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+            title = { dark ->
+                stringResource(if (dark) R.string.ng_theme_dark_background else R.string.ng_theme_light_background)
+            },
+            summary = { dark -> if (dark) nightSummary else daySummary },
+            onOpen = { dark -> if (dark) onOpenNight() else onOpenDay() },
+        )
+    }
+}
+
+@Composable
+internal fun ThemeDayNightSettingsRow(
+    title: @Composable (Boolean) -> String,
+    summary: @Composable (Boolean) -> String,
+    onOpen: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    showDayNightIcons: Boolean = true,
+    trailing: @Composable (Boolean) -> Unit = {
+        Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), tint = Color(NgTheme.colors.onSurfaceVariant))
+    },
+) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val stacked = maxWidth < 280.dp || LocalDensity.current.fontScale > 1.2f
+        val outline = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.24f)
+        val entry: @Composable (Boolean, Modifier) -> Unit = { dark, itemModifier ->
+            val label = title(dark)
+            val value = summary(dark)
+            Row(
+                modifier = itemModifier.clip(RoundedCornerShape(10.dp))
+                    .clickable(role = Role.Button) { onOpen(dark) }
+                    .semantics(mergeDescendants = true) { contentDescription = "$label, $value" }
+                    .heightIn(min = 48.dp).padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                if (showDayNightIcons) {
                     Icon(if (dark) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
                         null, Modifier.size(20.dp), tint = Color(NgTheme.colors.onSurface))
-                    Text(label,
-                        modifier = Modifier.weight(1f), color = Color(NgTheme.colors.onSurface),
-                        fontSize = 13.sp, lineHeight = 17.sp)
-                    Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), tint = Color(NgTheme.colors.onSurfaceVariant))
                 }
+                Text(label,
+                    modifier = Modifier.weight(1f), color = Color(NgTheme.colors.onSurface),
+                    fontSize = 13.sp, lineHeight = 17.sp)
+                trailing(dark)
             }
-            val frame = Modifier.fillMaxWidth().border(0.6.dp,
-                Color(NgTheme.colors.outlineVariant).copy(alpha = 0.24f), RoundedCornerShape(12.dp))
-            if (stacked) {
-                Column(frame) {
-                    entry(false, Modifier.fillMaxWidth())
-                    NgCompactSettingsDivider()
-                    entry(true, Modifier.fillMaxWidth())
-                }
-            } else {
-                Row(frame, verticalAlignment = Alignment.CenterVertically) {
-                    entry(false, Modifier.weight(1f))
-                    Box(Modifier.width(0.6.dp).height(24.dp).background(Color(NgTheme.colors.outlineVariant).copy(alpha = 0.24f)))
-                    entry(true, Modifier.weight(1f))
-                }
+        }
+        val frame = Modifier.fillMaxWidth().border(0.6.dp, outline, RoundedCornerShape(12.dp))
+        if (stacked) {
+            Column(frame) {
+                entry(false, Modifier.fillMaxWidth())
+                NgCompactSettingsDivider()
+                entry(true, Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(frame, verticalAlignment = Alignment.CenterVertically) {
+                entry(false, Modifier.weight(1f))
+                Box(Modifier.width(0.6.dp).height(24.dp).background(outline))
+                entry(true, Modifier.weight(1f))
             }
         }
     }

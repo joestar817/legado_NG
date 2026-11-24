@@ -328,7 +328,9 @@ import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
 import io.legado.app.ui.design.components.compose.NgDotsLoadingIndicator
 import io.legado.app.ui.design.components.NgDialogVariant
+import io.legado.app.ui.design.components.compose.NgDrawerBackdropSource
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
+import io.legado.app.ui.design.components.compose.NgDrawerGlassAlertDialog
 import io.legado.app.ui.design.components.compose.NgFloatingIconToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingIconToolbarAction
 import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
@@ -3348,18 +3350,22 @@ private fun BoxScope.AiChatBackground(
     backdrop: NgLiquidGlassBackdrop?,
     showMask: Boolean,
 ) {
-    Box(
-        modifier = Modifier
-            .matchParentSize()
-            .then(backdrop?.let { Modifier.ngRecordLiquidGlassBackdrop(it) } ?: Modifier)
-            .background(MaterialTheme.colorScheme.background),
-    ) {
-        NgThemeGradientBackground(modifier = Modifier.fillMaxSize())
-        if (drawable != null) {
-            ChatBackgroundImage(drawable = drawable, modifier = Modifier.fillMaxSize())
+    NgDrawerBackdropSource(Modifier.matchParentSize()) {
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .then(backdrop?.let { Modifier.ngRecordLiquidGlassBackdrop(it) } ?: Modifier)
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
+                NgThemeGradientBackground(modifier = Modifier.fillMaxSize())
+                if (drawable != null) {
+                    ChatBackgroundImage(drawable = drawable, modifier = Modifier.fillMaxSize())
+                }
+            }
+            NgEffectThemeBackground(modifier = Modifier.fillMaxSize())
         }
     }
-    NgEffectThemeBackground(modifier = Modifier.fillMaxSize())
     if (showMask) AiChatBackgroundMask()
 }
 
@@ -7687,14 +7693,12 @@ private fun ContextUsageDialog(
         else -> MaterialTheme.colorScheme.primary
     }
     val dominantTokens = categories.maxOfOrNull { it.tokens } ?: 0
-    AlertDialog(
+    NgDrawerGlassAlertDialog(
         modifier = Modifier
             .fillMaxWidth(0.92f)
             .widthIn(max = 360.dp),
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        containerColor = colorResource(R.color.ng_surface_card),
-        tonalElevation = 0.dp,
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),

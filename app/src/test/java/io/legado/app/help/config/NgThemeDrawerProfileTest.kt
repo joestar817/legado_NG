@@ -9,22 +9,25 @@ import org.junit.Test
 
 class NgThemeDrawerProfileTest {
     @Test
-    fun `four sources round trip with independent custom values for each day`() {
-        listOf("theme_color", "custom_color", "theme_image", "custom_image").forEach { source ->
+    fun `all sources round trip with independent custom values for day and night`() {
+        listOf("theme_color", "custom_color", "theme_image", "custom_image", "liquid_glass").forEach { source ->
             val profile = NgThemeDrawerProfile(
                 source = source,
-                light = NgThemeDrawerStyle(backgroundColor = 0xFF123456.toInt()),
-                dark = NgThemeDrawerStyle(imagePath = "private/night.webp"),
+                light = NgThemeDrawerStyle(backgroundColor = 0xFF123456.toInt(), imagePath = "private/day.webp"),
+                dark = NgThemeDrawerStyle(backgroundColor = 0xFF654321.toInt(), imagePath = "private/night.webp"),
             )
             val restored = GSON.fromJson(GSON.toJson(profile), NgThemeDrawerProfile::class.java).normalized()
             assertEquals(profile, restored)
             assertEquals(source, restored.updated(true, NgThemeDrawerStyle()).source)
             assertEquals(profile.light, restored.forNight(false))
+            assertEquals(profile.dark, restored.forNight(true))
         }
     }
 
     @Test
-    fun `missing or unknown source defaults to theme color without migrating old styling`() {
+    fun `missing or unknown source defaults to liquid glass without migrating old styling`() {
+        assertEquals(NgThemeDrawerProfile.LIQUID_GLASS, NgThemeDrawerProfile().source)
+        assertEquals(NgThemeDrawerProfile.LIQUID_GLASS, NgDrawerProfileState().snapshot().source)
         val restored = GSON.fromJson(
             """{"source":"unsupported","light":null,"dark":{"mode":"color","cardColor":42,"decoration":"night"},"cornerRadiusDp":38}""",
             NgThemeDrawerProfile::class.java,

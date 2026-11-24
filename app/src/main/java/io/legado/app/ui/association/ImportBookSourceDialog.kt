@@ -94,6 +94,7 @@ import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgManagementDrawerPanel
 import io.legado.app.ui.design.components.compose.NgManagementDrawerPanelVariant
 import io.legado.app.ui.design.components.compose.NgStatusTag
+import io.legado.app.ui.design.components.compose.rememberNgDrawerThemeProfile
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.widget.dialog.CodeDialog
@@ -140,6 +141,7 @@ class ImportBookSourceDialog() : BottomSheetDialogFragment(), CodeDialog.Callbac
     private var customGroupName by mutableStateOf<String?>(null)
     private var addToExistingGroup by mutableStateOf(false)
     private var groupSuggestions by mutableStateOf<List<String>>(emptyList())
+    private val isEditorPreview get() = arguments?.getBoolean(ARG_EDITOR_PREVIEW) == true
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         BottomSheetDialog(requireContext(), theme)
@@ -160,6 +162,7 @@ class ImportBookSourceDialog() : BottomSheetDialogFragment(), CodeDialog.Callbac
         (view as ComposeView).setContent {
             NgAppTheme(updateSystemBars = false) {
                 BookSourceImportDrawer(
+                    editorPreview = isEditorPreview,
                     sources = sources,
                     localSources = viewModel.checkSources,
                     selectedIndices = selectedIndices,
@@ -215,7 +218,7 @@ class ImportBookSourceDialog() : BottomSheetDialogFragment(), CodeDialog.Callbac
         when {
             source.isNullOrEmpty() -> dismissAllowingStateLoss()
             viewModel.successLiveData.value == null && viewModel.errorLiveData.value == null -> {
-                if (arguments?.getBoolean(ARG_EDITOR_PREVIEW) == true) {
+                if (isEditorPreview) {
                     viewModel.importEditorPreview(source)
                 } else {
                     viewModel.importSource(source)
@@ -412,6 +415,7 @@ private enum class BookSourceImportDrawerScreen {
 
 @Composable
 private fun BookSourceImportDrawer(
+    editorPreview: Boolean,
     sources: List<BookSourceImportItem>,
     localSources: List<BookSourcePart?>,
     selectedIndices: Set<Int>,
@@ -455,6 +459,7 @@ private fun BookSourceImportDrawer(
     NgBottomDrawerSurface(
         modifier = Modifier.fillMaxSize(),
         contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+        themeProfile = if (editorPreview) null else rememberNgDrawerThemeProfile(),
     ) {
         Column(
             modifier = Modifier

@@ -4,7 +4,6 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -26,13 +25,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -43,7 +40,10 @@ import io.legado.app.ui.config.rememberHasAssistantModelSelection
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
+import io.legado.app.ui.design.components.compose.NgGlassDefaults
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
+import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.theme.NgTheme
 
 internal val BookshelfToolbarMenuOffset = DpOffset(0.dp, 8.dp)
@@ -316,13 +316,25 @@ private fun BookshelfContentToolbarActionContent(
             ),
         contentAlignment = Alignment.Center
     ) {
-        Box(
+        NgVisualSurface(
             modifier = Modifier
                 .matchParentSize()
-                .padding(vertical = BookshelfContentToolbarPillInset)
-                .clip(RoundedCornerShape(12.dp))
-                .background(backgroundColor)
-        )
+                .padding(vertical = BookshelfContentToolbarPillInset),
+            role = NgMaterialRole.CONTROL,
+            cornerRadius = 12.dp,
+            style = NgGlassDefaults.style().copy(
+                containerTop = backgroundColor,
+                containerBottom = backgroundColor,
+                accentGlow = Color.Transparent,
+                borderColor = Color.Transparent,
+                surfaceGloss = Color.Transparent,
+                depthEdge = Color.Transparent,
+                blurRadius = 0.dp,
+                shadowElevation = 0.dp,
+                borderWidth = 0.dp,
+                highlightWidth = 0.dp,
+            ),
+        ) {}
         Row(
             modifier = Modifier.padding(horizontal = horizontalPadding),
             horizontalArrangement = Arrangement.Center,

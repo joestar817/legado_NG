@@ -265,7 +265,7 @@ private fun NgShapeTokens.toMaterialShapes(): Shapes {
     )
 }
 
-private fun Context.findActivity(): Activity? {
+internal fun Context.findActivity(): Activity? {
     return when (this) {
         is Activity -> this
         is ContextWrapper -> baseContext.findActivity()

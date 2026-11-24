@@ -44,6 +44,7 @@ import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.NgManagedTheme
 import io.legado.app.help.config.NgThemeBarProfile
 import io.legado.app.help.config.NgThemeBackground
+import io.legado.app.help.config.NgThemeDrawerProfile
 import io.legado.app.ui.design.components.compose.NgDockSlider
 import io.legado.app.ui.design.components.compose.NgFloatingTabBar
 import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
@@ -115,7 +116,9 @@ internal fun ThemeEditScreen(
                 NgFormGroup(title = stringResource(R.string.ng_drawer_appearance)) {
                     ThemeCompactExpandableRow(
                         title = stringResource(R.string.ng_drawer_background_source),
-                        summary = ngDrawerBackgroundSourceName(theme.drawerProfile?.source ?: "theme_color"),
+                        summary = ngDrawerBackgroundSourceName(
+                            theme.drawerProfile?.source ?: NgThemeDrawerProfile.DEFAULT_SOURCE,
+                        ),
                         expanded = drawerExpanded,
                         onExpandedChange = { drawerExpanded = it },
                     ) {

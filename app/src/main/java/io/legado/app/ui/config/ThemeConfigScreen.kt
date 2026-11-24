@@ -376,6 +376,7 @@ internal fun ThemeConfigScreen(
                 NgDrawerBackgroundSettingsContent(
                     profile = state.drawerProfile,
                     colors = drawerColors,
+                    selectionColors = dockSelectionColors,
                     onProfileChanged = onDrawerProfileChanged,
                     onProfileChangeFinished = onDrawerProfileChangeFinished,
                     onSelectImage = onSelectDrawerImage,

@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="ng_drawer_background_source">Background source</string>
-    <string name="ng_drawer_background_theme_color">Use theme color</string>
+    <string name="ng_drawer_background_color">Color</string>
+    <string name="ng_drawer_background_image">Image</string>
+    <string name="ng_drawer_background_theme_color">Theme color</string>
     <string name="ng_drawer_background_custom_color">Custom color</string>
     <string name="ng_drawer_background_theme_image">Theme image</string>
     <string name="ng_drawer_background_custom_image">Custom image</string>
     <string name="ng_drawer_background_day_color">Day color</string>
     <string name="ng_drawer_background_night_color">Night color</string>
-    <string name="ng_drawer_background_day_image">Day image</string>
-    <string name="ng_drawer_background_night_image">Night image</string>
+    <string name="ng_drawer_background_day_image">Day background</string>
+    <string name="ng_drawer_background_night_image">Night background</string>
     <string name="ng_drawer_background_choose">Choose</string>
     <string name="ng_drawer_background_change">Change</string>
     <string name="ng_drawer_theme_saving">Saving…</string>

@@ -73,6 +73,7 @@ internal class NgViewLiquidGlassRenderer(
     private var appliedEffect: EffectParameters? = null
     private var drawnSurface: SurfaceParameters? = null
     private var observedTree: ViewTreeObserver? = null
+    private var observedOwnerTree: ViewTreeObserver? = null
     private val ownerLocation = IntArray(2)
     private val sourceLocation = IntArray(2)
     private val rootLocation = IntArray(2)
@@ -82,6 +83,10 @@ internal class NgViewLiquidGlassRenderer(
     private val clipPath = Path()
     private val preDrawListener = ViewTreeObserver.OnPreDrawListener {
         invalidateChangedBackdrop()
+        true
+    }
+    private val ownerPreDrawListener = ViewTreeObserver.OnPreDrawListener {
+        invalidateChangedBackdrop(versionedOnly = true)
         true
     }
 
@@ -129,36 +134,41 @@ internal class NgViewLiquidGlassRenderer(
         (spec.blurRadius.value * density - spec.refractionHeight.value * density).coerceAtLeast(0f)
 
     private fun pageBackdropSource(source: View): View? =
-        owner.rootView.findViewById<View>(R.id.ng_liquid_glass_backdrop_source)
-            ?.takeIf { it !== source && it.isAttachedToWindow && !it.containsDescendant(owner) }
+        source.rootView.findViewById<View>(R.id.ng_liquid_glass_backdrop_source)
+            ?.takeIf {
+                it !== source && it.isAttachedToWindow &&
+                    !it.containsDescendant(owner) && !source.containsDescendant(it)
+            }
 
     /** Only explicit background hosts promise revisions for all of their drawing changes. */
     private fun backdropRecording(source: View, padding: Int): BackdropRecording? {
-        if (source !is NgBackdropSourceLayout || source.rootView !== owner.rootView) return null
+        if (source !is NgBackdropSourceLayout) return null
         val pageSource = pageBackdropSource(source)
         if (pageSource != null && pageSource !is NgBackdropSourceLayout) return null
-        owner.getLocationInWindow(ownerLocation)
+        owner.getLocationOnScreen(ownerLocation)
         fun geometry(view: View): SourceGeometry {
-            view.getLocationInWindow(sourceLocation)
+            view.getLocationOnScreen(sourceLocation)
             return SourceGeometry(
                 sourceLocation[0] - ownerLocation[0], sourceLocation[1] - ownerLocation[1],
                 view.width, view.height, view.scrollX, view.scrollY,
             )
         }
         val versionedPage = pageSource as? NgBackdropSourceLayout
+        val root = source.rootView
         return BackdropRecording(
             source, source.contentRevision, geometry(source),
             versionedPage, versionedPage?.contentRevision, versionedPage?.let(::geometry),
-            owner.rootView, geometry(owner.rootView), source.windowBackgroundRevision,
+            root, geometry(root), source.windowBackgroundRevision,
             owner.width, owner.height, padding,
         )
     }
 
-    private fun invalidateChangedBackdrop() {
+    private fun invalidateChangedBackdrop(versionedOnly: Boolean = false) {
         if (!isEnabled() || !owner.isShown || owner.width <= 0 || owner.height <= 0) return
         val spec = resolvedSpec()
         val padding = ceil(backdropPadding(spec, owner.resources.displayMetrics.density)).toInt()
         val recording = backdropRecording(requireNotNull(sourceView), padding)
+        if (versionedOnly && recording == null) return
         // Arbitrary content Views (e.g. a scrolling page behind a Dock) keep live sampling.
         // A stable background must not invalidate its own root again on every preDraw.
         if (recording == null || recording != recordedBackdrop ||
@@ -215,12 +225,13 @@ internal class NgViewLiquidGlassRenderer(
         val node = renderNode ?: RenderNode("NgViewLiquidGlass").also { renderNode = it }
         node.setPosition(-paddingInt, -paddingInt, owner.width + paddingInt, owner.height + paddingInt)
 
-        owner.getLocationInWindow(ownerLocation)
+        owner.getLocationOnScreen(ownerLocation)
         val recording = backdropRecording(source, paddingInt)
         if (recording == null || recording != recordedBackdrop || !node.hasDisplayList()) {
             val recordingCanvas = node.beginRecording(paddedWidth, paddedHeight)
             try {
-                drawWindowBackground(recordingCanvas, paddingInt, recording?.source)
+                val root = source.rootView
+                if (root !== source) drawWindowBackground(recordingCanvas, root, paddingInt, recording?.source)
                 pageBackdropSource(source)?.let { drawSource(recordingCanvas, it, paddingInt) }
                 drawSource(recordingCanvas, source, paddingInt)
             } finally {
@@ -262,9 +273,9 @@ internal class NgViewLiquidGlassRenderer(
     }
 
     private fun drawSource(canvas: Canvas, source: View, padding: Int) {
-        source.getLocationInWindow(sourceLocation)
+        source.getLocationOnScreen(sourceLocation)
         val saveCount = canvas.save()
-        // Window coordinates include ancestor scrolling; direct draw still needs this View's scroll.
+        // Screen coordinates align separate windows and include ancestor scrolling.
         canvas.translate(
             (padding + sourceLocation[0] - ownerLocation[0] - source.scrollX).toFloat(),
             (padding + sourceLocation[1] - ownerLocation[1] - source.scrollY).toFloat(),
@@ -273,10 +284,9 @@ internal class NgViewLiquidGlassRenderer(
         canvas.restoreToCount(saveCount)
     }
 
-    private fun drawWindowBackground(canvas: Canvas, padding: Int, source: NgBackdropSourceLayout?) {
-        val root = owner.rootView
+    private fun drawWindowBackground(canvas: Canvas, root: View, padding: Int, source: NgBackdropSourceLayout?) {
         val background = root.background ?: return
-        root.getLocationInWindow(rootLocation)
+        root.getLocationOnScreen(rootLocation)
         background.copyBounds(oldDrawableBounds)
         val saveCount = canvas.save()
         canvas.translate(
@@ -421,15 +431,24 @@ internal class NgViewLiquidGlassRenderer(
 
     private fun attachPreDrawListener() {
         if (!owner.isAttachedToWindow || observedTree?.isAlive == true) return
-        val tree = sourceView?.rootView?.viewTreeObserver ?: return
+        val source = sourceView ?: return
+        val tree = source.rootView.viewTreeObserver
         tree.addOnPreDrawListener(preDrawListener)
         observedTree = tree
+        val ownerTree = owner.rootView.viewTreeObserver
+        if (source is NgBackdropSourceLayout && ownerTree !== tree) {
+            ownerTree.addOnPreDrawListener(ownerPreDrawListener)
+            observedOwnerTree = ownerTree
+        }
     }
 
     private fun detachPreDrawListener() {
         observedTree?.takeIf(ViewTreeObserver::isAlive)
             ?.removeOnPreDrawListener(preDrawListener)
+        observedOwnerTree?.takeIf(ViewTreeObserver::isAlive)
+            ?.removeOnPreDrawListener(ownerPreDrawListener)
         observedTree = null
+        observedOwnerTree = null
     }
 
     private fun View.containsDescendant(candidate: View): Boolean {

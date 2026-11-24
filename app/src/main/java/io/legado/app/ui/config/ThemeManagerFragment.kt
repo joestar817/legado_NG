@@ -450,8 +450,8 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
 
     private fun updateThemeDraft(theme: NgManagedTheme) {
         if (savingTheme || copyingDrawerImage || preparingExport) return
-        val oldSource = draftEditTheme?.drawerProfile?.source ?: "theme_color"
-        val newSource = theme.drawerProfile?.source ?: "theme_color"
+        val oldSource = draftEditTheme?.drawerProfile?.source ?: NgThemeDrawerProfile.DEFAULT_SOURCE
+        val newSource = theme.drawerProfile?.source ?: NgThemeDrawerProfile.DEFAULT_SOURCE
         if (newSource != oldSource && newSource != "custom_image") pendingDrawerImage = null
         draftEditTheme = theme
     }

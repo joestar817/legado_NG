@@ -1,6 +1,8 @@
 package io.legado.app.ui.design.components.compose
 
 import android.content.Context
+import android.os.Build
+import android.view.View
 import androidx.annotation.ColorInt
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -32,18 +34,22 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.help.config.NgDrawerAppearanceConfig
 import io.legado.app.help.config.NgThemeDrawerProfile
 import io.legado.app.help.config.NgDrawerProfileStore
+import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgDrawerPalette
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.design.theme.NgThemeSnapshot
+import io.legado.app.ui.design.theme.findActivity
 
 enum class NgDrawerDragHandleVariant {
     STANDARD,
@@ -72,7 +78,7 @@ fun rememberNgDrawerThemeProfile(): NgThemeDrawerProfile? {
     if (!LocalNgDrawerInheritThemeProfile.current) return null
     val context = LocalContext.current
     val state by remember(context) { NgDrawerProfileStore.observe(context) }.collectAsState()
-    return state.profile
+    return remember(state) { state.snapshot() }
 }
 
 /** Reusable by reader-owned drawer hosts without changing their geometry or floating tools. */
@@ -252,22 +258,16 @@ fun NgBottomDrawerSurface(
         hasBackgroundImage = imageReady.value,
     ) {
         val nestedScrollInteropConnection = rememberNestedScrollInteropConnection()
-        NgGlassSurface(
+        NgDrawerBackgroundSurface(
             modifier = modifier
                 .padding(horizontal = normalized.horizontalMarginDp.dp)
                 .nestedScroll(nestedScrollInteropConnection),
             shape = shape,
+            liquidCornerRadius = radius,
             style = customGlassStyle ?: NgDrawerDefaults.style(normalized),
-            surfaceDecoration = imageSource?.let { source ->
-                {
-                    NgDrawerBackdrop(
-                        imagePath = source.path,
-                        cacheKey = source.cacheKey,
-                        modifier = Modifier.matchParentSize(),
-                        onImageReadyChanged = { imageReady.value = it },
-                    )
-                }
-            },
+            profile = themeProfile,
+            imageSource = imageSource,
+            onImageReadyChanged = { imageReady.value = it },
             contentPadding = contentPadding,
             content = content,
         )
@@ -348,26 +348,74 @@ fun NgSideDrawerSurface(
         hasThemeProfile = backgroundColor != null,
         hasBackgroundImage = imageReady.value,
     ) {
-        NgGlassSurface(
+        NgDrawerBackgroundSurface(
             modifier = modifier,
             shape = shape,
             style = customGlassStyle ?: NgDrawerDefaults.style(normalized),
+            profile = themeProfile,
+            imageSource = imageSource,
+            onImageReadyChanged = { imageReady.value = it },
             role = role,
-            surfaceDecoration = imageSource?.let { source ->
-                {
-                    NgDrawerBackdrop(
-                        imagePath = source.path,
-                        cacheKey = source.cacheKey,
-                        modifier = Modifier.matchParentSize(),
-                        onImageReadyChanged = { imageReady.value = it },
-                    )
-                }
-            },
             materialViewport = materialViewport,
             contentPadding = contentPadding,
             content = content,
         )
     }
+}
+
+@Composable
+private fun NgDrawerBackgroundSurface(
+    modifier: Modifier,
+    shape: Shape,
+    style: NgGlassStyle,
+    profile: NgThemeDrawerProfile?,
+    imageSource: NgDrawerImageSource?,
+    onImageReadyChanged: (Boolean) -> Unit,
+    contentPadding: PaddingValues,
+    role: NgMaterialRole = NgMaterialRole.SOFT_SURFACE,
+    materialViewport: NgGlassMaterialViewport? = null,
+    liquidCornerRadius: Dp = NgTheme.shapes.dialogDp.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val liquid = profile?.source == NgThemeDrawerProfile.LIQUID_GLASS
+    val dialogBackdrop = if (liquid && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !NgTheme.snapshot.isEInk) {
+        val drawerRoot = LocalView.current.rootView
+        val activityRoot = LocalContext.current.findActivity()?.window?.decorView
+        if (activityRoot != null && activityRoot !== drawerRoot) {
+            activityRoot.findNgDrawerBackdropSource()
+                ?: activityRoot.findViewById<View>(R.id.ng_liquid_glass_backdrop_source)
+                    ?.takeIf { it.isAttachedToWindow }
+        } else {
+            null
+        }
+    } else null
+    NgVisualSurface(
+        modifier = modifier,
+        role = if (liquid) NgMaterialRole.OVERLAY else role,
+        cornerRadius = if (liquid) liquidCornerRadius else NgTheme.shapes.dialogDp.dp,
+        shape = shape,
+        style = style,
+        contentPadding = contentPadding,
+        liquidBackdrop = if (dialogBackdrop == null) currentNgLiquidGlassBackdrop() else null,
+        viewBackdropSource = dialogBackdrop,
+        surfaceDecoration = imageSource?.let { source ->
+            {
+                NgDrawerBackdrop(
+                    imagePath = source.path,
+                    cacheKey = source.cacheKey,
+                    modifier = Modifier.matchParentSize(),
+                    onImageReadyChanged = onImageReadyChanged,
+                )
+            }
+        },
+        materialViewport = materialViewport,
+        visualSystemOverride = when {
+            liquid -> NgVisualSystem.LIQUID_GLASS
+            profile != null -> NgVisualSystem.TRANSPARENT_GLASS
+            else -> null
+        },
+        content = content,
+    )
 }
 
 private fun NgDrawerAppearance.normalized(): NgDrawerAppearance = copy(
