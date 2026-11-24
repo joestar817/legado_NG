@@ -74,6 +74,8 @@ data class AiProviderSetting(
     val responsesApiPath: String? = null,
     @SerializedName("chatGptAccountId")
     val chatGptAccountId: String? = null,
+    @SerializedName("workBuddyAccountId")
+    val workBuddyAccountId: String? = null,
 )
 
 internal fun AiProviderSetting.isChatGptSubscription(): Boolean = builtIn && id == AiDefaultProviders.CHATGPT_ID
@@ -81,6 +83,10 @@ internal fun AiProviderSetting.isChatGptSubscription(): Boolean = builtIn && id 
 internal fun AiProviderSetting.isCodexSubscription(): Boolean = builtIn && id == AiDefaultProviders.CODEX_ID
 
 internal fun AiProviderSetting.isOpenAiAccountProvider(): Boolean = isChatGptSubscription() || isCodexSubscription()
+
+internal fun AiProviderSetting.isWorkBuddyAccountProvider(): Boolean = builtIn && id == AiDefaultProviders.WORK_BUDDY_ID
+
+internal fun AiProviderSetting.usesAccountLogin(): Boolean = isOpenAiAccountProvider() || isWorkBuddyAccountProvider()
 
 enum class AiProviderType(val prefValue: String, val displayName: String) {
     @SerializedName(value = "OPENAI", alternate = ["X", "openai"])

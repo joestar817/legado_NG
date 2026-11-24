@@ -11,18 +11,20 @@ internal enum class AiModelGenerationTestProtocol {
     GEMINI_GENERATE_CONTENT,
 }
 
-internal fun AiProviderSetting.modelGenerationTestProtocol(): AiModelGenerationTestProtocol =
-    when (type) {
+internal fun AiProviderSetting.modelGenerationTestProtocol(): AiModelGenerationTestProtocol {
+    if (isWorkBuddyAccountProvider()) return AiModelGenerationTestProtocol.CHAT_COMPLETIONS
+    return when (type) {
         AiProviderType.CLAUDE -> AiModelGenerationTestProtocol.CLAUDE_MESSAGES
         AiProviderType.GOOGLE -> AiModelGenerationTestProtocol.GEMINI_GENERATE_CONTENT
         AiProviderType.OPENAI ->
             if (useResponsesApi ?: (legacyResponsesPath() != null)) AiModelGenerationTestProtocol.RESPONSES
             else AiModelGenerationTestProtocol.CHAT_COMPLETIONS
     }
+}
 
 internal fun AiProviderSetting.modelGenerationTestProtocols(): List<AiModelGenerationTestProtocol> {
     val current = modelGenerationTestProtocol()
-    if (type != AiProviderType.OPENAI || isOpenAiAccountProvider()) return listOf(current)
+    if (type != AiProviderType.OPENAI || usesAccountLogin()) return listOf(current)
     return if (current == AiModelGenerationTestProtocol.RESPONSES ||
         generationApiPath(AiModelGenerationTestProtocol.RESPONSES) != null
     ) {
@@ -35,6 +37,9 @@ internal fun AiProviderSetting.modelGenerationTestProtocols(): List<AiModelGener
 private val generationPresets by lazy { AiDefaultProviders.all().associateBy { it.id } }
 
 internal fun AiProviderSetting.generationApiPath(protocol: AiModelGenerationTestProtocol): String? {
+    if (isWorkBuddyAccountProvider()) {
+        return "$WORK_BUDDY_API$WORK_BUDDY_CHAT_PATH".takeIf { protocol == AiModelGenerationTestProtocol.CHAT_COMPLETIONS }
+    }
     if (isOpenAiAccountProvider()) return when (protocol) {
         AiModelGenerationTestProtocol.RESPONSES -> if (isCodexSubscription()) "$CODEX_API/responses" else "$CHATGPT_API/responses"
         else -> null

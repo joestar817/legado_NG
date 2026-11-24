@@ -10,6 +10,7 @@ internal object AiProviderHelpDocuments {
         "openai" to "openAiProviderHelp",
         AiDefaultProviders.CHATGPT_ID to "chatGptProviderHelp",
         AiDefaultProviders.CODEX_ID to "codexProviderHelp",
+        AiDefaultProviders.WORK_BUDDY_ID to "workBuddyProviderHelp",
         AiDefaultProviders.OPENCODE_ID to "openCodeProviderHelp",
         "claude" to "claudeProviderHelp",
         "gemini" to "geminiProviderHelp",

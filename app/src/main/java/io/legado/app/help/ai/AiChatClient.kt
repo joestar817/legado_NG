@@ -43,6 +43,7 @@ private class AiChatHttpResponseException(val status: Int) : IOException()
 
 class AiChatClient internal constructor(
     private val externalSearchClient: () -> AiExternalSearchClient = { AiExternalSearchClient() },
+    private val workBuddy: AiWorkBuddySessions = workBuddySessions,
     private val clientForTimeout: (Int) -> OkHttpClient,
 ) {
 
@@ -55,7 +56,10 @@ class AiChatClient internal constructor(
         protocol: AiModelGenerationTestProtocol = setting.resolveModelGenerationRoute(model, stream = stream).protocol,
     ): AiModelGenerationTestResult {
         currentCoroutineContext().ensureActive()
-        if (!setting.hasRequestCredentials()) {
+        val hasCredentials = if (setting.isWorkBuddyAccountProvider()) {
+            workBuddy.hasCredentials(setting.workBuddyAccountId)
+        } else setting.hasRequestCredentials()
+        if (!hasCredentials) {
             return AiModelGenerationTestResult.Failure(AiModelGenerationTestFailure.MISSING_API_KEY)
         }
         when (setting.resolveModelGenerationRoute(model, protocolOverride = protocol, stream = stream).issue) {
@@ -75,7 +79,9 @@ class AiChatClient internal constructor(
         var partialReply = ""
         return try {
             val timeoutSeconds = minOf(setting.timeoutSeconds, MODEL_GENERATION_TEST_TIMEOUT_SECONDS)
-            val completion = aiHttpClient(timeoutSeconds).newBuilder()
+            val testClient = if (setting.isWorkBuddyAccountProvider()) clientForTimeout(timeoutSeconds)
+            else aiHttpClient(timeoutSeconds)
+            val completion = testClient.newBuilder()
                 .retryOnConnectionFailure(false)
                 .build()
                 .completeChat(
@@ -108,19 +114,21 @@ class AiChatClient internal constructor(
             currentCoroutineContext().ensureActive()
             val partial = partialReply.trim()
             val reason = when {
-                error is AiChatHttpResponseException -> AiModelGenerationTestFailure.HTTP
+                error is AiChatHttpResponseException || (error is AiWorkBuddyException && error.status != null) ->
+                    AiModelGenerationTestFailure.HTTP
                 error is AiEndpointException -> AiModelGenerationTestFailure.INVALID_ENDPOINT
                 error is InterruptedIOException -> AiModelGenerationTestFailure.TIMEOUT
                 error is AiChatIncompleteStreamException || partial.isNotEmpty() ->
                     AiModelGenerationTestFailure.INTERRUPTED
-                error is AiChatStreamResponseException -> AiModelGenerationTestFailure.INVALID_RESPONSE
+                error is AiChatStreamResponseException || error is AiWorkBuddyException ->
+                    AiModelGenerationTestFailure.INVALID_RESPONSE
                 error is IOException -> AiModelGenerationTestFailure.NETWORK
                 else -> AiModelGenerationTestFailure.INVALID_RESPONSE
             }
             AiModelGenerationTestResult.Failure(
                 reason = reason,
                 reply = partial,
-                httpStatus = (error as? AiChatHttpResponseException)?.status,
+                httpStatus = (error as? AiChatHttpResponseException)?.status ?: (error as? AiWorkBuddyException)?.status,
             )
         }
     }
@@ -1374,7 +1382,7 @@ class AiChatClient internal constructor(
         }
     }
 
-    private suspend fun OkHttpClient.completeChat(
+    internal suspend fun OkHttpClient.completeChat(
         setting: AiProviderSetting,
         model: AiModel,
         messages: List<JsonObject>,
@@ -1389,6 +1397,26 @@ class AiChatClient internal constructor(
         webPlan: AiWebToolPlan = AiWebToolPlan.Off,
         webEvents: AiNativeWebEvents? = null,
     ): ChatCompletionSnapshot {
+        if (setting.isWorkBuddyAccountProvider()) {
+            val wireMessages = messages.prepareVisionMessages(supportsImages = false)
+            val body = jsonBody(buildRequestBody(
+                setting, model, wireMessages, emptyList(), params, stream = true, webPlan = webPlan,
+            ))
+            val client = workBuddyClient(this)
+            val completion = workBuddy.withAccount(setting.workBuddyAccountId) { account ->
+                val request = workBuddyRequest(WORK_BUDDY_CHAT_PATH)
+                    .header("Accept", "text/event-stream, application/json")
+                    .workBuddyAuthorization(account)
+                    .post(body)
+                    .build()
+                client.executeStreamChat(
+                    request, "reasoning_content", null, onStreamUpdate, generationTest, assistantTurn,
+                    null, null, workBuddyResponse = true,
+                )
+            }
+            if (assistantTurn) completion.requireAssistantEnd()
+            return completion
+        }
         val sessions = setting.accountSessions()
         val subscription = sessions != null
         val stream = setting.streamResponseEnabled || subscription
@@ -1623,11 +1651,12 @@ class AiChatClient internal constructor(
         assistantTurn: Boolean,
         deepSeekHistory: AiNativeChatHistory?,
         webEvents: AiNativeWebEvents?,
+        workBuddyResponse: Boolean = false,
     ): ChatCompletionSnapshot {
         return newCall(request).readCancellableStream { response ->
             response.use {
                 val responseBody = it.body
-                it.requireChatHttpSuccess(generationTest)
+                if (workBuddyResponse) it.requireWorkBuddyStream() else it.requireChatHttpSuccess(generationTest)
                 var model: String? = null
                 var finishReason: String? = null
                 var streamDone = false
@@ -1665,6 +1694,18 @@ class AiChatClient internal constructor(
                         val json = runCatching {
                             JsonParser.parseString(data).asJsonObject
                         }.getOrNull() ?: continue
+                        if (workBuddyResponse) {
+                            val code = json.workBuddyCode()
+                            val error = when {
+                                code != null && code != 0 -> workBuddyRejected(code)
+                                json.get("error")?.isJsonNull == false -> invalidWorkBuddyResponse()
+                                else -> null
+                            }
+                            if (error != null) {
+                                if (!assistantTurn) throw error
+                                throwInterruptedStream(error, contentBuilder.toString(), reasoningBuilder.toString())
+                            }
+                        }
                         json.get("error")?.let { streamError ->
                             val detail = when {
                                 streamError.isJsonObject -> streamError.asJsonObject.get("message")
@@ -2120,7 +2161,7 @@ class AiChatClient internal constructor(
         }
     }
 
-    private data class ChatCompletionSnapshot(
+    internal data class ChatCompletionSnapshot(
         val message: JsonObject,
         val content: String,
         val reasoning: String?,

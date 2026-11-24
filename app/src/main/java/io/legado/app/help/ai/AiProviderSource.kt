@@ -11,6 +11,9 @@ internal fun AiProviderSetting.apiKeyNeedsReentry(): Boolean =
     apiKey.isNotBlank() && apiKeyOrigin != null && apiKeyOrigin != baseOrigin()
 
 internal fun AiProviderSetting.hasRequestCredentials(): Boolean {
+    if (isWorkBuddyAccountProvider()) {
+        return workBuddySessions.hasCredentials(workBuddyAccountId)
+    }
     val sessions = accountSessions() ?: return apiKey.isNotBlank() && !apiKeyNeedsReentry()
     val account = sessions.account(chatGptAccountId) ?: return false
     return !account.needsReauthorization() && sessions.allowsPlan(account)
@@ -43,7 +46,7 @@ internal fun AiProviderSetting.matchesCatalogRequest(requested: AiProviderSettin
 
 private fun AiProviderSetting.hasSameCatalogConfiguration(other: AiProviderSetting): Boolean =
     id == other.id && type == other.type && apiKey == other.apiKey &&
-        chatGptAccountId == other.chatGptAccountId &&
+        chatGptAccountId == other.chatGptAccountId && workBuddyAccountId == other.workBuddyAccountId &&
         baseUrl == other.baseUrl && chatCompletionsPath == other.chatCompletionsPath &&
         useCustomModelsUrl == other.useCustomModelsUrl &&
         (!useCustomModelsUrl || modelsUrl == other.modelsUrl)

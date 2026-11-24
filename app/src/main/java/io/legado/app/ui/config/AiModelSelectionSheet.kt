@@ -4,7 +4,6 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -14,6 +13,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -71,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.help.ai.assistantContextWindowLabel
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSearchBarVariant
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
@@ -95,6 +97,8 @@ internal data class AiModelSelectionItemUiModel(
     val capabilities: List<ModelCapabilityTag>,
     val textTrial: Boolean = false,
     @param:StringRes val generationHintRes: Int? = null,
+    val contextWindow: Int? = null,
+    val creditMultiplierLabel: String? = null,
 )
 
 @Immutable
@@ -641,6 +645,7 @@ private fun AiModelCatalogMessage(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AiModelSelectionCard(
     model: AiModelSelectionItemUiModel,
@@ -698,15 +703,35 @@ private fun AiModelSelectionCard(
                         color = ngDrawerSecondaryTextColor(colorResource(R.color.ng_on_surface_variant)),
                         fontSize = 12.sp,
                     )
-                } else if (model.capabilities.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.padding(top = 6.dp),
+                }
+                val contextWindowLabel = model.contextWindow?.let {
+                    stringResource(R.string.ai_catalog_context_badge, assistantContextWindowLabel(it))
+                }
+                val metadata = listOfNotNull(contextWindowLabel, model.creditMultiplierLabel)
+                val hasTags = !model.textTrial && model.capabilities.isNotEmpty()
+                if (hasTags || metadata.isNotEmpty()) {
+                    FlowRow(
+                        modifier = Modifier.padding(top = if (hasTags) 6.dp else 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
-                        model.capabilities.forEach { capability ->
-                            AiSelectionCapabilityIcon(capability)
+                        val centered = Modifier.align(Alignment.CenterVertically)
+                        if (hasTags) {
+                            model.capabilities.forEach { AiModelCapabilityIcon(it, centered) }
+                        }
+                        metadata.forEachIndexed { index, label ->
+                            Text(
+                                text = label,
+                                modifier = centered.padding(start = if (hasTags || index > 0) 6.dp else 0.dp),
+                                color = ngDrawerSecondaryTextColor(colorResource(R.color.ng_on_surface_variant)),
+                                fontSize = 12.sp,
+                                lineHeight = 15.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
-                } else {
+                } else if (!model.textTrial) {
                     Spacer(Modifier.height(6.dp))
                 }
                 model.generationHintRes?.let { hint ->
@@ -734,28 +759,6 @@ internal fun BoxScope.AiSelectionCardIndicator(selected: Boolean) {
                 .width(6.dp)
                 .fillMaxHeight()
                 .background(Color(NgTheme.colors.primary)),
-        )
-    }
-}
-
-@Composable
-private fun AiSelectionCapabilityIcon(capability: ModelCapabilityTag) {
-    val tint = Color(capability.color)
-    Box(
-        modifier = Modifier
-            .padding(end = 4.dp)
-            .size(20.dp)
-            .clip(RoundedCornerShape(5.dp))
-            .background(tint.copy(alpha = 24f / 255f))
-            .border(1.dp, tint, RoundedCornerShape(5.dp))
-            .padding(3.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            painter = painterResource(capability.iconRes),
-            contentDescription = stringResource(capability.labelRes),
-            modifier = Modifier.fillMaxSize(),
-            tint = tint,
         )
     }
 }

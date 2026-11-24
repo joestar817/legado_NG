@@ -8,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -89,6 +91,7 @@ internal data class AiProviderModelItemUiModel(
     val type: AiModelType?,
     val searchAliases: List<String> = emptyList(),
     val contextWindowLabel: String? = null,
+    val creditMultiplierLabel: String? = null,
     val isManual: Boolean = false,
 )
 
@@ -125,6 +128,8 @@ internal sealed interface AiProviderDetailAction {
     data object ChatGptCancelSignIn : AiProviderDetailAction
     data object ChatGptSignOut : AiProviderDetailAction
     data object ChatGptOpenUsage : AiProviderDetailAction
+    data class WorkBuddyRefreshCredits(val accountId: String) : AiProviderDetailAction
+    data class WorkBuddyClaimCredits(val accountId: String) : AiProviderDetailAction
 }
 
 @Composable
@@ -504,6 +509,7 @@ private fun AiProviderModelActions(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AiProviderModelRow(
     item: AiProviderModelItemUiModel,
@@ -563,31 +569,34 @@ private fun AiProviderModelRow(
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (item.capabilities.isNotEmpty() || item.isManual || item.contextWindowLabel != null) {
-                Row(
+            val metadata = listOfNotNull(item.contextWindowLabel, item.creditMultiplierLabel)
+            val hasTags = item.capabilities.isNotEmpty() || item.isManual
+            if (hasTags || metadata.isNotEmpty()) {
+                FlowRow(
                     modifier = Modifier.padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
+                    val centered = Modifier.align(Alignment.CenterVertically)
                     item.capabilities.forEach { capability ->
-                        AiModelCapabilityIcon(capability)
+                        AiModelCapabilityIcon(capability, centered)
                     }
                     if (item.isManual) {
                         NgStatusTag(
                             text = stringResource(R.string.ai_model_manual),
                             variant = NgStatusTagVariant.INFO,
+                            modifier = centered,
                             style = NgStatusTagStyle.COMPACT,
                         )
                     }
-                    item.contextWindowLabel?.let { label ->
+                    metadata.forEachIndexed { index, label ->
                         Text(
                             text = label,
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .padding(start = if (item.capabilities.isNotEmpty() || item.isManual) 6.dp else 0.dp),
+                            modifier = centered.padding(start = if (hasTags || index > 0) 6.dp else 0.dp),
                             color = Color(NgTheme.colors.onSurfaceVariant),
                             fontSize = 11.sp,
                             lineHeight = 14.sp,
                             maxLines = 1,
+                            softWrap = false,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
@@ -611,10 +620,10 @@ private fun AiProviderModelRow(
 }
 
 @Composable
-internal fun AiModelCapabilityIcon(capability: ModelCapabilityTag) {
+internal fun AiModelCapabilityIcon(capability: ModelCapabilityTag, modifier: Modifier = Modifier) {
     val tint = Color(capability.color)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .padding(end = 4.dp)
             .size(20.dp)
             .clip(RoundedCornerShape(5.dp))

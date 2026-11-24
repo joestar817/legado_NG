@@ -20,13 +20,14 @@ internal fun AiProviderSetting.resolveModelGenerationRoute(
     protocolOverride: AiModelGenerationTestProtocol? = null,
     stream: Boolean = streamResponseEnabled,
 ): AiModelGenerationRoute {
-    if (isOpenAiAccountProvider()) {
+    if (usesAccountLogin()) {
+        val protocol = if (isWorkBuddyAccountProvider()) CHAT_COMPLETIONS else RESPONSES
         val issue = when {
-            protocolOverride != null && protocolOverride != RESPONSES -> AiModelGenerationIssue.UNSUPPORTED_PROTOCOL
+            protocolOverride != null && protocolOverride != protocol -> AiModelGenerationIssue.UNSUPPORTED_PROTOCOL
             !stream -> AiModelGenerationIssue.STREAMING_REQUIRED
             else -> null
         }
-        return AiModelGenerationRoute(RESPONSES, issue, requiresStreaming = true)
+        return AiModelGenerationRoute(protocol, issue, requiresStreaming = true)
     }
     val defaultProtocol = modelGenerationTestProtocol()
     if (type != AiProviderType.OPENAI) {

@@ -6,13 +6,12 @@ private val fallbackContextWindows = listOf(
     32_000, 64_000, 128_000, 256_000, 512_000, 1_000_000,
 )
 
-internal fun AiProviderSetting.assistantContextWindowLimit(model: AiModel?): Int? {
-    model ?: return null
-    val info = effectiveModelInfo(model)
-    val limit = model.modelSettingsFor(info.endpoint)?.referenceContextWindow(info)
-        ?: info.contextWindow?.value
-    return limit?.takeIf { it > 0 }
-}
+internal fun AiProviderSetting.assistantContextWindowLimit(model: AiModel?): Int? =
+    model?.let { it.referenceContextWindow(effectiveModelInfo(it)) }
+
+internal fun AiModel.referenceContextWindow(info: AiModelInfo): Int? =
+    (modelSettingsFor(info.endpoint)?.referenceContextWindow(info) ?: info.contextWindow?.value)
+        ?.takeIf { it > 0 }
 
 internal fun capAssistantContextWindow(tokens: Int, limit: Int?): Int =
     minOf(tokens, limit ?: fallbackContextWindows.last())

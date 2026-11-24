@@ -74,6 +74,21 @@ object AiProviderStore {
     }
 
     @Synchronized
+    internal fun selectWorkBuddyAccount(accountId: String?) {
+        val current = provider(AiDefaultProviders.WORK_BUDDY_ID) ?: return
+        if (current.workBuddyAccountId == accountId) return
+        saveProvider(current.copy(
+            workBuddyAccountId = accountId,
+            model = "",
+            models = emptyList(),
+            availableModelIds = emptyList(),
+            availableModelSelectionInitialized = false,
+            catalogLoaded = false,
+            unlistedModelEdits = null,
+        ))
+    }
+
+    @Synchronized
     fun saveProvider(provider: AiProviderSetting, useExistingKeyHere: Boolean = false): AiProviderSetting {
         val providers = providers()
         val previous = providers.firstOrNull { it.id == provider.id }
@@ -96,7 +111,7 @@ object AiProviderStore {
         val id = modelId.trim()
         if (id.isEmpty()) return AiManualModelAddResult.UNAVAILABLE
         val current = provider(providerId) ?: return AiManualModelAddResult.UNAVAILABLE
-        if (current.isOpenAiAccountProvider()) return AiManualModelAddResult.UNAVAILABLE
+        if (current.usesAccountLogin()) return AiManualModelAddResult.UNAVAILABLE
         val source = current.modelConfigurationKey()
         if (expectedModelConfigurationKey != null && expectedModelConfigurationKey != source) {
             return AiManualModelAddResult.UNAVAILABLE
@@ -268,9 +283,10 @@ object AiProviderStore {
         default: AiProviderSetting,
         savedProvider: AiProviderSetting
     ): AiProviderSetting {
-        if (default.isOpenAiAccountProvider()) return default.copy(
+        if (default.usesAccountLogin()) return default.copy(
             enabled = savedProvider.enabled,
             chatGptAccountId = savedProvider.chatGptAccountId,
+            workBuddyAccountId = savedProvider.workBuddyAccountId,
             catalogRevision = savedProvider.catalogRevision,
             catalogRefreshRequired = savedProvider.catalogRefreshRequired,
             catalogLoaded = savedProvider.catalogLoaded,

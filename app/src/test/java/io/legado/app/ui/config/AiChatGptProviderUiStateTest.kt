@@ -36,6 +36,22 @@ class AiChatGptProviderUiStateTest {
     }
 
     @Test
+    fun codexAndWorkBuddyHaveSeparateHelpDocuments() {
+        val providers = AiDefaultProviders.all().associateBy { it.id }
+        val codex = providers.getValue(AiDefaultProviders.CODEX_ID)
+        val workBuddy = providers.getValue(AiDefaultProviders.WORK_BUDDY_ID)
+
+        assertEquals(
+            "codexProviderHelp",
+            AiProviderHelpDocuments.forProvider(codex.id, codex.builtIn, codex.baseUrl),
+        )
+        assertEquals(
+            "workBuddyProviderHelp",
+            AiProviderHelpDocuments.forProvider(workBuddy.id, workBuddy.builtIn, workBuddy.baseUrl),
+        )
+    }
+
+    @Test
     fun signingOutHidesTheRememberedAccountAndItsSelector() {
         val signedIn = accountState(listOf(account))
         assertTrue(signedIn.signedIn)

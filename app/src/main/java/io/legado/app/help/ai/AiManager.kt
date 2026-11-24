@@ -35,7 +35,7 @@ object AiManager {
         modelId: String? = null
     ): AiTextResult {
         val setting = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
-        check(!setting.isOpenAiAccountProvider()) { "ChatGPT plan models are used in the AI assistant" }
+        check(!setting.usesAccountLogin()) { "Account provider models are used in the AI assistant" }
         val requestModel = modelId ?: setting.model
         check(setting.enabled) { "AI provider is disabled" }
         check(requestModel.isNotBlank()) { "AI model is empty" }
@@ -53,6 +53,7 @@ object AiManager {
     }
 
     private suspend fun listModels(setting: AiProviderSetting): List<AiModel> {
+        if (setting.isWorkBuddyAccountProvider()) return workBuddySessions.listModels(setting)
         if (setting.isOpenAiAccountProvider()) return setting.fetchAccountModels()
         return providerFor(setting).listModels(setting)
             .filter { it.id.isNotBlank() }
@@ -210,7 +211,7 @@ object AiManager {
 
     suspend fun testConnectivity(providerId: String): Int {
         val setting = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
-        if (setting.isOpenAiAccountProvider()) return setting.fetchAccountModels().size
+        if (setting.usesAccountLogin()) return listModels(setting).size
         check(setting.apiKey.isNotBlank()) { "API key is empty" }
         return providerFor(setting).listModels(setting)
             .filter { it.id.isNotBlank() }

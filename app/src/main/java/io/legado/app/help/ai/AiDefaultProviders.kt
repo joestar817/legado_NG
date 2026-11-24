@@ -5,6 +5,7 @@ object AiDefaultProviders {
     const val OPENCODE_ID = "opencode"
     internal const val CHATGPT_ID = "chatgpt_subscription"
     internal const val CODEX_ID = "codex_subscription"
+    internal const val WORK_BUDDY_ID = "workbuddy"
 
     fun all(): List<AiProviderSetting> = listOf(
         AiProviderSetting(
@@ -35,6 +36,16 @@ object AiDefaultProviders {
             modelsUrl = "/models",
             responsesApiPath = "/responses",
             useResponsesApi = true,
+            streamResponseEnabled = true,
+            supportsStreamUsage = true,
+        ),
+        AiProviderSetting(
+            id = WORK_BUDDY_ID,
+            type = AiProviderType.OPENAI,
+            name = "WorkBuddy",
+            baseUrl = WORK_BUDDY_API,
+            chatCompletionsPath = WORK_BUDDY_CHAT_PATH,
+            modelsUrl = WORK_BUDDY_MODELS_PATH,
             streamResponseEnabled = true,
             supportsStreamUsage = true,
         ),

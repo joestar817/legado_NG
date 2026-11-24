@@ -64,6 +64,7 @@ import io.legado.app.help.ai.effectiveModelCapabilities
 import io.legado.app.help.ai.AiWebTool
 import io.legado.app.help.ai.deepSeekWebRoute
 import io.legado.app.help.ai.isOpenAiAccountProvider
+import io.legado.app.help.ai.usesAccountLogin
 import io.legado.app.help.ai.knownModalities
 import io.legado.app.help.ai.AiModelValue
 import io.legado.app.help.ai.modelGenerationTestProtocols
@@ -160,7 +161,7 @@ internal fun AiModelEditSheet(
     val interfacePreference = settings.interfacePreference ?: AiModelInterfacePreference.PROVIDER_DEFAULT
     val usesProviderInterface = interfacePreference == AiModelInterfacePreference.PROVIDER_DEFAULT
     val providerProtocols = remember(provider) { provider.modelGenerationTestProtocols() }
-    val showInterfaceType = showChatSettings && !subscription && provider.type == AiProviderType.OPENAI &&
+    val showInterfaceType = showChatSettings && !provider.usesAccountLogin() && provider.type == AiProviderType.OPENAI &&
         (providerProtocols.size > 1 || !usesProviderInterface)
     val unsupportedInterface = showInterfaceType && remember(provider, draftModel) {
         provider.resolveModelGenerationRoute(draftModel).issue == AiModelGenerationIssue.UNSUPPORTED_PROTOCOL

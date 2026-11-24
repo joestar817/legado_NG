@@ -33,7 +33,11 @@ data class AiModelInfo(
     @SerializedName("supportsReasoningBudget") val supportsReasoningBudget: AiModelValue<Boolean>? = null,
     @SerializedName("defaultReasoningEnabled") val defaultReasoningEnabled: AiModelValue<Boolean>? = null,
     @SerializedName("supportsAdaptiveThinking") val supportsAdaptiveThinking: AiModelValue<Boolean>? = null,
+    @SerializedName("creditMultiplier") val creditMultiplier: String? = null,
 ) {
+    internal val creditMultiplierLabel: String?
+        get() = creditMultiplier?.let { "$it×" }
+
     internal fun withPrevious(previous: AiModelInfo?): AiModelInfo {
         val sameEndpoint = previous?.takeIf { it.endpoint == endpoint && it.catalogSourceId == catalogSourceId }
         val supported = reasoning.orPrevious(sameEndpoint?.reasoning)
@@ -67,6 +71,7 @@ data class AiModelInfo(
 
 /** Scopes user edits and catalog fields to a provider configuration without storing URL credentials. */
 internal fun AiProviderSetting.modelConfigurationKey(): String {
+    if (isWorkBuddyAccountProvider()) return "workbuddy-model:${workBuddyAccountId.orEmpty()}"
     if (isOpenAiAccountProvider()) {
         val account = chatGptAccountId.orEmpty().toByteArray(Charsets.UTF_8)
         val source = if (isCodexSubscription()) "codex-model" else "chatgpt-model"

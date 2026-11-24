@@ -24,7 +24,7 @@ internal fun AiExternalSearchSettings.bookSearchAvailability(
     if (!hasSkill) return AiBookSearchAvailability.SKILL
     if (provider == null || !provider.enabled) return AiBookSearchAvailability.MODEL
     if (!hasCredentials) {
-        return if (provider.isOpenAiAccountProvider()) AiBookSearchAvailability.ACCOUNT else AiBookSearchAvailability.PROVIDER
+        return if (provider.usesAccountLogin()) AiBookSearchAvailability.ACCOUNT else AiBookSearchAvailability.PROVIDER
     }
     if (model?.isTextChatModel() != true) return AiBookSearchAvailability.MODEL
     val generation = provider.resolveModelGenerationRoute(model)

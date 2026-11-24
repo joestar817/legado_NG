@@ -923,8 +923,13 @@ object AiModelRegistry {
         tokens("hunyuan", "mt")
     }
 
-    private val HY4_PREVIEW = defineAiModel {
-        tokens("hy", "4", "preview")
+    private val HY3 = defineAiModel {
+        tokens("hy", "3")
+        toolReasoningAbility()
+    }
+
+    private val HY4 = defineAiModel {
+        tokens("hy", "4")
         toolReasoningAbility()
     }
 
@@ -1250,7 +1255,8 @@ object AiModelRegistry {
         LING_3_TINY,
         HUNYUAN_A13B,
         HUNYUAN_MT,
-        HY4_PREVIEW,
+        HY3,
+        HY4,
         HY_MT2_PRO,
         SEED_OSS,
         SENSENOVA_6_7_FLASH_LITE,

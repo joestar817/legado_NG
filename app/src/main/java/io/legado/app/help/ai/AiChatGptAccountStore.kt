@@ -7,6 +7,7 @@ import io.legado.app.R
 import io.legado.app.utils.GSON
 import splitties.init.appCtx
 import java.io.File
+import java.io.FileNotFoundException
 import java.math.BigInteger
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -49,9 +50,8 @@ internal data class AiChatGptAccount(
 }
 
 /** Tokens are device-local. Only the selected registration ID is stored with provider settings. */
-internal class AiOpenAiAccountStore(private val keyAlias: String, fileName: String) {
-    private val random = SecureRandom()
-    private val file by lazy { AtomicFile(File(appCtx.noBackupFilesDir, fileName)) }
+internal class AiOpenAiAccountStore(keyAlias: String, fileName: String) {
+    private val file = AiEncryptedAccountFile(keyAlias, fileName, "Reading NG ChatGPT")
 
     private data class Accounts(
         @SerializedName("host_id") val hostId: String,
@@ -66,7 +66,7 @@ internal class AiOpenAiAccountStore(private val keyAlias: String, fileName: Stri
     @Synchronized
     fun hostId(): String {
         val value = snapshot()
-        if (!file.baseFile.exists()) write(value)
+        if (!file.exists()) write(value)
         return value.hostId
     }
 
@@ -81,24 +81,7 @@ internal class AiOpenAiAccountStore(private val keyAlias: String, fileName: Stri
 
     private fun snapshot(): Accounts = cached ?: run {
         val loaded = try {
-            val envelope = file.readFully()
-            val rsa = Cipher.getInstance("RSA/ECB/PKCS1Padding")
-            rsa.init(Cipher.DECRYPT_MODE, keyStore().getKey(keyAlias, null))
-            val keyLength = envelope.take(2).fold(0) { size, value -> (size shl 8) or (value.toInt() and 255) }
-            val ivStart = 2 + keyLength
-            val dataStart = ivStart + 12
-            require(keyLength == 256 && envelope.size > dataStart)
-            val key = rsa.doFinal(envelope, 2, keyLength)
-            try {
-                val iv = envelope.copyOfRange(ivStart, dataStart)
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
-                cipher.updateAAD(keyAlias.toByteArray(Charsets.UTF_8))
-                GSON.fromJson(cipher.doFinal(envelope, dataStart, envelope.size - dataStart).toString(Charsets.UTF_8),
-                    Accounts::class.java)
-            } finally {
-                key.fill(0)
-            }
+            file.read()?.let { GSON.fromJson(it, Accounts::class.java) }
         } catch (_: Exception) {
             null
         }
@@ -106,13 +89,57 @@ internal class AiOpenAiAccountStore(private val keyAlias: String, fileName: Stri
     }
 
     private fun write(value: Accounts) {
+        try {
+            file.write(GSON.toJson(value))
+            cached = value
+        } catch (_: Exception) {
+            throw AiChatGptException(R.string.ai_chatgpt_storage_failed)
+        }
+    }
+}
+
+internal class AiEncryptedAccountFile(
+    private val keyAlias: String,
+    fileName: String,
+    private val keySubject: String,
+) {
+    private val random = SecureRandom()
+    private val file by lazy { AtomicFile(File(appCtx.noBackupFilesDir, fileName)) }
+
+    fun exists(): Boolean = file.baseFile.exists()
+
+    fun read(): String? {
+        val envelope = try {
+            file.readFully()
+        } catch (_: FileNotFoundException) {
+            return null
+        }
+        val rsa = Cipher.getInstance("RSA/ECB/PKCS1Padding")
+        rsa.init(Cipher.DECRYPT_MODE, keyStore().getKey(keyAlias, null))
+        val keyLength = envelope.take(2).fold(0) { size, value -> (size shl 8) or (value.toInt() and 255) }
+        val ivStart = 2 + keyLength
+        val dataStart = ivStart + 12
+        require(keyLength == 256 && envelope.size > dataStart)
+        val key = rsa.doFinal(envelope, 2, keyLength)
+        try {
+            val iv = envelope.copyOfRange(ivStart, dataStart)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
+            cipher.updateAAD(keyAlias.toByteArray(Charsets.UTF_8))
+            return cipher.doFinal(envelope, dataStart, envelope.size - dataStart).toString(Charsets.UTF_8)
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    fun write(value: String) {
         val key = ByteArray(32).also(random::nextBytes)
         try {
             val iv = ByteArray(12).also(random::nextBytes)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
             cipher.updateAAD(keyAlias.toByteArray(Charsets.UTF_8))
-            val encrypted = cipher.doFinal(GSON.toJson(value).toByteArray(Charsets.UTF_8))
+            val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
             val store = keyStore()
             if (!store.containsAlias(keyAlias)) createKey()
             val rsa = Cipher.getInstance("RSA/ECB/PKCS1Padding")
@@ -129,9 +156,6 @@ internal class AiOpenAiAccountStore(private val keyAlias: String, fileName: Stri
                 file.failWrite(output)
                 throw error
             }
-            cached = value
-        } catch (_: Exception) {
-            throw AiChatGptException(R.string.ai_chatgpt_storage_failed)
         } finally {
             key.fill(0)
         }
@@ -144,7 +168,7 @@ internal class AiOpenAiAccountStore(private val keyAlias: String, fileName: Stri
         KeyPairGenerator.getInstance("RSA", "AndroidKeyStore").apply {
             initialize(KeyPairGeneratorSpec.Builder(appCtx)
                 .setAlias(keyAlias).setKeySize(2048)
-                .setSubject(X500Principal("CN=Reading NG ChatGPT"))
+                .setSubject(X500Principal("CN=$keySubject"))
                 .setSerialNumber(BigInteger.ONE).setStartDate(start.time).setEndDate(end.time).build())
             generateKeyPair()
         }

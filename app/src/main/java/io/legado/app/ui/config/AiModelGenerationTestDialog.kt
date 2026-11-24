@@ -51,7 +51,7 @@ import io.legado.app.help.ai.AiModelGenerationTestResult
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.modelGenerationTestProtocols
 import io.legado.app.help.ai.resolveModelGenerationRoute
-import io.legado.app.help.ai.isOpenAiAccountProvider
+import io.legado.app.help.ai.usesAccountLogin
 import io.legado.app.ui.design.components.compose.LocalNgDialogColorMode
 import io.legado.app.ui.design.components.compose.LocalNgPaneBounds
 import io.legado.app.ui.design.components.compose.NgDialogColorMode
@@ -75,13 +75,13 @@ internal fun AiModelGenerationTestDialog(
     onDismissRequest: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val subscription = provider.isOpenAiAccountProvider()
+    val accountProvider = provider.usesAccountLogin()
     val modelRoute = remember(provider, model) { provider.resolveModelGenerationRoute(model) }
     val protocols = remember(provider, modelRoute.protocol) {
         (provider.modelGenerationTestProtocols() + modelRoute.protocol).distinct()
     }
     var protocol by remember(provider, model) { mutableStateOf(modelRoute.protocol) }
-    var streaming by remember(provider, model) { mutableStateOf(provider.streamResponseEnabled || subscription) }
+    var streaming by remember(provider, model) { mutableStateOf(provider.streamResponseEnabled || accountProvider) }
     var result by remember(provider, model) { mutableStateOf<AiModelGenerationTestResult?>(null) }
     var job by remember(provider, model) { mutableStateOf<Job?>(null) }
     val issue = remember(provider, model, protocol, streaming) {
@@ -156,7 +156,7 @@ internal fun AiModelGenerationTestDialog(
                             }
                         }
                         GenerationTestRow(label = stringResource(R.string.ai_model_test_response_mode)) {
-                            if (subscription) {
+                            if (accountProvider) {
                                 GenerationTestText(stringResource(R.string.ai_model_test_streaming))
                             } else {
                                 GenerationTestSelector(
