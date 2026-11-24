@@ -241,8 +241,39 @@ class AiChatClient internal constructor(
         onWebUpdate: (AiWebActivity, AiWebAccess) -> Unit = { _, _ -> },
         selection: AiModelSelection = AiModelSelection(AiConfig.assistantProviderId, AiConfig.assistantModelId),
         onToolActivity: (String?) -> Unit = {},
+        previousImageId: String? = null,
+        onImageStarted: (editing: Boolean) -> Unit = {},
         onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
     ): AiChatTurnResult {
+        val user = messages.lastOrNull { it.stringOrNull("role") == "user" }
+        val attachedImages = user?.chatImageAssets().orEmpty()
+        if (!requireWebSearch && user?.isDirectImageAction() == true) {
+            val provider = selection.requireCodexImageProvider()
+            onToolActivity(CODEX_IMAGE_TOOL)
+            onImageStarted(attachedImages.isNotEmpty())
+            val assetId = provider.generateCodexImage(
+                user.get("content").contentText(), conversationId, turnId, turnId, attachedImages
+            )
+            val context = messages + newAssistantMessage("[Generated image]", null)
+            onDurableContextUpdate(AiChatDurableContextUpdate(
+                contextMessages = context,
+                visibleContent = "",
+                reasoning = null,
+                imageAssetIds = listOf(assetId)
+            ))
+            return AiChatTurnResult(
+                content = "",
+                reasoning = null,
+                model = CODEX_IMAGE_MODEL,
+                finishReason = null,
+                usage = null,
+                toolTrace = emptyList(),
+                warnings = emptyList(),
+                contextUsage = AiChatContextManager.usage(context),
+                contextMessages = context,
+                imageAssetIds = listOf(assetId)
+            )
+        }
         check(selection.providerId.isNotBlank() && selection.modelId.isNotBlank()) {
             "请先在模型设置中选择聊天模型"
         }
@@ -295,7 +326,21 @@ class AiChatClient internal constructor(
         } else {
             emptyList()
         }
-        val tools = localTools + externalWeb?.definitions.orEmpty()
+        val imageProvider = if (!requireWebSearch && AiModelAbility.TOOL in model.abilities) {
+            setting.availableCodexImageProvider()
+        } else null
+        val imageToolEnabled = imageProvider != null
+        if (attachedImages.isNotEmpty() && AiModelModality.IMAGE !in model.inputModalities &&
+            !imageToolEnabled
+        ) throw AiChatGptException(R.string.ai_image_chat_model_required)
+        val tools = buildList {
+            addAll(localTools)
+            addAll(externalWeb?.definitions.orEmpty())
+            if (imageToolEnabled) add(codexImageToolDefinition(
+                hasAttachedImages = attachedImages.isNotEmpty(),
+                hasPreviousImage = previousImageId != null
+            ))
+        }
         val warnings = buildList {
             if (AiConfig.internalMcpEnabled && !model.abilities.contains(AiModelAbility.TOOL)) {
                 add("当前模型未声明工具能力，未附加 MCP tools")
@@ -628,7 +673,7 @@ class AiChatClient internal constructor(
             }
             val preparedToolCalls = parsedToolCalls.map { call ->
                 require(call.callId.isNotBlank()) { "模型返回的 tool_call id 不能为空" }
-                require(call.externalTool != null ||
+                require(call.externalTool != null || (imageToolEnabled && call.functionName == CODEX_IMAGE_TOOL) ||
                     (call.functionName.startsWith(MCP_TOOL_PREFIX) && call.toolName.isNotBlank())) {
                     "模型返回了非法或未启用的工具名"
                 }
@@ -637,7 +682,9 @@ class AiChatClient internal constructor(
                 }
                 val executionArguments = call.externalTool?.let {
                     requireNotNull(externalWeb).receiptArguments(it, call.arguments)
-                } ?: call.arguments
+                } ?: if (call.functionName == CODEX_IMAGE_TOOL) {
+                    call.arguments.deepCopy().apply { addProperty("_account", setting.chatGptAccountId) }
+                } else call.arguments
                 val argumentsHash = AgentToolResultStore.argumentsHash(executionArguments)
                 val receiptId = AgentToolResultStore.deterministicReceiptId(
                     conversationId = conversationId,
@@ -760,8 +807,15 @@ class AiChatClient internal constructor(
                         }
 
                         is AgentToolExecutionBeginOutcome.Indeterminate -> {
-                            indeterminateIntent = begin.intent
-                            indeterminateToolResult(call.toolName, begin.intent.receiptId)
+                            if (call.functionName == CODEX_IMAGE_TOOL &&
+                                codexImageFile(conversationId, begin.intent.receiptId).isFile
+                            ) {
+                                startedIntent = begin.intent
+                                codexImageSavedResult()
+                            } else {
+                                indeterminateIntent = begin.intent
+                                indeterminateToolResult(call.toolName, begin.intent.receiptId)
+                            }
                         }
 
                         is AgentToolExecutionBeginOutcome.Started -> {
@@ -770,6 +824,22 @@ class AiChatClient internal constructor(
                             try {
                                 if (call.externalTool != null) {
                                     requireNotNull(externalWeb).execute(call.externalTool, call.arguments)
+                                } else if (call.functionName == CODEX_IMAGE_TOOL) {
+                                    try {
+                                        val references = codexImageReferences(
+                                            call.arguments, attachedImages, previousImageId
+                                        )
+                                        onImageStarted(references.isNotEmpty())
+                                        requireNotNull(imageProvider).generateCodexImage(
+                                            call.arguments, conversationId, turnId, prepared.receiptId, references
+                                        )
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: AiChatGptException) {
+                                        codexImageError(error.message)
+                                    } catch (_: Exception) {
+                                        codexImageError(appCtx.getString(R.string.ai_codex_image_failed))
+                                    }
                                 } else runCatching {
                                     AiAgentSkillTools.call(
                                         name = call.toolName,
@@ -1166,10 +1236,15 @@ class AiChatClient internal constructor(
         }
     }
 
-    fun newUserMessage(content: String): JsonObject {
+    fun newUserMessage(
+        content: String,
+        imageAssetIds: List<String> = emptyList(),
+        directImageAction: Boolean = false,
+    ): JsonObject {
         return JsonObject().apply {
             addProperty("role", "user")
             addProperty("content", content)
+            setChatImageAssets(imageAssetIds, directImageAction)
         }
     }
 
@@ -1314,15 +1389,17 @@ class AiChatClient internal constructor(
         webPlan: AiWebToolPlan = AiWebToolPlan.Off,
         webEvents: AiNativeWebEvents? = null,
     ): ChatCompletionSnapshot {
-        val subscription = setting.isChatGptSubscription()
+        val sessions = setting.accountSessions()
+        val subscription = sessions != null
         val stream = setting.streamResponseEnabled || subscription
         val apiPath = setting.generationApiPath(protocol)
         val chatGptAccessToken = if (subscription && protocol == AiModelGenerationTestProtocol.RESPONSES && apiPath != null) {
-            AiChatGptSessions.accessToken(setting, forInference = true)
+            sessions?.accessToken(setting, forInference = true)
         } else null
         val nativeWeb = webPlan as? AiWebToolPlan.Native
         val nativeTools = nativeWeb?.definitions.orEmpty()
         val deepSeekRoute = webRoute as? AiDeepSeekWebRoute
+        val wireMessages = messages.prepareVisionMessages(assistantTurn && AiModelModality.IMAGE in model.inputModalities)
         val codec = when (protocol) {
             AiModelGenerationTestProtocol.CLAUDE_MESSAGES ->
                 AiClaudeMessagesCodec(setting, model.id, setting.reasoningCatalogInfo(model),
@@ -1338,7 +1415,7 @@ class AiChatClient internal constructor(
         }
         if (codec != null) {
             val providerMessages = AiChatContextManager
-                .providerMessages(messages, webPlan.systemInstruction)
+                .providerMessages(wireMessages, webPlan.systemInstruction)
                 .map { it.asJsonObject }
             val request = codec.request(providerMessages, tools, params, stream, conversationId)
             var partialContent = ""
@@ -1348,7 +1425,8 @@ class AiChatClient internal constructor(
                 response.use {
                     if (chatGptAccessToken != null && !it.isSuccessful) {
                         val error = chatGptRequestError(it.code, it.chatGptJson())
-                        val resolved = AiChatGptSessions.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
+                        val resolved = sessions?.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
+                            ?: error
                         if (!generationTest) throw resolved
                     }
                     it.requireChatHttpSuccess(generationTest)
@@ -1370,7 +1448,8 @@ class AiChatClient internal constructor(
                                 }
                             } catch (error: Exception) {
                                 val resolved = if (chatGptAccessToken != null && error is AiChatGptException) {
-                                    AiChatGptSessions.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
+                                    sessions?.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
+                                        ?: error
                                 } else error
                                 if (!assistantTurn) throw resolved
                                 throwInterruptedStream(resolved, partialContent, partialReasoning)
@@ -1399,7 +1478,7 @@ class AiChatClient internal constructor(
             .addOpenCodeProviderHeaders(setting, conversationId)
             .addHeader("Content-Type", "application/json")
             .post(jsonBody(
-                buildRequestBody(setting, model, messages, tools, params, stream, webPlan, deepSeekHistory),
+                buildRequestBody(setting, model, wireMessages, tools, params, stream, webPlan, deepSeekHistory),
             ))
             .build()
         val reasoningKey = setting.reasoningOptions(model.id).reasoningOutputField.ifBlank { "reasoning_content" }
@@ -2198,6 +2277,7 @@ data class AiChatTurnResult(
     val contextCompactions: List<AiChatCompactionRecord> = emptyList(),
     val contextMessages: List<JsonObject>,
     val webActivity: AiWebActivity? = null,
+    val imageAssetIds: List<String> = emptyList(),
 )
 
 data class AiChatManualCompactionResult(
@@ -2221,6 +2301,7 @@ data class AiChatDurableContextUpdate(
     val toolReceipts: List<ToolExecutionReceipt> = emptyList(),
     val pendingReceiptIds: List<String> = emptyList(),
     val webActivity: AiWebActivity? = null,
+    val imageAssetIds: List<String> = emptyList(),
 )
 
 data class AiMemoryTraceItem(

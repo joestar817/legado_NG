@@ -78,6 +78,10 @@ data class AiProviderSetting(
 
 internal fun AiProviderSetting.isChatGptSubscription(): Boolean = builtIn && id == AiDefaultProviders.CHATGPT_ID
 
+internal fun AiProviderSetting.isCodexSubscription(): Boolean = builtIn && id == AiDefaultProviders.CODEX_ID
+
+internal fun AiProviderSetting.isOpenAiAccountProvider(): Boolean = isChatGptSubscription() || isCodexSubscription()
+
 enum class AiProviderType(val prefValue: String, val displayName: String) {
     @SerializedName(value = "OPENAI", alternate = ["X", "openai"])
     OPENAI("openai", "OpenAI compatible"),

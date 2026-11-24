@@ -25,9 +25,13 @@ import io.legado.app.help.ai.AiChatContextManager
 import io.legado.app.help.ai.AiChatDurableContextUpdate
 import io.legado.app.help.ai.AiChatGptException
 import io.legado.app.help.ai.AiChatHistoryStore
+import io.legado.app.help.ai.AiChatImageDrafts
 import io.legado.app.help.ai.AiChatInteractionPolicyRegistry
 import io.legado.app.help.ai.AiChatSessionSnapshot
 import io.legado.app.help.ai.AiChatStreamUpdate
+import io.legado.app.help.ai.AiImageAssets
+import io.legado.app.help.ai.AiImageDraft
+import io.legado.app.help.ai.isCodexImage
 import io.legado.app.help.ai.AiMemoryTraceItem
 import io.legado.app.help.ai.AiModelSelection
 import io.legado.app.help.ai.AiPendingToolCall
@@ -35,6 +39,9 @@ import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.ai.AiWebAccess
 import io.legado.app.help.ai.AiWebActivity
 import io.legado.app.help.ai.CHATGPT_USAGE_URL
+import io.legado.app.help.ai.CODEX_IMAGE_TOOL
+import io.legado.app.help.ai.CODEX_IMAGE_MODEL
+import io.legado.app.help.ai.isCodexChatSelection
 import io.legado.app.help.ai.aiBookSearchVisibleText
 import io.legado.app.help.ai.bookSearchDraft
 import io.legado.app.help.ai.bookSearchDraftForHistory
@@ -65,7 +72,11 @@ import splitties.init.appCtx
 import java.security.MessageDigest
 import java.util.UUID
 
-internal val aiChatSessions = AiChatSessions(CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
+internal val aiChatSessions = AiChatSessions(
+    CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    readImageDraft = AiChatImageDrafts::read,
+    writeImageDraft = AiChatImageDrafts::write,
+)
 
 private fun chatSessionEntryKey(vararg parts: String): String {
     val encoded = parts.joinToString("") { "${it.length}:$it" }.encodeToByteArray()
@@ -110,6 +121,8 @@ internal fun chatSessionEntry(
 internal class AiChatSessions(
     val scope: CoroutineScope,
     val client: AiChatClient = AiChatClient(),
+    val readImageDraft: (String) -> AiImageDraft? = { null },
+    val writeImageDraft: (String, AiImageDraft) -> Unit = { _, _ -> },
     private val writeSnapshot: (AiChatSessionSnapshot) -> Unit = AiChatHistoryStore::saveSessionSnapshot,
 ) {
     val mainContext get() = scope.coroutineContext.minusKey(Job)
@@ -344,6 +357,14 @@ internal class AiChatSessionRuntime(
 
     val messages = mutableStateListOf<ChatUiMessage>()
     val uploadMessages = mutableStateListOf<JsonObject>()
+    private var imageDraft by mutableStateOf(
+        saved?.let { owner.readImageDraft(id) } ?: AiImageDraft(prompt = initialInput)
+    )
+    val imageDraftAssets get() = imageDraft.assets
+    val explicitImageDraft get() = imageDraft.direct
+    val directImageDraft get() = explicitImageDraft || imageDraft.editAssets.orEmpty().any(imageDraftAssets::contains)
+    var imageWait by mutableStateOf<AiChatImageWait?>(null)
+        private set
     val inputAttachments = mutableStateListOf<AiChatInputAttachment>().apply { addAll(initialAttachments) }
     val skillManagedCapabilityIds = mutableStateListOf<String>().apply {
         addAll(resolveModeManagedCapabilities(mode, initialAttachments))
@@ -360,7 +381,7 @@ internal class AiChatSessionRuntime(
     var activeModeEntryContext by entryContextState
     val modeStartedState = mutableStateOf(saved?.modeEntryStarted == true)
     var modeEntryStarted by modeStartedState
-    val inputState = mutableStateOf(initialInput)
+    val inputState = mutableStateOf(imageDraft.prompt)
     var input by inputState
     val draftEditedState = mutableStateOf(saved?.modeEntryContext.bookSearchDraft() != null)
     var bookSearchDraftEdited by draftEditedState
@@ -409,7 +430,8 @@ internal class AiChatSessionRuntime(
     private var writingReply = false
 
     val hasWork get() = sending || activeBookLookupMessageId != null || pendingHostActions > 0
-    val hasDraft get() = input.isNotBlank() && (mode.id != AgentModeRegistry.BOOK_SEARCH_ID || bookSearchDraftEdited)
+    val hasDraft get() = imageDraftAssets.isNotEmpty() || directImageDraft ||
+        input.isNotBlank() && (mode.id != AgentModeRegistry.BOOK_SEARCH_ID || bookSearchDraftEdited)
     val runningHostAction get() = pendingHostActions > 0
 
     fun taskSummary(): AiChatTask? {
@@ -487,11 +509,12 @@ internal class AiChatSessionRuntime(
 
     fun persist(outcome: AiChatTaskState? = null): Deferred<Unit>? {
         if (deleted) return null
+        saveImageDraft()
         val old = savedSnapshot
         val entry = persistedEntryContext()
         val visible = messages.filterNot { it.loading }
         val hasContent = hasChatHistoryContent(visible.isNotEmpty(), modeEntryStarted, entry.bookSearchDraft())
-        if (!hasContent && old == null) return null
+        if (!hasContent && old == null && imageDraftAssets.isEmpty() && !directImageDraft) return null
         val now = System.currentTimeMillis()
         val base = AiChatSessionSnapshot(
             id = id,
@@ -523,6 +546,30 @@ internal class AiChatSessionRuntime(
         savedSnapshot = snapshot
         owner.refreshTask(this, outcome)
         return owner.save(snapshot)
+    }
+
+    fun replaceImageDraftAssets(assets: List<String>, editAsset: String? = null) {
+        val editAssets = (imageDraft.editAssets.orEmpty() + listOfNotNull(editAsset))
+            .distinct()
+            .filter(assets::contains)
+        imageDraft = imageDraft.copy(
+            assets = assets,
+            direct = imageDraft.direct && editAsset == null,
+            editAssets = editAssets.ifEmpty { null },
+        )
+    }
+
+    fun setExplicitImageDraft(selected: Boolean) {
+        imageDraft = imageDraft.copy(direct = selected, editAssets = null)
+    }
+
+    fun clearImageDraft() {
+        imageDraft = AiImageDraft()
+    }
+
+    fun saveImageDraft() {
+        if (deleted) return
+        owner.writeImageDraft(id, imageDraft.copy(prompt = input))
     }
 
     fun pin(time: Long) {
@@ -723,7 +770,12 @@ internal class AiChatSessionRuntime(
 
     fun sendCurrentMessages(activeUserMessageIds: List<String>, modelSelection: AiModelSelection) {
         if (deleted || sending) return
-        turnModel = modelSelection
+        val displayModel = if (modelSelection.isCodexChatSelection() &&
+            messages.lastOrNull { it.role == ChatRole.USER }?.directImageAction == true
+        ) {
+            modelSelection.copy(modelId = CODEX_IMAGE_MODEL)
+        } else modelSelection
+        turnModel = displayModel
         latestCheckpoint = null
         syncModeEntryContext()
         syncActiveSkillContext()
@@ -749,6 +801,17 @@ internal class AiChatSessionRuntime(
         automaticContextCompacting = false
         writingReply = false
         val uploadMessagesBeforeSend = uploadMessages.map { it.deepCopy().asJsonObject }
+        val previousImageId = if (mode.id == AgentModeRegistry.GENERAL_ID) {
+            messages.asReversed().firstNotNullOfOrNull { message ->
+                if (message.role != ChatRole.ASSISTANT) null else {
+                    message.imageAssetIds.singleOrNull() ?: message.toolReceipts.filter { it.isCodexImage() }
+                        .singleOrNull()?.let { receipt ->
+                            AiImageAssets.generatedId(receipt.conversationId, receipt.receiptId)
+                                .takeIf { AiImageAssets.file(it)?.isFile == true }
+                        }
+                }
+            }
+        } else null
         val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
         val requireWebSearch = mode.id == AgentModeRegistry.BOOK_SEARCH_ID
         val allowWebForTurn = requireWebSearch || mode.id == AgentModeRegistry.GENERAL_ID
@@ -759,8 +822,8 @@ internal class AiChatSessionRuntime(
             content = "正在思考...",
             elapsedMs = 0L,
             loading = true,
-            usageProviderId = modelSelection.providerId,
-            usageModelId = modelSelection.modelId,
+            usageProviderId = displayModel.providerId,
+            usageModelId = displayModel.modelId,
         )
         sendingJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             val requestMessages = uploadMessagesBeforeSend
@@ -821,6 +884,12 @@ internal class AiChatSessionRuntime(
                             withContext(owner.mainContext + NonCancellable) {
                                 if (!deleted && activeLoadingMessageId == loadingId) {
                                     latestCheckpoint = update
+                                    if (update.imageAssetIds.isNotEmpty() || update.toolReceipts.any { it.isCodexImage() }) {
+                                        imageWait = null
+                                        updateMessage(loadingId) {
+                                            it.copy(toolReceipts = update.toolReceipts, imageAssetIds = update.imageAssetIds)
+                                        }
+                                    }
                                     persist()?.await()
                                 }
                             }
@@ -851,10 +920,19 @@ internal class AiChatSessionRuntime(
                         // Only the host can start a book-source search after validating the reply or user selection.
                         enabledMcpCapabilityIds = if (requireWebSearch) emptyList() else mcpCapabilityIds,
                         selection = modelSelection,
+                        previousImageId = previousImageId,
+                        onImageStarted = { editing ->
+                            scope.launch {
+                                if (!deleted && activeLoadingMessageId == loadingId) {
+                                    imageWait = AiChatImageWait(System.currentTimeMillis(), editing)
+                                }
+                            }
+                        },
                         onToolActivity = { toolName ->
                             scope.launch {
                                 if (!deleted && activeLoadingMessageId == loadingId) {
                                     activeToolName = toolName
+                                    if (toolName != CODEX_IMAGE_TOOL) imageWait = null
                                     if (toolName != null) writingReply = false
                                     owner.refreshTask(this@AiChatSessionRuntime)
                                 }
@@ -879,7 +957,7 @@ internal class AiChatSessionRuntime(
                     it.contextMessages.map { message -> message.deepCopy().asJsonObject }
                 )
                 val loadingIndex = messages.indexOfFirst { message -> message.id == loadingId }
-                val baseMessage = it.toUiMessage(elapsedMs, modelSelection)
+                val baseMessage = it.toUiMessage(elapsedMs, displayModel)
                 val completedMessage = if (requireWebSearch) {
                     val rejected = messages.flatMap { message -> message.bookSearch?.rejectedKeys.orEmpty() }.toSet()
                     val reply = parseAiBookSearchReply(it.content, it.webActivity)?.let { parsed ->
@@ -949,13 +1027,15 @@ internal class AiChatSessionRuntime(
                 }
                 val partialContent = listOfNotNull(savedContent, visibleInterruptedContent)
                     .distinct().joinToString("\n\n").takeIf { content -> content.isNotBlank() }
-                if (partialContent != null || replyNotice != null) {
+                val hasImage = durable?.imageAssetIds?.isNotEmpty() == true ||
+                    durable?.toolReceipts?.any { receipt -> receipt.isCodexImage() } == true
+                if (partialContent != null || replyNotice != null || hasImage) {
                     updateMessage(loadingId) { loading ->
                         if (draft != null) {
                             uploadMessages += AiChatContextManager.interruptedReplyMessage(loading.id, draft)
                         }
                         loading.copy(
-                            content = (partialContent ?: requireNotNull(replyNotice)).let { content ->
+                            content = (partialContent ?: replyNotice.orEmpty()).let { content ->
                                 if (requireWebSearch) aiBookSearchVisibleText(content).ifBlank {
                                     appCtx.getString(R.string.ai_book_search_unverified)
                                 } else content
@@ -968,10 +1048,11 @@ internal class AiChatSessionRuntime(
                             },
                             toolTrace = durable?.toolTrace ?: activeStreamToolTraceTarget,
                             toolReceipts = durable?.toolReceipts.orEmpty(),
+                            imageAssetIds = durable?.imageAssetIds.orEmpty(),
                             webActivity = durable?.webActivity ?: activeWebActivity?.settledOrNull(),
                             loading = false,
                             meta = when {
-                                partialContent == null -> "error"
+                                partialContent == null && !hasImage -> "error"
                                 replyNotice != null -> replyNotice
                                 canceled -> "已中断，可恢复"
                                 else -> "执行中断，结果已保留"
@@ -1016,6 +1097,7 @@ internal class AiChatSessionRuntime(
             activeWebActivity = null
             activeWebAccess = null
             activeToolName = null
+            imageWait = null
             automaticContextCompacting = false
             writingReply = false
             refreshContextUsage()
@@ -1037,7 +1119,9 @@ internal class AiChatSessionRuntime(
         val queuedIds = queued.map { it.id }
         queued.forEach { message ->
             uploadMessages += chatClient.newUserMessage(
-                AiChatContextManager.removeEmbeddedSkill(message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content)
+                AiChatContextManager.removeEmbeddedSkill(message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content),
+                message.imageAssetIds,
+                message.directImageAction,
             )
         }
         updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)

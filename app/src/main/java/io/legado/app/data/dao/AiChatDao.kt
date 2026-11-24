@@ -64,6 +64,9 @@ interface AiChatDao {
     @Query("select * from aiChatMessageNodes where conversationId = :conversationId order by nodeIndex asc")
     fun getMessageNodes(conversationId: String): List<AiChatMessageNode>
 
+    @Query("select exists(select 1 from aiChatMessageNodes where instr(messages, :encodedOwner) > 0)")
+    fun hasToolReceiptOwner(encodedOwner: String): Boolean
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertMessageNodes(nodes: List<AiChatMessageNode>)
 

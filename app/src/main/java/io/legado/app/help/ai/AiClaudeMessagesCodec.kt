@@ -112,7 +112,20 @@ internal class AiClaudeMessagesCodec(
             when (message.stringOrNull("role")) {
                 "user" -> {
                     pendingToolIds.clear()
-                    if (content.isNotBlank()) addNativeParts("user", "content", listOf(textBlock(content)))
+                    val parts = buildList {
+                        if (content.isNotBlank()) add(textBlock(content))
+                        message.chatVisionInputs().forEach { image ->
+                            add(JsonObject().apply {
+                                addProperty("type", "image")
+                                add("source", JsonObject().apply {
+                                    addProperty("type", "base64")
+                                    addProperty("media_type", image.mime)
+                                    addProperty("data", image.base64)
+                                })
+                            })
+                        }
+                    }
+                    if (parts.isNotEmpty()) addNativeParts("user", "content", parts)
                 }
                 "assistant" -> {
                     pendingToolIds.clear()

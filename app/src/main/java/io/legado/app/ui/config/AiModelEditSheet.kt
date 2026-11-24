@@ -63,7 +63,7 @@ import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.effectiveModelCapabilities
 import io.legado.app.help.ai.AiWebTool
 import io.legado.app.help.ai.deepSeekWebRoute
-import io.legado.app.help.ai.isChatGptSubscription
+import io.legado.app.help.ai.isOpenAiAccountProvider
 import io.legado.app.help.ai.knownModalities
 import io.legado.app.help.ai.AiModelValue
 import io.legado.app.help.ai.modelGenerationTestProtocols
@@ -124,7 +124,7 @@ internal fun AiModelEditSheet(
     var contextInput by remember(initial) { mutableStateOf<String?>(null) }
     var outputInput by remember(initial) { mutableStateOf<String?>(null) }
     val settings = requireNotNull(draft.modelSettings)
-    val subscription = provider.isChatGptSubscription()
+    val subscription = provider.isOpenAiAccountProvider()
     val catalogContext = info.contextWindow
     val catalogOutput = info.maxOutputTokens
     val enteredContext = contextInput.positiveTokenCount()

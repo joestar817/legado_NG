@@ -9,6 +9,7 @@ internal object AiProviderHelpDocuments {
     private val documents = mapOf(
         "openai" to "openAiProviderHelp",
         AiDefaultProviders.CHATGPT_ID to "chatGptProviderHelp",
+        AiDefaultProviders.CODEX_ID to "codexProviderHelp",
         AiDefaultProviders.OPENCODE_ID to "openCodeProviderHelp",
         "claude" to "claudeProviderHelp",
         "gemini" to "geminiProviderHelp",

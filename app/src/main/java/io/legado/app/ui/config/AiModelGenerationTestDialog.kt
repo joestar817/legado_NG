@@ -51,7 +51,7 @@ import io.legado.app.help.ai.AiModelGenerationTestResult
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.modelGenerationTestProtocols
 import io.legado.app.help.ai.resolveModelGenerationRoute
-import io.legado.app.help.ai.isChatGptSubscription
+import io.legado.app.help.ai.isOpenAiAccountProvider
 import io.legado.app.ui.design.components.compose.LocalNgDialogColorMode
 import io.legado.app.ui.design.components.compose.LocalNgPaneBounds
 import io.legado.app.ui.design.components.compose.NgDialogColorMode
@@ -75,7 +75,7 @@ internal fun AiModelGenerationTestDialog(
     onDismissRequest: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val subscription = provider.isChatGptSubscription()
+    val subscription = provider.isOpenAiAccountProvider()
     val modelRoute = remember(provider, model) { provider.resolveModelGenerationRoute(model) }
     val protocols = remember(provider, modelRoute.protocol) {
         (provider.modelGenerationTestProtocols() + modelRoute.protocol).distinct()

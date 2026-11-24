@@ -16,9 +16,13 @@ internal class AiOpenAiResponsesCodec(
     private val webEvents: AiNativeWebEvents? = null,
     private val chatGptAccessToken: String? = null,
 ) : AiChatCodec {
-    private val subscription = setting.isChatGptSubscription()
-    private val url = (if (subscription) "$CHATGPT_API/responses" else buildAiApiEndpoint(setting.baseUrl, endpoint))
-        .toHttpUrl()
+    private val codex = setting.isCodexSubscription()
+    private val subscription = setting.isOpenAiAccountProvider()
+    private val url = when {
+        codex -> "$CODEX_API/responses"
+        subscription -> "$CHATGPT_API/responses"
+        else -> buildAiApiEndpoint(setting.baseUrl, endpoint)
+    }.toHttpUrl()
     private val chatGptWeb = subscription && nativeTools.any { it.stringOrNull("type") == "web_search" }
     private val history = AiNativeChatHistory(setting, modelId, url.toString())
     private val officialDeepSeek = url.isHttps && url.port == 443 && url.host == "api.deepseek.com"
@@ -45,6 +49,12 @@ internal class AiOpenAiResponsesCodec(
             addProperty("model", modelId)
             addProperty("stream", stream || subscription)
             addProperty("store", false)
+            if (codex) {
+                val instructions = messages.filter { it.stringOrNull("role") == "system" }
+                    .map { it.get("content").contentText() }.filter(String::isNotBlank)
+                    .joinToString("\n\n")
+                addProperty("instructions", instructions.ifBlank { "You are the Reading NG AI assistant." })
+            }
             add("input", inputItems(messages, tools.isNotEmpty()))
             if (!subscription) {
                 params.maxTokens?.let { addProperty("max_output_tokens", it) }
@@ -86,6 +96,7 @@ internal class AiOpenAiResponsesCodec(
         return Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $token")
+            .apply { if (codex) addCodexWorkspace(token) }
             .addOpenCodeProviderHeaders(setting, conversationId)
             .post(jsonBody(body))
             .build()
@@ -118,7 +129,27 @@ internal class AiOpenAiResponsesCodec(
                     addAssistantHistory(message, text, messages.subList(start, index), replayTools)
                 }
                 "tool" -> add(textItem("assistant", toolTranscript(message)))
-                "user", "system", "developer" -> if (text.isNotBlank()) add(textItem(role, text))
+                "user", "system", "developer" -> {
+                    val images = if (role == "user") message.chatVisionInputs() else emptyList()
+                    if (images.isNotEmpty()) {
+                        add(textItem(role, text).apply {
+                            add("content", JsonArray().apply {
+                                if (text.isNotBlank()) add(JsonObject().apply {
+                                    addProperty("type", "input_text")
+                                    addProperty("text", text)
+                                })
+                                images.forEach { image ->
+                                    add(JsonObject().apply {
+                                        addProperty("type", "input_image")
+                                        addProperty("image_url", image.dataUrl)
+                                    })
+                                }
+                            })
+                        })
+                    } else if (text.isNotBlank() && !(codex && role == "system")) {
+                        add(textItem(role, text))
+                    }
+                }
             }
         }
     }

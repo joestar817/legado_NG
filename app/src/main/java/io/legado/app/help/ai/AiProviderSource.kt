@@ -10,10 +10,10 @@ internal fun AiProviderSetting.catalogFetchRequired(): Boolean =
 internal fun AiProviderSetting.apiKeyNeedsReentry(): Boolean =
     apiKey.isNotBlank() && apiKeyOrigin != null && apiKeyOrigin != baseOrigin()
 
-internal fun AiProviderSetting.hasRequestCredentials(): Boolean = if (isChatGptSubscription()) {
-    AiChatGptSessions.account(chatGptAccountId)?.let { !it.needsReauthorization() && it.tokens?.allowsPlan == true } == true
-} else {
-    apiKey.isNotBlank() && !apiKeyNeedsReentry()
+internal fun AiProviderSetting.hasRequestCredentials(): Boolean {
+    val sessions = accountSessions() ?: return apiKey.isNotBlank() && !apiKeyNeedsReentry()
+    val account = sessions.account(chatGptAccountId) ?: return false
+    return !account.needsReauthorization() && sessions.allowsPlan(account)
 }
 
 internal fun AiProviderSetting.apiKeyForRequest(): String {

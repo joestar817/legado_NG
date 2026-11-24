@@ -50,7 +50,7 @@ import io.legado.app.help.ai.assistantModelChoice
 import io.legado.app.help.ai.assistantModelChoices
 import io.legado.app.help.ai.apiKeyNeedsReentry
 import io.legado.app.help.ai.hasRequestCredentials
-import io.legado.app.help.ai.isChatGptSubscription
+import io.legado.app.help.ai.isOpenAiAccountProvider
 import io.legado.app.help.ai.catalogFetchRequired
 import io.legado.app.help.ai.isTextChatModel
 import io.legado.app.help.ai.missingCatalogModelName
@@ -968,7 +968,7 @@ internal fun AiProviderSetting.toModelSelectionProviderUiModel(
                 textTrial = model.id in textTrialIds,
                 generationHintRes = when {
                     route?.issue == AiModelGenerationIssue.UNSUPPORTED_PROTOCOL -> R.string.ai_model_interface_unavailable
-                    route?.requiresStreaming == true && !isChatGptSubscription() -> R.string.ai_model_streaming_only
+                    route?.requiresStreaming == true && !isOpenAiAccountProvider() -> R.string.ai_model_streaming_only
                     else -> null
                 },
             )

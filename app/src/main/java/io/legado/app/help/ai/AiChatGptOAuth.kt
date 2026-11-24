@@ -35,6 +35,9 @@ internal const val CHATGPT_DYNAMIC_CLIENT = "dynamic_agent_client"
 private const val CALLBACK_PATH = "/auth/callback"
 
 internal data class AiChatGptAuthorization(val state: String, val nonce: String, val verifier: String) {
+    fun challenge(): String = MessageDigest.getInstance("SHA-256")
+        .digest(verifier.toByteArray(Charsets.US_ASCII)).base64Url()
+
     fun url(
         hostId: String,
         redirect: String,
@@ -42,8 +45,6 @@ internal data class AiChatGptAuthorization(val state: String, val nonce: String,
         email: String?,
         requestPlanConsent: Boolean = false,
     ): HttpUrl {
-        val challenge = MessageDigest.getInstance("SHA-256")
-            .digest(verifier.toByteArray(Charsets.US_ASCII)).base64Url()
         return "$CHATGPT_ISSUER/api/accounts/authorize".toHttpUrl().newBuilder()
             .addQueryParameter("client_id", clientId ?: CHATGPT_DYNAMIC_CLIENT)
             .apply {
@@ -59,7 +60,7 @@ internal data class AiChatGptAuthorization(val state: String, val nonce: String,
             .addQueryParameter("state", state)
             .addQueryParameter("nonce", nonce)
             .addQueryParameter("code_challenge_method", "S256")
-            .addQueryParameter("code_challenge", challenge)
+            .addQueryParameter("code_challenge", challenge())
             .build()
     }
 
@@ -89,10 +90,14 @@ internal fun readChatGptCallback(url: HttpUrl, state: String): AiChatGptCallback
 }
 
 /** The browser sends the authorization result only to this process's IPv4 loopback listener. */
-internal class AiChatGptLoopback(private val browserText: (Int) -> String = { appCtx.getString(it) }) : Closeable {
-    private val server = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1")).apply { soTimeout = 500 }
+internal class AiChatGptLoopback(
+    port: Int = 0,
+    redirectHost: String = "127.0.0.1",
+    private val browserText: (Int) -> String = { appCtx.getString(it) },
+) : Closeable {
+    private val server = ServerSocket(port, 8, InetAddress.getByName("127.0.0.1")).apply { soTimeout = 500 }
     private val origin = "http://127.0.0.1:${server.localPort}"
-    val redirectUri = origin + CALLBACK_PATH
+    val redirectUri = "http://$redirectHost:${server.localPort}$CALLBACK_PATH"
 
     suspend fun await(state: String): AiChatGptCallback = withTimeoutOrNull(TimeUnit.MINUTES.toMillis(5)) {
         var callback: AiChatGptCallback? = null
@@ -177,7 +182,7 @@ internal fun verifyChatGptIdentity(
     token: String,
     keys: JsonObject,
     clientId: String,
-    nonce: String,
+    nonce: String?,
     nowSeconds: Long = System.currentTimeMillis() / 1000,
 ): AiChatGptIdentity = try {
     val parts = token.split('.', limit = 4)
@@ -210,7 +215,7 @@ internal fun verifyChatGptIdentity(
     require(if (audiences.size > 1 || authorizedParty != null) authorizedParty == clientId else true)
     require(claims.get("exp").asLong > nowSeconds)
     require(claims.get("nbf")?.asLong?.let { it <= nowSeconds + 30 } != false)
-    require(claims.stringOrNull("nonce") == nonce)
+    require(nonce == null || claims.stringOrNull("nonce") == nonce)
     val subject = requireNotNull(claims.stringOrNull("sub")?.takeIf(String::isNotBlank))
     val email = claims.stringOrNull("email")?.trim()?.take(254)?.takeIf(String::isNotBlank)
     AiChatGptIdentity(subject, email)
@@ -218,7 +223,7 @@ internal fun verifyChatGptIdentity(
     throw AiChatGptException(R.string.ai_chatgpt_invalid_identity)
 }
 
-private fun decodeJwtObject(part: String): JsonObject =
+internal fun decodeJwtObject(part: String): JsonObject =
     JsonParser.parseString(requireNotNull(part.decodeBase64()).utf8()).asJsonObject
 
 private fun ByteArray.base64Url() = toByteString().base64Url().trimEnd('=')

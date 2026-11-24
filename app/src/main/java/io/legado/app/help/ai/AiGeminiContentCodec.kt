@@ -94,7 +94,20 @@ internal class AiGeminiContentCodec(
             if (index <= consumedThrough) return@forEachIndexed
             val content = message.get("content").contentText()
             when (message.stringOrNull("role")) {
-                "user" -> if (content.isNotBlank()) addNativeParts("user", "parts", listOf(geminiText(content)))
+                "user" -> {
+                    val parts = buildList {
+                        if (content.isNotBlank()) add(geminiText(content))
+                        message.chatVisionInputs().forEach { image ->
+                            add(JsonObject().apply {
+                                add("inlineData", JsonObject().apply {
+                                    addProperty("mimeType", image.mime)
+                                    addProperty("data", image.base64)
+                                })
+                            })
+                        }
+                    }
+                    if (parts.isNotEmpty()) addNativeParts("user", "parts", parts)
+                }
                 "assistant" -> {
                     val calls = message.arrayOrNull("tool_calls").objectParts()
                     val native = history.parts(message)?.objectParts()

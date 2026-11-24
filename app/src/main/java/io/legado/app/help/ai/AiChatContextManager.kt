@@ -155,7 +155,10 @@ object AiChatContextManager {
 
     fun providerMessage(message: JsonObject): JsonObject {
         if (!isActiveSkillMessage(message)) {
-            return message.deepCopy().apply { remove(INTERRUPTED_REPLY_ID) }
+            return message.deepCopy().apply {
+                remove(INTERRUPTED_REPLY_ID)
+                stripChatImageAssets()
+            }
         }
         val snapshot = activeSkillSnapshot(listOf(message))
             ?: return message.deepCopy().asJsonObject

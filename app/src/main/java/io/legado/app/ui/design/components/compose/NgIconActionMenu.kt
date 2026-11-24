@@ -62,7 +62,7 @@ internal fun NgIconActionMenu(
     if (!expanded || items.isEmpty()) return
 
     val marginPx = with(LocalDensity.current) { 8.dp.roundToPx() }
-    val positionProvider = remember(marginPx) { NgIconActionMenuPositionProvider(marginPx) }
+    val positionProvider = remember(marginPx) { NgEndAlignedMenuPositionProvider(marginPx) }
     Popup(
         popupPositionProvider = positionProvider,
         onDismissRequest = onDismissRequest,
@@ -142,7 +142,10 @@ private fun NgIconActionMenuItem(item: NgActionPopupItem, onClick: () -> Unit) {
     }
 }
 
-private class NgIconActionMenuPositionProvider(private val marginPx: Int) : PopupPositionProvider {
+internal class NgEndAlignedMenuPositionProvider(
+    private val marginPx: Int,
+    private val openAboveAnchor: Boolean = false,
+) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
         windowSize: IntSize,
@@ -153,10 +156,11 @@ private class NgIconActionMenuPositionProvider(private val marginPx: Int) : Popu
         val x = (anchorBounds.right - popupContentSize.width).coerceIn(marginPx, maxX)
         val maxY = (windowSize.height - popupContentSize.height - marginPx).coerceAtLeast(marginPx)
         val belowY = anchorBounds.bottom + marginPx
-        val desiredY = if (belowY + popupContentSize.height <= windowSize.height - marginPx) {
-            belowY
-        } else {
-            anchorBounds.top - popupContentSize.height - marginPx
+        val aboveY = anchorBounds.top - popupContentSize.height - marginPx
+        val desiredY = when {
+            openAboveAnchor && aboveY >= marginPx -> aboveY
+            belowY <= maxY -> belowY
+            else -> aboveY
         }
         return IntOffset(x, desiredY.coerceIn(marginPx, maxY))
     }

@@ -33,6 +33,7 @@ internal data class AiChatGptAccount(
     @SerializedName("email") val email: String?,
     @SerializedName("tokens") val tokens: AiChatGptTokens?,
     @SerializedName("reauthorization_required") val reauthorizationRequired: Boolean = false,
+    @SerializedName("codex_workspace_id") val codexWorkspaceId: String? = null,
 ) {
     fun needsReauthorization(nowSeconds: Long = System.currentTimeMillis() / 1000): Boolean =
         reauthorizationRequired ||
@@ -48,10 +49,9 @@ internal data class AiChatGptAccount(
 }
 
 /** Tokens are device-local. Only the selected registration ID is stored with provider settings. */
-internal object AiChatGptAccountStore {
-    private const val KEY_ALIAS = "legado.ai.chatgpt.accounts.v1"
+internal class AiOpenAiAccountStore(private val keyAlias: String, fileName: String) {
     private val random = SecureRandom()
-    private val file by lazy { AtomicFile(File(appCtx.noBackupFilesDir, "chatgpt-accounts")) }
+    private val file by lazy { AtomicFile(File(appCtx.noBackupFilesDir, fileName)) }
 
     private data class Accounts(
         @SerializedName("host_id") val hostId: String,
@@ -83,7 +83,7 @@ internal object AiChatGptAccountStore {
         val loaded = try {
             val envelope = file.readFully()
             val rsa = Cipher.getInstance("RSA/ECB/PKCS1Padding")
-            rsa.init(Cipher.DECRYPT_MODE, keyStore().getKey(KEY_ALIAS, null))
+            rsa.init(Cipher.DECRYPT_MODE, keyStore().getKey(keyAlias, null))
             val keyLength = envelope.take(2).fold(0) { size, value -> (size shl 8) or (value.toInt() and 255) }
             val ivStart = 2 + keyLength
             val dataStart = ivStart + 12
@@ -93,7 +93,7 @@ internal object AiChatGptAccountStore {
                 val iv = envelope.copyOfRange(ivStart, dataStart)
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                 cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
-                cipher.updateAAD(KEY_ALIAS.toByteArray(Charsets.UTF_8))
+                cipher.updateAAD(keyAlias.toByteArray(Charsets.UTF_8))
                 GSON.fromJson(cipher.doFinal(envelope, dataStart, envelope.size - dataStart).toString(Charsets.UTF_8),
                     Accounts::class.java)
             } finally {
@@ -111,12 +111,12 @@ internal object AiChatGptAccountStore {
             val iv = ByteArray(12).also(random::nextBytes)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
-            cipher.updateAAD(KEY_ALIAS.toByteArray(Charsets.UTF_8))
+            cipher.updateAAD(keyAlias.toByteArray(Charsets.UTF_8))
             val encrypted = cipher.doFinal(GSON.toJson(value).toByteArray(Charsets.UTF_8))
             val store = keyStore()
-            if (!store.containsAlias(KEY_ALIAS)) createKey()
+            if (!store.containsAlias(keyAlias)) createKey()
             val rsa = Cipher.getInstance("RSA/ECB/PKCS1Padding")
-            rsa.init(Cipher.ENCRYPT_MODE, keyStore().getCertificate(KEY_ALIAS).publicKey)
+            rsa.init(Cipher.ENCRYPT_MODE, keyStore().getCertificate(keyAlias).publicKey)
             val wrappedKey = rsa.doFinal(key)
             val output = file.startWrite()
             try {
@@ -143,7 +143,7 @@ internal object AiChatGptAccountStore {
         val end = (start.clone() as Calendar).apply { add(Calendar.YEAR, 30) }
         KeyPairGenerator.getInstance("RSA", "AndroidKeyStore").apply {
             initialize(KeyPairGeneratorSpec.Builder(appCtx)
-                .setAlias(KEY_ALIAS).setKeySize(2048)
+                .setAlias(keyAlias).setKeySize(2048)
                 .setSubject(X500Principal("CN=Reading NG ChatGPT"))
                 .setSerialNumber(BigInteger.ONE).setStartDate(start.time).setEndDate(end.time).build())
             generateKeyPair()
@@ -152,3 +152,5 @@ internal object AiChatGptAccountStore {
 
     private fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 }
+
+internal val AiChatGptAccountStore = AiOpenAiAccountStore("legado.ai.chatgpt.accounts.v1", "chatgpt-accounts")

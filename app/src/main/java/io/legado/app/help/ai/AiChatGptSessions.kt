@@ -26,20 +26,16 @@ internal class AiChatGptException(
 }
 
 /** Registration, renewal and revocation for the official Sign in with ChatGPT flow. */
-internal object AiChatGptSessions {
+internal object AiChatGptSessions : AiOpenAiAccountSessions {
     private const val TOKEN_ENDPOINT = "$CHATGPT_ISSUER/api/accounts/oauth/token"
     private val oauthClient by lazy { chatGptHttpClient(20) }
     private val loginLock = Mutex()
     private val sessionLock = Mutex()
     private var retryClientId: String? = null
 
-    fun accounts(): List<AiChatGptAccount> = AiChatGptAccountStore.accounts()
+    override fun accounts(): List<AiChatGptAccount> = AiChatGptAccountStore.accounts()
 
-    fun account(clientId: String?): AiChatGptAccount? = clientId?.let { id ->
-        accounts().firstOrNull { it.clientId == id }
-    }
-
-    suspend fun signIn(clientId: String?, openBrowser: (String) -> Unit): AiChatGptAccount =
+    override suspend fun signIn(clientId: String?, openBrowser: (String) -> Unit): AiChatGptAccount =
         withContext(Dispatchers.IO) {
             loginLock.withLock {
                 val previous = account(clientId)
@@ -91,7 +87,7 @@ internal object AiChatGptSessions {
             }
         }
 
-    suspend fun accessToken(setting: AiProviderSetting, forInference: Boolean = false): String = withContext(Dispatchers.IO) {
+    override suspend fun accessToken(setting: AiProviderSetting, forInference: Boolean): String = withContext(Dispatchers.IO) {
         sessionLock.withLock {
             requireCurrent(setting, forInference)
             val account = account(setting.chatGptAccountId)
@@ -124,7 +120,7 @@ internal object AiChatGptSessions {
         throw AiChatGptException(R.string.ai_chatgpt_reauthorize_required)
     }
 
-    suspend fun resolveRequestError(clientId: String?, accessToken: String, error: AiChatGptException): AiChatGptException {
+    override suspend fun resolveRequestError(clientId: String?, accessToken: String, error: AiChatGptException): AiChatGptException {
         if (error.messageRes != R.string.ai_chatgpt_reauthorize_required) return error
         return withContext(Dispatchers.IO) {
             sessionLock.withLock {
@@ -141,7 +137,7 @@ internal object AiChatGptSessions {
         }
     }
 
-    suspend fun signOut(clientId: String): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun signOut(clientId: String): Boolean = withContext(Dispatchers.IO) {
         sessionLock.withLock {
             val account = account(clientId) ?: return@withLock true
             val tokens = account.tokens

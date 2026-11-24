@@ -1,5 +1,7 @@
 package io.legado.app.ui.config
 
+import android.net.Uri
+
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -263,6 +265,7 @@ import io.legado.app.help.ai.AiChatContextUsage
 import io.legado.app.help.ai.AiChatCompactionRecord
 import io.legado.app.help.ai.AiChatPromptUsageAnchor
 import io.legado.app.help.ai.AiChatHistoryStore
+import io.legado.app.help.ai.AiChatGptException
 import io.legado.app.help.ai.AiChatInteraction
 import io.legado.app.help.ai.AiChatInteractionOption
 import io.legado.app.help.ai.AiChatInteractionParser
@@ -273,6 +276,13 @@ import io.legado.app.help.ai.AiChatInteractionMemoryWriter
 import io.legado.app.help.ai.AiChatInteractionSubmit
 import io.legado.app.help.ai.AiChatInteractionType
 import io.legado.app.help.ai.AiChatMessageSnapshot
+import io.legado.app.help.ai.codexImageFile
+import io.legado.app.help.ai.AI_IMAGE_ATTACHMENT_LIMIT
+import io.legado.app.help.ai.AiImageAssets
+import io.legado.app.help.ai.availableCodexImageProvider
+import io.legado.app.help.ai.isCodexChatSelection
+import io.legado.app.help.ai.isDirectImageAction
+import io.legado.app.help.ai.isCodexImage
 import io.legado.app.help.ai.AiChatSessionSnapshot
 import io.legado.app.help.ai.AiChatTurnResult
 import io.legado.app.help.ai.AiConfig
@@ -331,6 +341,7 @@ import io.legado.app.ui.design.components.compose.NgLiquidGlassBackdropProvider
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgPaneDialog
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSideDrawerSurface
 import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
@@ -742,6 +753,21 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     var globalSearchQuery by remember { mutableStateOf("") }
     var pendingGlobalSearchResult by remember { mutableStateOf<GlobalMessageSearchResult?>(null) }
     var statsMode by remember { mutableStateOf(false) }
+    var imageImporting by remember(activeSessionId) { mutableStateOf(false) }
+    var imagePreview by remember(activeSessionId) { mutableStateOf<Pair<File, Boolean>?>(null) }
+    var showCodexImageSettings by remember(activeSessionId) { mutableStateOf(false) }
+    val imageAttachmentsAvailable = activeAgentMode.id == AgentModeRegistry.GENERAL_ID
+    fun currentModelSelection() = AiModelSelection(AiConfig.assistantProviderId, AiConfig.assistantModelId)
+    val codexChatSelected = remember(configVersion) { currentModelSelection().isCodexChatSelection() }
+    val showImageActions = imageAttachmentsAvailable && codexChatSelected
+    val imageAttachmentMenu = remember(activeSessionId, showImageActions) { NgPopupToggleState() }
+    val directImageDraft = showImageActions && chatSession.directImageDraft
+    LaunchedEffect(chatSession, sessionRestored, showImageActions) {
+        if (sessionRestored && !showImageActions && chatSession.directImageDraft) {
+            chatSession.setExplicitImageDraft(false)
+            chatSession.saveImageDraft()
+        }
+    }
     var exportSelectionMode by remember { mutableStateOf(false) }
     var exportFormatDialog by remember { mutableStateOf(false) }
     var showContextAttachmentSheet by remember { mutableStateOf(false) }
@@ -1003,6 +1029,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                     )
                     message.copy(
                         content = nextContent.ifBlank { "正在思考..." },
+                        imageWait = chatSession.imageWait,
                         reasoning = nextReasoning.takeIf { it.isNotBlank() },
                         toolTrace = chatSession.activeStreamToolTraceTarget
                             .takeIf { it.isNotEmpty() }
@@ -1085,10 +1112,10 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         chatSession.refreshContextUsage()
     }
 
-    fun openAssistantSettings() {
+    fun openAssistantSettings(page: String = AiConfigFragment.PAGE_ASSISTANT) {
         assistantSettingsLauncher.launch(Intent(context, ConfigActivity::class.java).apply {
             putExtra("configTag", ConfigTag.AI_CONFIG)
-            putExtra(AiConfigFragment.EXTRA_INITIAL_PAGE, AiConfigFragment.PAGE_ASSISTANT)
+            putExtra(AiConfigFragment.EXTRA_INITIAL_PAGE, page)
         })
     }
 
@@ -1340,17 +1367,34 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     }
     AiChatToolApprovalDialog(context as? AiChatActivity, approval)
 
-    fun currentModelSelection() = AiModelSelection(AiConfig.assistantProviderId, AiConfig.assistantModelId)
+    fun ensureCodexImageRoute(selection: AiModelSelection = currentModelSelection()): Boolean {
+        if (!selection.isCodexChatSelection()) {
+            Toast.makeText(context, R.string.ai_image_codex_model_required, Toast.LENGTH_SHORT).show()
+            return false
+        }
+        if (AiProviderStore.provider(selection.providerId).availableCodexImageProvider() == null) {
+            showCodexImageSettings = true
+            return false
+        }
+        return true
+    }
 
     fun sendCurrentMessages(activeUserMessageIds: List<String> = emptyList()) {
-        if (bookSearchAvailability() != AiBookSearchAvailability.READY ||
-            !ensureSkillToolSupport() || !ensureModelGenerationRoute()
-        ) {
+        val lastUser = uploadMessages.lastOrNull { it.get("role")?.asString == "user" }
+        val direct = imageAttachmentsAvailable && lastUser?.isDirectImageAction() == true
+        val selection = currentModelSelection()
+        val ready = if (direct) {
+            ensureCodexImageRoute(selection)
+        } else {
+            bookSearchAvailability() == AiBookSearchAvailability.READY &&
+                ensureSkillToolSupport() && ensureModelGenerationRoute()
+        }
+        if (!ready) {
             chatSession.updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
             persistActiveSession()
             return
         }
-        chatSession.sendCurrentMessages(activeUserMessageIds, currentModelSelection())
+        chatSession.sendCurrentMessages(activeUserMessageIds, selection)
     }
 
     fun stopSending() {
@@ -1372,26 +1416,86 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
         chatSession.manuallyCompressContext(currentModelSelection())
     }
 
-    fun sendMessage(
-        messageOverride: String? = null,
-        uploadOverride: String? = null
-    ) {
-        if (!sessionRestored || chatSession.deleted || chatSession.runningHostAction) return
-        if (!ensureSkillToolSupport()) return
-        val content = (messageOverride ?: input).trim()
-        if (content.isBlank()) {
-            Toast.makeText(context, R.string.ai_chat_empty, Toast.LENGTH_SHORT).show()
+    fun addImageAttachments(ids: List<String>, editAsset: String? = null) {
+        val combined = (chatSession.imageDraftAssets + ids).distinct()
+        if (combined.size > AI_IMAGE_ATTACHMENT_LIMIT) {
+            Toast.makeText(context, context.getString(R.string.ai_image_attachment_limit,
+                AI_IMAGE_ATTACHMENT_LIMIT), Toast.LENGTH_SHORT).show()
             return
         }
+        chatSession.replaceImageDraftAssets(combined, editAsset)
+        persistActiveSession()
+    }
+
+    fun continueEditingImage(file: File) {
+        if (!imageAttachmentsAvailable || chatSession.deleted || !ensureCodexImageRoute()) return
+        val origin = chatSession
+        imagePreview = null
+        scope.launch {
+            val knownId = file.nameWithoutExtension.takeIf { AiImageAssets.file(it) == file }
+            if (origin.imageDraftAssets.size >= AI_IMAGE_ATTACHMENT_LIMIT &&
+                (knownId == null || knownId !in origin.imageDraftAssets)
+            ) {
+                Toast.makeText(context, context.getString(R.string.ai_image_attachment_limit,
+                    AI_IMAGE_ATTACHMENT_LIMIT), Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            try {
+                val assetId = knownId ?: AiImageAssets.importExistingResult(file)
+                if (selectedSession.value === origin && !origin.deleted) {
+                    val editAsset = assetId.takeIf { currentModelSelection().isCodexChatSelection() }
+                    addImageAttachments(listOf(assetId), editAsset = editAsset)
+                } else if (knownId == null) {
+                    withContext(Dispatchers.IO) { AiImageAssets.discardUnsent(assetId) }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Toast.makeText(context,
+                    (error as? AiChatGptException)?.messageRes ?: R.string.ai_image_attachment_unavailable,
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun sendMessage(
+        messageOverride: String? = null,
+        uploadOverride: String? = null,
+        imageRetry: ChatUiMessage? = null,
+    ) {
+        if (!sessionRestored || chatSession.deleted || chatSession.runningHostAction) return
+        val useMediaDraft = imageAttachmentsAvailable && messageOverride == null && uploadOverride == null && imageRetry == null
+        val imageAssets = imageRetry?.imageAssetIds
+            ?: if (useMediaDraft) chatSession.imageDraftAssets.toList() else emptyList()
+        val selection = currentModelSelection()
+        val imageAction = imageRetry?.directImageAction
+            ?: (useMediaDraft && chatSession.directImageDraft && selection.isCodexChatSelection())
+        if (!imageAction && !ensureSkillToolSupport()) return
+        val content = (imageRetry?.content ?: messageOverride ?: input).trim()
+        if (imageImporting && useMediaDraft) return
+        if (content.isBlank() && (imageAssets.isEmpty() || imageAction)) {
+            val label = if (imageAction && imageAssets.isNotEmpty()) R.string.ai_image_describe_edit else R.string.ai_chat_empty
+            Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (chatSession.sending && (imageAction || imageAssets.isNotEmpty())) {
+            Toast.makeText(context, R.string.ai_image_wait_turn, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (imageAction && !ensureCodexImageRoute(selection)) return
         if (bookSearchAvailability() != AiBookSearchAvailability.READY) return
-        if (!ensureModelGenerationRoute()) return
+        if (!imageAction && !ensureModelGenerationRoute()) return
         val isBookSearch = activeAgentMode.id == AgentModeRegistry.BOOK_SEARCH_ID
         if (isBookSearch) chatSession.cancelBookSourceLookup()
-        input = ""
+        if (imageRetry == null) input = ""
+        if (useMediaDraft) {
+            chatSession.clearImageDraft()
+            chatSession.saveImageDraft()
+        }
         val originalUpload = uploadOverride
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?: buildUserUploadContent(content, inputAttachments)
+            ?: if (imageAction) content else buildUserUploadContent(content, inputAttachments)
         val rejected = if (isBookSearch) messages.flatMap { message ->
             val reply = message.bookSearch ?: return@flatMap emptyList()
             reply.candidates.filter { it.key in reply.rejectedKeys }
@@ -1404,7 +1508,9 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             role = ChatRole.USER,
             content = content,
             deliveryState = ChatDeliveryState.QUEUED,
-            uploadContent = uploadContent
+            uploadContent = uploadContent,
+            imageAssetIds = imageAssets,
+            directImageAction = imageAction,
         )
         val specified = if (isBookSearch && !chatSession.sending) explicitAiBookSearchCandidate(content) else null
         if (specified != null) {
@@ -1446,7 +1552,9 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             uploadMessages += chatClient.newUserMessage(
                 AiChatContextManager.removeEmbeddedSkill(
                     message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
-                )
+                ),
+                message.imageAssetIds,
+                message.directImageAction,
             )
         }
         chatSession.syncModeEntryContext()
@@ -1532,6 +1640,14 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
     }
 
     fun regenerateMessage(message: ChatUiMessage) {
+        val targetIndex = messages.indexOfFirst { it.id == message.id }
+        val imagePrompt = if (targetIndex < 0) null else messages.take(targetIndex + 1)
+            .lastOrNull { it.role == ChatRole.USER }?.takeIf { it.directImageAction }
+        if (imagePrompt != null) {
+            if (chatSession.sending || chatSession.runningHostAction || imageImporting) return
+            sendMessage(imageRetry = imagePrompt)
+            return
+        }
         if (!ensureSkillToolSupport() || !ensureModelGenerationRoute()) return
         if (bookSearchAvailability() != AiBookSearchAvailability.READY) return
         if (chatSession.sending || chatSession.runningHostAction) {
@@ -2017,6 +2133,23 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             }
         )
     }
+    val imageAttachmentActions = if (imageAttachmentsAvailable) {
+        rememberAiImageAttachmentActions(
+            targetId = activeSessionId,
+            attachmentCount = chatSession.imageDraftAssets.size,
+            onDismiss = imageAttachmentMenu::close,
+            onAdd = { addImageAttachments(it) },
+            onDirect = if (showImageActions) {
+                {
+                    if (ensureCodexImageRoute()) {
+                        chatSession.setExplicitImageDraft(true)
+                        persistActiveSession()
+                    }
+                }
+            } else null,
+            importingChanged = { imageImporting = it },
+        )
+    } else null
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = search == null || drawerState.isOpen,
@@ -2272,6 +2405,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 value = input,
                                 onValueChange = {
                                     input = it
+                                    if (imageAttachmentsAvailable) chatSession.saveImageDraft()
                                     if (bookSearchMode) {
                                         bookSearchDraftEdited = true
                                         bookSearchGreetingPending = false
@@ -2282,8 +2416,10 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 },
                                  backdrop = controlsBackdrop,
                                  messageInputEnabled = sessionRestored && !chatSession.runningHostAction && modeEntryConfirmation == null &&
-                                    skillToolErrorText == null && bookSearchAvailability == AiBookSearchAvailability.READY,
-                                 sendEnabled = sessionRestored && !chatSession.runningHostAction && modeEntryConfirmation == null && skillToolErrorText == null &&
+                                    (skillToolErrorText == null || directImageDraft) &&
+                                    bookSearchAvailability == AiBookSearchAvailability.READY,
+                                 sendEnabled = sessionRestored && !chatSession.runningHostAction && modeEntryConfirmation == null &&
+                                    (skillToolErrorText == null || directImageDraft) && !imageImporting &&
                                     bookSearchAvailability == AiBookSearchAvailability.READY,
                                 sending = sending || chatSession.activeBookLookupMessageId != null,
                                 inputNotice = bookSearchNotice,
@@ -2306,10 +2442,33 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 suggestionAvailable = skillSuggestions.isNotEmpty(),
                                 suggestionExpanded = suggestionsExpanded,
                                 contextUsage = contextUsage,
+                                contextUsageWithTools = imageAttachmentsAvailable && sessionRestored,
+                                imageAssets = chatSession.imageDraftAssets,
+                                directImage = directImageDraft,
+                                showDirectImageLabel = directImageDraft && chatSession.explicitImageDraft,
+                                imageImporting = imageImporting,
+                                imageAttachmentButton = if (showImageActions && imageAttachmentActions != null && sessionRestored) {
+                                    {
+                                        AiImageAttachmentMenuButton(
+                                            actions = imageAttachmentActions,
+                                            menu = imageAttachmentMenu,
+                                            enabled = !imageImporting,
+                                        )
+                                    }
+                                } else null,
+                                onImagePreview = { file -> imagePreview = file to false },
+                                onImageRemove = { assetId ->
+                                    chatSession.replaceImageDraftAssets(chatSession.imageDraftAssets - assetId)
+                                    persistActiveSession()
+                                },
+                                onClearDirectImage = {
+                                    chatSession.setExplicitImageDraft(false)
+                                    persistActiveSession()
+                                },
                                 attachments = inputAttachments,
                                 skills = activeSkillAttachments,
                                 skillRemovable = skillInputPolicy.removable,
-                                skillErrorText = skillToolErrorText,
+                                skillErrorText = skillToolErrorText.takeUnless { directImageDraft },
                                 onSend = ::sendMessage,
                                 onStop = ::stopSending,
                                 onWebSettingsClick = onOpenWebSettings,
@@ -2499,6 +2658,8 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                                 }
                             },
                             onInteractionSubmit = ::submitInteraction,
+                            onImagePreview = { file, generated -> imagePreview = file to generated },
+                            onImageEdit = if (showImageActions) ::continueEditingImage else null,
                         )
                         if (search == null) FloatingSkillSuggestionPanel(
                             suggestions = skillSuggestions,
@@ -2624,6 +2785,41 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
                 }
             }
         )
+    }
+    imagePreview?.let { (file, generated) ->
+        AiImagePreview(
+            file,
+            onDismiss = { imagePreview = null },
+            onEdit = if (generated && showImageActions) {
+                { continueEditingImage(file) }
+            } else null,
+        )
+    }
+    if (showCodexImageSettings) {
+        NgPaneDialog(onDismissRequest = { showCodexImageSettings = false }) {
+            NgDialog(
+                title = null,
+                variant = NgDialogVariant.CLASSIC_CONFIRMATION,
+                actions = {
+                    NgDialogTextActionButton(
+                        text = stringResource(R.string.cancel),
+                        onClick = { showCodexImageSettings = false },
+                    )
+                    NgDialogTextActionButton(
+                        text = stringResource(R.string.setting),
+                        onClick = {
+                            showCodexImageSettings = false
+                            openAssistantSettings(AiConfigFragment.PAGE_PROVIDERS)
+                        },
+                    )
+                },
+            ) {
+                Text(
+                    text = stringResource(R.string.ai_image_codex_required),
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                )
+            }
+        }
     }
     if (showInternalMcpSheet && (activeAgentMode.allowsManualMcpCapabilities || bookSearchMode)) {
         AiChatInternalMcpSheet(
@@ -4090,6 +4286,8 @@ private fun RikkaChatList(
     onExport: (ChatUiMessage) -> Unit,
     onEntryInteractionSubmit: (AiChatInteractionAction) -> Unit,
     onInteractionSubmit: (String, AiChatInteractionAction) -> Unit,
+    onImagePreview: (File, Boolean) -> Unit,
+    onImageEdit: ((File) -> Unit)?,
 ) {
     val horizontalPadding = if (backdrop == null) 16.dp else AiChatHorizontalPadding
     val selectionStartReduction = if (selectionMode) 8.dp else 0.dp
@@ -4166,7 +4364,9 @@ private fun RikkaChatList(
                     onFork = { onFork(message) },
                     onToggleFavorite = { onToggleFavorite(message) },
                     onExport = { onExport(message) },
-                    onInteractionSubmit = onInteractionSubmit
+                    onInteractionSubmit = onInteractionSubmit,
+                    onImagePreview = onImagePreview,
+                    onImageEdit = onImageEdit,
                 )
             }
             val messageContent: @Composable () -> Unit = {
@@ -4333,7 +4533,9 @@ private fun RikkaMessageItem(
     onFork: () -> Unit,
     onToggleFavorite: () -> Unit,
     onExport: () -> Unit,
-    onInteractionSubmit: (String, AiChatInteractionAction) -> Unit
+    onInteractionSubmit: (String, AiChatInteractionAction) -> Unit,
+    onImagePreview: (File, Boolean) -> Unit,
+    onImageEdit: ((File) -> Unit)?,
 ) {
     message.contextCompaction?.let { record ->
         ContextCompactionEventItem(
@@ -4368,15 +4570,16 @@ private fun RikkaMessageItem(
         }
     AiChatMessageSurface(isUser, backdrop, actionsMenu) {
         if (isUser) {
+            AiImageThumbnailRow(message.imageAssetIds, onPreview = { onImagePreview(it, false) })
             val body = remember(message.content) { AnnotatedString(message.content) }
-            if (backdrop != null) {
+            if (message.content.isNotBlank() && backdrop != null) {
                 SearchableChatText(
                     text = body,
                     modifier = Modifier.align(Alignment.Start),
                     style = MaterialTheme.typography.bodyLarge,
                     searchLocation = searchLocation,
                 )
-            } else {
+            } else if (message.content.isNotBlank()) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.primaryContainer,
@@ -4427,8 +4630,24 @@ private fun RikkaMessageItem(
                 modelLabel = model.label ?: stringResource(R.string.ai_assistant),
                 modelIconRes = model.iconRes,
             )
+            val generatedImages = remember(message.imageAssetIds, message.toolReceipts) {
+                (message.imageAssetIds.mapNotNull(AiImageAssets::file) + message.toolReceipts
+                    .filter { it.isCodexImage() }
+                    .map { codexImageFile(it.conversationId, it.receiptId) }).distinct()
+            }
+            generatedImages.forEach { file ->
+                key(file) {
+                    AiChatImageResult(
+                        file,
+                        onPreview = { onImagePreview(file, true) },
+                        onEdit = onImageEdit?.let { edit -> { edit(file) } },
+                    )
+                }
+            }
             if (message.loading) {
-                ThinkingLoadingLine(message.webActivity?.activeAction)
+                val wait = message.imageWait
+                if (wait != null) AiImageWaitCard(wait)
+                else if (generatedImages.isEmpty()) ThinkingLoadingLine(message.webActivity?.activeAction)
                 if (!message.reasoning.isNullOrBlank()) {
                     ReasoningEntry(
                         reasoning = message.reasoning,
@@ -4557,7 +4776,7 @@ private fun RikkaMessageItem(
 }
 
 @Composable
-private fun AiChatMessageSurface(
+internal fun AiChatMessageSurface(
     isUser: Boolean,
     backdrop: NgLiquidGlassBackdrop?,
     actionsMenu: (@Composable (() -> Unit) -> Unit)?,
@@ -7738,6 +7957,15 @@ private fun RikkaChatInput(
     suggestionAvailable: Boolean,
     suggestionExpanded: Boolean,
     contextUsage: AiChatContextUsage,
+    contextUsageWithTools: Boolean,
+    imageAssets: List<String>,
+    directImage: Boolean,
+    showDirectImageLabel: Boolean,
+    imageImporting: Boolean,
+    imageAttachmentButton: (@Composable () -> Unit)?,
+    onImagePreview: (File) -> Unit,
+    onImageRemove: (String) -> Unit,
+    onClearDirectImage: () -> Unit,
     attachments: List<AiChatInputAttachment>,
     skills: List<AiChatInputAttachment>,
     skillRemovable: Boolean,
@@ -7757,6 +7985,8 @@ private fun RikkaChatInput(
     onRemoveSkill: (AiChatInputAttachment) -> Unit
 ) {
     val focusManager = LocalFocusManager.current
+    val hasInput = value.isNotBlank() || imageAssets.isNotEmpty() && !directImage
+    val canSendDraft = sendEnabled && (!sending || imageAssets.isEmpty() && !directImage)
     val sendPrimary = MaterialTheme.colorScheme.primary
     val isDark = NgTheme.snapshot.isDark
     val sendButtonColor = remember(sendPrimary, isDark) {
@@ -7797,6 +8027,17 @@ private fun RikkaChatInput(
                             onRemove = onRemoveAttachment
                         )
                     }
+                    AiImageThumbnailRow(
+                        imageAssets, onImagePreview, onImageRemove,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                    if (showDirectImageLabel) {
+                        TextButton(onClick = onClearDirectImage) {
+                            Text(stringResource(R.string.ai_image_generate) + "  ×")
+                        }
+                    }
+                    if (imageImporting) Text(stringResource(R.string.ai_image_importing),
+                        style = MaterialTheme.typography.labelMedium)
                     if (inputNotice != null) {
                         inputNotice()
                     } else {
@@ -7847,11 +8088,13 @@ private fun RikkaChatInput(
                                     onClick = onSkillClick
                                 )
                             }
+                            if (contextUsageWithTools) {
+                                ContextUsageIndicator(usage = contextUsage, onClick = onContextUsageClick)
+                            }
                         }
-                        ContextUsageIndicator(
-                            usage = contextUsage,
-                            onClick = onContextUsageClick
-                        )
+                        if (!contextUsageWithTools) {
+                            ContextUsageIndicator(usage = contextUsage, onClick = onContextUsageClick)
+                        }
                         if (contextAvailable) {
                             InputDrawableIcon(
                                 iconRes = R.drawable.ic_ai_context_menu,
@@ -7868,7 +8111,7 @@ private fun RikkaChatInput(
                                 onClick = onSuggestionClick
                             )
                         }
-                        if (sending && value.isNotBlank()) {
+                        if (sending && hasInput && canSendDraft) {
                             ChatInputActionButton(
                                 icon = Icons.Rounded.ArrowUpward,
                                 contentDescription = "Queue message",
@@ -7878,18 +8121,19 @@ private fun RikkaChatInput(
                                 onClick = onSend
                             )
                         }
+                        imageAttachmentButton?.invoke()
                         ChatInputActionButton(
                             icon = if (sending) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
                             contentDescription = if (sending) "Stop" else "Send",
-                            enabled = sending || sendEnabled && value.isNotBlank(),
+                            enabled = sending || canSendDraft && hasInput,
                             color = when {
                                 sending -> MaterialTheme.colorScheme.errorContainer
-                                !sendEnabled || value.isBlank() -> MaterialTheme.colorScheme.surfaceVariant
+                                !canSendDraft || !hasInput -> MaterialTheme.colorScheme.surfaceVariant
                                 else -> sendButtonColor
                             },
                             tint = when {
                                 sending -> MaterialTheme.colorScheme.onErrorContainer
-                                !sendEnabled || value.isBlank() ->
+                                !canSendDraft || !hasInput ->
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                 else -> Color.White
                             },
@@ -7903,7 +8147,7 @@ private fun RikkaChatInput(
 }
 
 @Composable
-private fun AiChatComposerSurface(
+internal fun AiChatComposerSurface(
     backdrop: NgLiquidGlassBackdrop?,
     content: @Composable () -> Unit,
 ) {
@@ -7929,7 +8173,7 @@ private fun AiChatComposerSurface(
 }
 
 @Composable
-private fun AiChatComposerField(
+internal fun AiChatComposerField(
     value: String,
     onValueChange: (String) -> Unit,
     onInputFocused: () -> Unit,
@@ -8802,11 +9046,15 @@ internal fun AiChatTurnResult.toUiMessage(elapsedMs: Long, modelSelection: AiMod
     }.joinToString(" · ")
     return ChatUiMessage(
         role = ChatRole.ASSISTANT,
-        content = content.ifBlank { reasoning?.takeIf { it.isNotBlank() } ?: "模型未返回正文" },
+        content = content.ifBlank {
+            if (imageAssetIds.isNotEmpty() || toolReceipts.any { it.isCodexImage() }) ""
+            else reasoning?.takeIf { it.isNotBlank() } ?: "模型未返回正文"
+        },
         meta = meta,
         reasoning = reasoning,
         toolTrace = toolTrace,
         toolReceipts = toolReceipts,
+        imageAssetIds = imageAssetIds,
         memoryTrace = memoryTrace,
         webActivity = webActivity,
         elapsedMs = elapsedMs,
@@ -9043,7 +9291,9 @@ private fun rebuildUploadMessages(
                     add(chatClient.newUserMessage(
                         AiChatContextManager.removeEmbeddedSkill(
                             message.uploadContent ?: message.content
-                        )
+                        ),
+                        message.imageAssetIds,
+                        message.directImageAction,
                     ))
                 }
                 ChatRole.ASSISTANT -> if (message.meta != "error" && message.contextCompaction == null) {
@@ -9854,7 +10104,9 @@ internal fun ChatUiMessage.toSnapshot(): AiChatMessageSnapshot {
         contextCompactionAfterTokens = contextCompaction?.afterTokens,
         contextCompactionRevision = contextCompaction?.revision,
         contextCompactionSummaryPromptTokens = contextCompaction?.summaryPromptTokens,
-        contextCompactionSummaryCompletionTokens = contextCompaction?.summaryCompletionTokens
+        contextCompactionSummaryCompletionTokens = contextCompaction?.summaryCompletionTokens,
+        imageAssetIds = imageAssetIds.takeIf { it.isNotEmpty() },
+        directImageAction = directImageAction,
     )
 }
 
@@ -9866,6 +10118,8 @@ internal fun AiChatMessageSnapshot.toUiMessage(): ChatUiMessage {
             else -> ChatRole.ASSISTANT
         },
         content = content,
+        imageAssetIds = imageAssetIds.orEmpty(),
+        directImageAction = directImageAction,
         meta = meta,
         reasoning = reasoning,
         toolTrace = toolTrace.orEmpty(),
@@ -9932,7 +10186,10 @@ internal data class ChatUiMessage(
     val localContextAnchorTokens: Int? = null,
     val usageProviderId: String? = null,
     val usageModelId: String? = null,
-    val contextCompaction: AiChatCompactionRecord? = null
+    val contextCompaction: AiChatCompactionRecord? = null,
+    val imageAssetIds: List<String> = emptyList(),
+    val directImageAction: Boolean = false,
+    val imageWait: AiChatImageWait? = null,
 )
 
 private data class AiChatContextSessionUsage(

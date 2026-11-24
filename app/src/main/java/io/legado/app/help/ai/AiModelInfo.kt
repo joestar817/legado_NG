@@ -67,9 +67,10 @@ data class AiModelInfo(
 
 /** Scopes user edits and catalog fields to a provider configuration without storing URL credentials. */
 internal fun AiProviderSetting.modelConfigurationKey(): String {
-    if (isChatGptSubscription()) {
+    if (isOpenAiAccountProvider()) {
         val account = chatGptAccountId.orEmpty().toByteArray(Charsets.UTF_8)
-        return "chatgpt-model:${UUID.nameUUIDFromBytes(account)}"
+        val source = if (isCodexSubscription()) "codex-model" else "chatgpt-model"
+        return "$source:${UUID.nameUUIDFromBytes(account)}"
     }
     // The official DeepSeek sample already persisted this key.
     officialDeepSeekModelConfigEndpoint()?.let { return it }

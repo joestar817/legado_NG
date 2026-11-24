@@ -9,8 +9,11 @@ import io.legado.app.help.ai.AiChatInteractionParser
 import io.legado.app.help.ai.AiChatInteractionPolicyContract
 import io.legado.app.help.ai.AiChatInteractionPolicyRegistry
 import io.legado.app.help.ai.AiWebActivityAction
+import io.legado.app.help.ai.CODEX_IMAGE_TOOL
+import io.legado.app.help.ai.isCodexImage
 import io.legado.pet.api.PetActivities
 import io.noties.markwon.Markwon
+import splitties.init.appCtx
 
 internal const val CHARACTER_CARD_ENTRY_CONTEXT = "book_detail_character_card"
 
@@ -22,6 +25,7 @@ internal fun AgentModeEntryContext?.characterCardWorkKey(): String? =
 internal enum class AiChatTaskState(@StringRes val label: Int, val needsAction: Boolean = false) {
     THINKING(R.string.ai_chat_task_thinking),
     GENERATING(R.string.ai_chat_task_generating),
+    GENERATING_IMAGE(R.string.ai_codex_generating_image),
     WEB_SEARCH(R.string.ai_chat_web_searching),
     WEB_READ(R.string.ai_chat_web_reading),
     WEB_IMAGE_SEARCH(R.string.ai_chat_web_searching_images),
@@ -79,6 +83,7 @@ internal fun AiWebActivityAction.chatTaskState(): AiChatTaskState = when (this) 
 }
 
 internal fun toolChatTaskState(toolName: String): AiChatTaskState = when (toolName) {
+    CODEX_IMAGE_TOOL -> AiChatTaskState.GENERATING_IMAGE
     "search_web" -> AiChatTaskState.WEB_SEARCH
     "read_web_url" -> AiChatTaskState.WEB_READ
     "bookshelf_chapter_list", "bookshelf_text_search" -> AiChatTaskState.CHAPTERS
@@ -91,7 +96,12 @@ internal fun toolChatTaskState(toolName: String): AiChatTaskState = when (toolNa
 }
 
 internal fun ChatUiMessage.taskReplyPreview(markdown: Markwon): String? {
-    if (role != ChatRole.ASSISTANT || loading || content.isBlank()) return null
+    if (role != ChatRole.ASSISTANT || loading) return null
+    if (content.isBlank()) {
+        return if (imageAssetIds.isNotEmpty() || toolReceipts.any { it.isCodexImage() }) {
+            appCtx.getString(R.string.ai_codex_generated_image)
+        } else null
+    }
     val visible = AiChatInteractionParser.parse(content).content.take(2_048)
     return markdown.toMarkdown(normalizeAiChatMarkdown(visible)).toString()
         .replace(Regex("\\s+"), " ").trim().take(100).takeIf { it.isNotBlank() }

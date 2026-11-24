@@ -4,7 +4,12 @@ import com.google.gson.JsonObject
 import io.legado.app.R
 import okhttp3.Request
 
-internal suspend fun AiProviderSetting.fetchChatGptModels(): List<AiModel> {
+internal suspend fun AiProviderSetting.fetchAccountModels(): List<AiModel> {
+    if (isCodexSubscription()) {
+        return parseChatGptModels(
+            getCodexAccountJson("$CODEX_API/models?client_version=0.171.0"), modelConfigurationKey(), codex = true,
+        )
+    }
     val token = AiChatGptSessions.accessToken(this)
     val request = Request.Builder().url("$CHATGPT_API/models")
         .header("Authorization", "Bearer $token").get().build()
@@ -21,7 +26,7 @@ internal suspend fun AiProviderSetting.fetchChatGptModels(): List<AiModel> {
     }
 }
 
-internal fun parseChatGptModels(json: JsonObject, modelSource: String): List<AiModel> {
+internal fun parseChatGptModels(json: JsonObject, modelSource: String, codex: Boolean = false): List<AiModel> {
     val entries = json.arrayOrNull("models") ?: throw AiChatGptException(R.string.ai_chatgpt_invalid_catalog)
     return entries.filterIsInstance<JsonObject>().mapNotNull { item ->
         if (item.modelCatalogText("visibility") != "list") return@mapNotNull null
@@ -37,6 +42,7 @@ internal fun parseChatGptModels(json: JsonObject, modelSource: String): List<AiM
             contextWindow = contextWindow?.let { AiModelValue(it) },
             inputModalities = AiModelValue(inputs),
             outputModalities = AiModelValue(listOf("text")),
+            toolCalling = if (codex) AiModelValue(true) else null,
             effortLevels = effortLevels?.let { AiModelValue(it) },
             reasoning = effortLevels?.let { AiModelValue(it.isNotEmpty()) },
             canDisableThinking = effortLevels?.let { AiModelValue("none" in it) },

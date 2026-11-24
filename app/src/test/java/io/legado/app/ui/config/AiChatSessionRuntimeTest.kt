@@ -2,6 +2,7 @@ package io.legado.app.ui.config
 
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
+import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import io.legado.app.help.ai.AgentModeEntryContext
@@ -20,6 +21,7 @@ import io.legado.app.help.ai.AiExternalSearchProvider
 import io.legado.app.help.ai.AiExternalSearchService
 import io.legado.app.help.ai.AiExternalSearchSettings
 import io.legado.app.help.ai.AiExternalSearchStore
+import io.legado.app.help.ai.AiImageDraft
 import io.legado.app.help.ai.AiModel
 import io.legado.app.help.ai.AiModelRegistry
 import io.legado.app.help.ai.AiModelSelection
@@ -64,6 +66,78 @@ import java.util.concurrent.TimeUnit
 @Config(sdk = [35], application = Application::class)
 class AiChatSessionRuntimeTest {
     private val generalEntry = AiChatSessionEntry("entry")
+
+    @Test
+    fun imageDraftAndModeRestoreOnlyIntoTheirOwnConversation() = runBlocking {
+        ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        val drafts = mutableMapOf<String, AiImageDraft>()
+        val snapshots = mutableMapOf<String, AiChatSessionSnapshot>()
+        val coordinator = AiChatSessions(
+            scope,
+            readImageDraft = { drafts[it] },
+            writeImageDraft = { id, draft -> drafts[id] = draft },
+            writeSnapshot = { snapshots[it.id] = it },
+        )
+        try {
+            val first = AiChatSessionRuntime(coordinator, AgentModeRegistry.general, null, emptyList(), id = "first-image")
+            first.input = "change the sky"
+            first.replaceImageDraftAssets(listOf("reference"))
+            first.setExplicitImageDraft(true)
+            first.persist()?.await()
+            val reopened = AiChatSessionRuntime(coordinator, AgentModeRegistry.general, null, emptyList(),
+                id = first.id, saved = requireNotNull(snapshots[first.id]))
+            val another = AiChatSessionRuntime(coordinator, AgentModeRegistry.general, null, emptyList(), id = "other-image")
+
+            assertEquals("change the sky", reopened.input)
+            assertEquals(listOf("reference"), reopened.imageDraftAssets.toList())
+            assertTrue(reopened.directImageDraft)
+            assertTrue(reopened.explicitImageDraft)
+            assertTrue(reopened.hasDraft)
+            assertTrue(another.imageDraftAssets.isEmpty())
+            assertFalse(another.directImageDraft)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun continueEditingUsesItsReferenceWithoutSelectingTheLabel() = runBlocking {
+        ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        val gson = Gson()
+        val drafts = mutableMapOf<String, String>()
+        val snapshots = mutableMapOf<String, AiChatSessionSnapshot>()
+        val coordinator = AiChatSessions(
+            scope,
+            readImageDraft = { id -> drafts[id]?.let { gson.fromJson(it, AiImageDraft::class.java) } },
+            writeImageDraft = { id, draft -> drafts[id] = gson.toJson(draft) },
+            writeSnapshot = { snapshots[it.id] = it },
+        )
+        try {
+            val session = AiChatSessionRuntime(coordinator, AgentModeRegistry.general, null, emptyList())
+            session.setExplicitImageDraft(true)
+            session.replaceImageDraftAssets(listOf("photo", "work-one"), editAsset = "work-one")
+            session.replaceImageDraftAssets(listOf("photo", "work-one", "work-two"), editAsset = "work-two")
+            assertTrue(session.directImageDraft)
+            assertFalse(session.explicitImageDraft)
+            session.persist()?.await()
+
+            val restored = AiChatSessionRuntime(coordinator, AgentModeRegistry.general, null, emptyList(),
+                id = session.id, saved = requireNotNull(snapshots[session.id]))
+            assertTrue(restored.directImageDraft)
+            assertFalse(restored.explicitImageDraft)
+
+            restored.replaceImageDraftAssets(restored.imageDraftAssets - "work-one")
+            assertTrue(restored.directImageDraft)
+            restored.replaceImageDraftAssets(restored.imageDraftAssets - "work-two")
+            assertFalse(restored.directImageDraft)
+            restored.replaceImageDraftAssets(restored.imageDraftAssets + "work-two")
+            assertFalse(restored.directImageDraft)
+        } finally {
+            scope.cancel()
+        }
+    }
 
     @Test
     fun browsingHistoryDoesNotReplaceTheDedicatedSearchSession() = runBlocking {

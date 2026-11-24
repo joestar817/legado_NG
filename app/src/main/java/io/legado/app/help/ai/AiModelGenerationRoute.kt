@@ -20,7 +20,7 @@ internal fun AiProviderSetting.resolveModelGenerationRoute(
     protocolOverride: AiModelGenerationTestProtocol? = null,
     stream: Boolean = streamResponseEnabled,
 ): AiModelGenerationRoute {
-    if (isChatGptSubscription()) {
+    if (isOpenAiAccountProvider()) {
         val issue = when {
             protocolOverride != null && protocolOverride != RESPONSES -> AiModelGenerationIssue.UNSUPPORTED_PROTOCOL
             !stream -> AiModelGenerationIssue.STREAMING_REQUIRED

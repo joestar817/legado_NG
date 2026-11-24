@@ -46,9 +46,14 @@ object AiProviderStore {
     }
 
     @Synchronized
-    internal fun selectChatGptAccount(clientId: String, refresh: Boolean = false, onlyIfSelected: Boolean = false) {
+    internal fun selectChatGptAccount(
+        clientId: String,
+        refresh: Boolean = false,
+        onlyIfSelected: Boolean = false,
+        providerId: String = AiDefaultProviders.CHATGPT_ID,
+    ) {
         val providers = providers()
-        val current = providers.first { it.isChatGptSubscription() }
+        val current = providers.firstOrNull { it.id == providerId && it.isOpenAiAccountProvider() } ?: return
         val sameAccount = current.chatGptAccountId == clientId
         if (sameAccount && !refresh || onlyIfSelected && !sameAccount) return
         val updated = if (sameAccount) current else current.copy(
@@ -91,7 +96,7 @@ object AiProviderStore {
         val id = modelId.trim()
         if (id.isEmpty()) return AiManualModelAddResult.UNAVAILABLE
         val current = provider(providerId) ?: return AiManualModelAddResult.UNAVAILABLE
-        if (current.isChatGptSubscription()) return AiManualModelAddResult.UNAVAILABLE
+        if (current.isOpenAiAccountProvider()) return AiManualModelAddResult.UNAVAILABLE
         val source = current.modelConfigurationKey()
         if (expectedModelConfigurationKey != null && expectedModelConfigurationKey != source) {
             return AiManualModelAddResult.UNAVAILABLE
@@ -263,7 +268,7 @@ object AiProviderStore {
         default: AiProviderSetting,
         savedProvider: AiProviderSetting
     ): AiProviderSetting {
-        if (default.isChatGptSubscription()) return default.copy(
+        if (default.isOpenAiAccountProvider()) return default.copy(
             enabled = savedProvider.enabled,
             chatGptAccountId = savedProvider.chatGptAccountId,
             catalogRevision = savedProvider.catalogRevision,
@@ -351,7 +356,7 @@ object AiProviderStore {
     }
 
     private fun normalize(provider: AiProviderSetting): AiProviderSetting {
-        val isSubscription = provider.isChatGptSubscription()
+        val isSubscription = provider.isOpenAiAccountProvider()
         return provider.copy(
             timeoutSeconds = provider.timeoutSeconds.coerceIn(5, 600),
             models = normalizeModels(provider.models, sort = !isSubscription),
