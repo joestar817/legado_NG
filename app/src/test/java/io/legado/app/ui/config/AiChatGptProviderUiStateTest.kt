@@ -3,6 +3,7 @@ package io.legado.app.ui.config
 import io.legado.app.R
 import io.legado.app.help.ai.AiChatGptAccount
 import io.legado.app.help.ai.AiChatGptTokens
+import io.legado.app.help.ai.AiDefaultProviders
 import io.legado.app.help.ai.CHATGPT_PLAN_SCOPE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,6 +18,22 @@ class AiChatGptProviderUiStateTest {
         email = "reader@example.test",
         tokens = AiChatGptTokens("access", "refresh", Long.MAX_VALUE, setOf(CHATGPT_PLAN_SCOPE)),
     )
+
+    @Test
+    fun chatGptAndOpenAiHaveSeparateHelpDocuments() {
+        val providers = AiDefaultProviders.all().associateBy { it.id }
+        val chatGpt = providers.getValue(AiDefaultProviders.CHATGPT_ID)
+        val openAi = providers.getValue("openai")
+
+        assertEquals(
+            "chatGptProviderHelp",
+            AiProviderHelpDocuments.forProvider(chatGpt.id, chatGpt.builtIn, chatGpt.baseUrl),
+        )
+        assertEquals(
+            "openAiProviderHelp",
+            AiProviderHelpDocuments.forProvider(openAi.id, openAi.builtIn, openAi.baseUrl),
+        )
+    }
 
     @Test
     fun signingOutHidesTheRememberedAccountAndItsSelector() {

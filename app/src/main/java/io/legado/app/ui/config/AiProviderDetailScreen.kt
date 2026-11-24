@@ -209,6 +209,12 @@ private fun AiProviderConfigTab(
                         onHelp = onHelp,
                         onReset = { onFormAction(AiProviderFormScreenAction.ResetRequested) },
                     )
+                } else if (onHelp != null) {
+                    NgFloatingToolbarActionButton(
+                        iconRes = R.drawable.ic_help,
+                        contentDescription = stringResource(R.string.help),
+                        onClick = onHelp,
+                    )
                 }
             },
         )
