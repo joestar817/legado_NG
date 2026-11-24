@@ -224,11 +224,20 @@ internal fun AiModelSelectionSheet(
     }
 
     val normalizedQuery = query.trim()
-    val filteredProviders = remember(state.providers, normalizedQuery) {
-        state.providers.filterModels(normalizedQuery)
+    val selectedTarget = remember(state) { state.selectedTarget() }
+    // Capture the saved selection once the opening catalog is ready.
+    val openingTarget = if (isLoading) null else remember { selectedTarget }
+    val orderedProviders = remember(state.providers, openingTarget) {
+        state.providers.prioritizeDrawerGroup { it.id == openingTarget?.providerId }
     }
-    val pages = remember(state.providers) {
-        state.providers.map { provider ->
+    val filteredProviders = remember(orderedProviders, normalizedQuery) {
+        orderedProviders.filterModels(normalizedQuery)
+    }
+    val openingPosition = remember(openingTarget, filteredProviders) {
+        openingTarget?.position(filteredProviders)
+    }
+    val pages = remember(orderedProviders) {
+        orderedProviders.map { provider ->
             AiModelSelectionPage(
                 key = providerPageKey(provider.id),
                 label = provider.name,
@@ -240,12 +249,12 @@ internal fun AiModelSelectionSheet(
     val pagerState = rememberPagerState(pageCount = { pages.size })
     val currentPages by rememberUpdatedState(pages)
     val currentOnProviderOpen by rememberUpdatedState<(String) -> Unit>({ openProvider(it) })
-    val selectedTarget = remember(state) { state.selectedTarget() }
     val selectedVisible = selectedTarget?.position(filteredProviders)
     val hasSavedSelection = state.selectedProviderId.isNotBlank() || state.selectedModelId.isNotBlank()
     val refreshInteractionSource = remember { MutableInteractionSource() }
     val locateInteractionSource = remember { MutableInteractionSource() }
     val searchInteractionSource = remember { MutableInteractionSource() }
+    var appliedQuery by remember { mutableStateOf("") }
 
     LaunchedEffect(isLoading, pages) {
         if (!initialPageChosen && !isLoading && pages.isNotEmpty()) {
@@ -257,7 +266,9 @@ internal fun AiModelSelectionSheet(
         }
     }
     LaunchedEffect(normalizedQuery) {
-        if (!locatingSelection) listStates.values.toList().forEach { it.scrollToItem(0) }
+        if (normalizedQuery == appliedQuery) return@LaunchedEffect
+        appliedQuery = normalizedQuery
+        if (!locatingSelection) listStates.values.forEach { it.requestScrollToItem(0) }
     }
     LaunchedEffect(searchExpanded) {
         if (searchExpanded) {
@@ -491,7 +502,11 @@ internal fun AiModelSelectionSheet(
                         },
                 ) { pageIndex ->
                     val page = pages[pageIndex]
-                    val listState = listStates.getOrPut(page.key) { LazyListState() }
+                    val listState = listStates.getOrPut(page.key) {
+                        LazyListState(
+                            firstVisibleItemIndex = openingPosition?.takeIf { it.pageKey == page.key }?.row ?: 0,
+                        )
+                    }
                     val provider = filteredProviders.firstOrNull { it.id == page.providerId }
                     val originalProvider = state.providers.firstOrNull { it.id == page.providerId }
                     val fetchStatus = fetchStatuses[page.providerId]

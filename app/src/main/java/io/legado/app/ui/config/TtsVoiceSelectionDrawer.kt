@@ -257,16 +257,23 @@ internal fun TtsVoiceSelectionDrawerContent(
     val scope = rememberCoroutineScope()
     val filtersActive = query.isNotBlank() ||
         selectedLanguages.isNotEmpty() || selectedGenders.isNotEmpty()
+    val selectedFullTarget = remember(state.groups) { state.groups.selectedVoiceTarget() }
+    val openingTarget = if (state.loading) null else remember { selectedFullTarget }
+    val orderedGroups = remember(state.groups, openingTarget) {
+        state.groups.prioritizeDrawerGroup { it.engineId == openingTarget?.engineId }
+    }
     val filteredGroups = remember(
-        state.groups,
+        orderedGroups,
         query,
         selectedLanguages,
         selectedGenders,
     ) {
-        state.groups.filterVoices(query, selectedLanguages, selectedGenders)
+        orderedGroups.filterVoices(query, selectedLanguages, selectedGenders)
     }
     val selectedVisibleTarget = remember(filteredGroups) { filteredGroups.selectedVoiceTarget() }
-    val selectedFullTarget = remember(state.groups) { state.groups.selectedVoiceTarget() }
+    val openingPosition = remember(openingTarget, filteredGroups) {
+        openingTarget?.let { filteredGroups.voicePosition(it) }
+    }
     val pagerState = rememberPagerState(pageCount = { filteredGroups.size })
     val currentGroups by rememberUpdatedState(filteredGroups)
     val currentOnEngineOpen by rememberUpdatedState(onEngineOpen)
@@ -444,9 +451,11 @@ internal fun TtsVoiceSelectionDrawerContent(
                     ) { page ->
                         val group = filteredGroups[page]
                         val voiceListState = voiceListStates.getOrPut(group.engineId) {
-                            LazyListState()
+                            LazyListState(
+                                firstVisibleItemIndex = openingPosition?.takeIf { it.page == page }?.row ?: 0,
+                            )
                         }
-                        val unfilteredGroup = state.groups.getOrNull(page) ?: group
+                        val unfilteredGroup = orderedGroups[page]
                         when {
                             group.fetching -> TtsVoiceDrawerMessage(
                                 text = "正在获取发音人…",

@@ -27,7 +27,9 @@ class TtsVoiceDrawerPositionTest {
         assertEquals(target, filtered.selectedVoiceTarget())
         assertEquals(TtsVoiceDrawerPosition(page = 0, row = 0), filtered.voicePosition(target))
 
-        val reordered = listOf(second, first)
+        val third = group("third", card("third", "selected"))
+        val reordered = (full + third).prioritizeDrawerGroup { it.engineId == target.engineId }
+        assertEquals(listOf("second", "first", "third"), reordered.map { it.engineId })
         assertEquals(TtsVoiceDrawerPosition(page = 0, row = 2), reordered.voicePosition(target))
         assertNull(listOf(first).voicePosition(target))
         assertNull(listOf(second.copy(cards = second.cards.dropLast(1))).voicePosition(target))

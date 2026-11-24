@@ -133,9 +133,12 @@ class AiModelSelectionTabsTest {
             selectedProviderId = "second", selectedModelId = "shared",
         )
         val target = state.selectedTarget()!!
-        assertEquals(AiModelSelectionPosition("provider:second", 1), target.position(providers))
-        assertEquals(AiModelSelectionPosition("provider:second", 0), target.position(providers.filterModels("Gamma")))
-        assertNull(target.position(providers.filterModels("Alpha")))
+        val third = provider("third", "Third Provider", model("other", "Other"))
+        val ordered = (providers + third).prioritizeDrawerGroup { it.id == target.providerId }
+        assertEquals(listOf("second", "first", "third"), ordered.map { it.id })
+        assertEquals(AiModelSelectionPosition("provider:second", 1), target.position(ordered))
+        assertEquals(AiModelSelectionPosition("provider:second", 0), target.position(ordered.filterModels("Gamma")))
+        assertNull(target.position(ordered.filterModels("Alpha")))
     }
 
     private fun provider(id: String, name: String, vararg models: AiModelSelectionItemUiModel) =

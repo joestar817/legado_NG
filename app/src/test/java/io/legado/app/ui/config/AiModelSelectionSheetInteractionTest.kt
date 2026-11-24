@@ -52,23 +52,33 @@ class AiModelSelectionSheetInteractionTest {
     @Test
     fun tabsSwipeSearchAndLocatePreserveModelSelection() {
         val selected = mutableListOf<Pair<String, String>>()
-        val state = AiModelSelectionSheetState(
-            title = "Models", emptyText = "No models", providers = providers,
+        val earlierModels = List(20) { index ->
+            providers[1].models.single().copy(id = "other-$index", name = "Other model $index")
+        }
+        val loaded = listOf(providers[0], providers[1].copy(models = earlierModels + providers[1].models))
+        var state by mutableStateOf(AiModelSelectionSheetState(
+            title = "Models", emptyText = "No models", providers = emptyList(),
             selectedProviderId = "b", selectedModelId = "Beta",
-        )
+        ))
+        var loading by mutableStateOf(true)
         composeRule.setContent {
             NgAppTheme(snapshot = snapshot, updateSystemBars = false) {
                 AiModelSelectionSheet(
-                    state = state, isRefreshing = false, onRefresh = {},
+                    state = state, isLoading = loading, isRefreshing = false, onRefresh = {},
                     onSelect = { provider, model -> selected += provider to model },
                 )
             }
         }
 
-        composeRule.onNodeWithText("Provider A").assertIsSelected()
-        composeRule.onRoot().performTouchInput { swipeLeft() }
+        composeRule.runOnIdle {
+            state = state.copy(providers = loaded)
+            loading = false
+        }
         composeRule.onNodeWithText("Provider B").assertIsSelected()
         composeRule.onNodeWithText("Beta").assertIsDisplayed()
+        composeRule.onRoot().performTouchInput { swipeLeft() }
+        composeRule.onNodeWithText("Provider A").assertIsSelected()
+        composeRule.onNodeWithText("Provider B").performClick().assertIsSelected()
         composeRule.runOnIdle { assertTrue(selected.isEmpty()) }
 
         val context = ApplicationProvider.getApplicationContext<Context>()

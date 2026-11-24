@@ -1,5 +1,8 @@
 package io.legado.app.ui.config
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -31,30 +34,26 @@ class TtsVoiceDrawerTabsTest {
     @get:Rule val composeRule = createComposeRule()
 
     @Test
-    fun engineTabsBeyondTheScreenCanBeScrolledToAndSelected() {
+    fun selectedVoiceOpensFirstAndOtherTabsStillScrollAndSwipe() {
         val opened = mutableListOf<String>()
         val groups = (1..7).map { number ->
             val id = "engine-$number"
             val engine = TtsEngineSetting(id = id, name = "Engine $number Long", type = TtsEngineType.SCRIPT)
             val option = TtsVoiceOption(engine, TtsVoice(id = "voice-$number", name = "Voice $number"), false)
+            val chosen = number == 2
+            val earlierVoices = if (chosen) {
+                List(20) { index ->
+                    TtsVoiceOption(engine, TtsVoice(id = "earlier-$index", name = "Earlier voice $index"), false)
+                        .toDrawerCard(selected = false)
+                }
+            } else emptyList()
             TtsVoiceDrawerGroup(
                 engineId = id,
                 engineName = engine.name,
-                cards = listOf(
-                    TtsVoiceDrawerCard(
-                        option = option,
-                        key = "$id/voice-$number",
-                        selected = false,
-                        languageLabels = emptyList(),
-                        genderLabel = null,
-                        style = null,
-                        tags = emptyList(),
-                        canEditParams = false,
-                        hasVoiceParams = false,
-                    ),
-                ),
+                cards = earlierVoices + option.toDrawerCard(selected = chosen),
             )
         }
+        var state by mutableStateOf(TtsVoiceDrawerState())
         val snapshot = NgThemeResolver.resolve(NgLegacyThemeInput(
             primaryColor = 0xFFFFF1E8.toInt(), accentColor = 0xFF008577.toInt(),
             backgroundColor = 0xFFFFF9F5.toInt(), bottomBackground = 0xFFFFF1E8.toInt(),
@@ -66,7 +65,7 @@ class TtsVoiceDrawerTabsTest {
                     title = "Voices",
                     searchHint = "Search voices",
                     emptyText = "No voices",
-                    state = TtsVoiceDrawerState(loading = false, groups = groups),
+                    state = state,
                     onSelect = {},
                     onPreview = {},
                     onEngineOpen = { opened.add(it) },
@@ -74,11 +73,13 @@ class TtsVoiceDrawerTabsTest {
             }
         }
 
-        composeRule.onNodeWithText("Engine 1 Long").assertIsSelected()
+        composeRule.runOnIdle { state = TtsVoiceDrawerState(loading = false, groups = groups) }
+        composeRule.onNodeWithText("Engine 2 Long").assertIsSelected()
+        composeRule.onNodeWithText("Voice 2").assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(emptyList<String>(), opened) }
-        composeRule.onNodeWithText("Engine 1 Long").performClick()
+        composeRule.onNodeWithText("Engine 2 Long").performClick()
         composeRule.runOnIdle {
-            assertEquals(listOf("engine-1"), opened)
+            assertEquals(listOf("engine-2"), opened)
             opened.clear()
         }
         composeRule.onNodeWithText("Engine 7 Long").performScrollTo().performClick().assertIsSelected()
@@ -88,8 +89,10 @@ class TtsVoiceDrawerTabsTest {
         composeRule.runOnIdle { assertEquals(listOf("engine-7", "engine-1"), opened) }
         composeRule.onNodeWithText("Voice 1").assertIsDisplayed()
         composeRule.runOnIdle { opened.clear() }
-        composeRule.onRoot().performTouchInput { swipeLeft() }
-        composeRule.onNodeWithText("Engine 2 Long").assertIsSelected()
-        composeRule.runOnIdle { assertEquals(listOf("engine-2"), opened) }
+        composeRule.onRoot().performTouchInput {
+            swipeLeft(startX = width * 0.8f, endX = width * 0.2f)
+        }
+        composeRule.onNodeWithText("Engine 3 Long").assertIsSelected()
+        composeRule.runOnIdle { assertEquals(listOf("engine-3"), opened) }
     }
 }
