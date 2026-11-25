@@ -58,6 +58,7 @@ import io.legado.app.help.book.removeType
 import io.legado.app.help.book.update
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadCharacterMarkSettings
 import io.legado.app.help.resource.ResourceRepository
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.source.getSourceType
@@ -81,7 +82,10 @@ import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.bookmark.BookmarkDialog
-import io.legado.app.ui.book.character.BookCharacterEditDialog
+import io.legado.app.ui.book.character.BookCharacterActivity
+import io.legado.app.ui.book.character.BookCharacterDetailActivity
+import io.legado.app.ui.book.character.automaticCharacterSilhouetteStyle
+import io.legado.app.ui.book.character.putAutomaticCharacterSilhouetteStyle
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.changesource.ChangeChapterSourceDialog
 import io.legado.app.ui.book.info.BookAiAssistantLauncher
@@ -98,6 +102,7 @@ import io.legado.app.ui.book.read.config.AiPurifyRangeDialogContent
 import io.legado.app.ui.book.read.config.AiPurifyRuleDetailDialogContent
 import io.legado.app.ui.book.read.config.AiPurifyRuleUi
 import io.legado.app.ui.book.read.config.MoreConfigDialog
+import io.legado.app.ui.book.read.config.ReadCharacterSettingsDialog
 import io.legado.app.ui.book.read.config.ReadContentSettingsDialog
 import io.legado.app.ui.book.read.config.ReadStyleDialog
 import io.legado.app.ui.font.FontSelectDialog
@@ -164,6 +169,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -231,6 +238,9 @@ class ReadBookActivity : BaseReadBookActivity(),
     private var backupJob: Job? = null
     private var aiPurifyJob: Job? = null
     private var textHighlightObserveJob: Job? = null
+    private var characterNamesObserveJob: Job? = null
+    private var characterStyleRefreshJob: Job? = null
+    private var observedCharacterBook: Pair<String, String>? = null
     private var observedTextHighlightBook: Pair<String, String>? = null
     private var activeTextHighlight: Bookmark? = null
     private val textHighlightWriteMutex = Mutex()
@@ -1129,9 +1139,49 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
 
     private fun openCharacterCard(character: BookCharacter) {
+        onCharacterNameClick(character.id)
+    }
+
+    override fun onCharacterNameClick(characterId: Long) {
         val book = ReadBook.book ?: return
-        val workKey = BookCharacterProfile.workKey(book.name, book.author)
-        showDialogFragment(BookCharacterEditDialog(workKey, character.id))
+        if (binding.readView.isTextSelected) binding.readView.cancelSelect()
+        BookCharacterDetailActivity.open(
+            this, BookCharacterProfile.workKey(book.name, book.author), characterId,
+            book.automaticCharacterSilhouetteStyle(),
+        )
+    }
+
+    internal fun openReadingCharacterList() {
+        val book = ReadBook.book ?: return
+        startActivity<BookCharacterActivity> {
+            putExtra(BookCharacterActivity.EXTRA_WORK_KEY, BookCharacterProfile.workKey(book.name, book.author))
+            putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, book.name)
+            putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, book.author)
+            putExtra(BookCharacterActivity.EXTRA_BOOK_URL, book.bookUrl)
+            putAutomaticCharacterSilhouetteStyle(book.automaticCharacterSilhouetteStyle())
+        }
+    }
+
+    internal fun onCharacterMarkSettingsChanged(
+        previous: ReadCharacterMarkSettings,
+        settings: ReadCharacterMarkSettings,
+    ) {
+        binding.readView.setCharacterMarkSettings(settings)
+        if (previous.textStyle != settings.textStyle && !ReadBook.characterNameMarks.isEmpty) {
+            characterStyleRefreshJob?.cancel()
+            characterStyleRefreshJob = lifecycleScope.launch {
+                delay(150)
+                characterStyleRefreshJob = null
+                refreshReadingHighlightStyles()
+            }
+        }
+    }
+
+    internal fun flushCharacterStyleRefresh() {
+        val pending = characterStyleRefreshJob ?: return
+        characterStyleRefreshJob = null
+        pending.cancel()
+        if (!isFinishing && !isDestroyed) refreshReadingHighlightStyles()
     }
 
     private fun startCharacterCardFromSelection() {
@@ -2321,8 +2371,46 @@ class ReadBookActivity : BaseReadBookActivity(),
     override fun upMenuView() {
         handler.post {
             observeTextHighlights()
+            observeCharacterNames()
             upMenu()
             binding.readMenu.upBookView()
+        }
+    }
+
+    private fun observeCharacterNames() {
+        val book = ReadBook.book
+        val key = book?.let { BookCharacterProfile.workKey(it.name, it.author) to it.bookUrl }
+        if (key == observedCharacterBook) return
+        observedCharacterBook = key
+        characterNamesObserveJob?.cancel()
+        if (key == null) {
+            ReadBook.characterNameMarks = CharacterNameMarks.empty
+            binding.readView.setCharacterNames(CharacterNameMarks.empty)
+            return
+        }
+        binding.readView.setCharacterNames(ReadBook.characterNameMarks.forBook(key.second))
+        characterNamesObserveJob = lifecycleScope.launch {
+            appDb.bookCharacterDao.flowCharacters(key.first)
+                .map { CharacterNameMarks.from(key.second, it) }
+                .flowOn(IO)
+                .collectLatest { marks ->
+                    if (ReadBook.book?.bookUrl != key.second) return@collectLatest
+                    val previous = ReadBook.characterNameMarks.forBook(key.second)
+                    ReadBook.characterNameMarks = marks
+                    binding.readView.setCharacterNames(marks)
+                    if (!previous.sameEntriesAs(marks) &&
+                        ReadCharacterMarkSettings.load(this@ReadBookActivity).textStyle != null
+                    ) {
+                        refreshReadingHighlightStyles()
+                    }
+                }
+        }
+    }
+
+    private fun refreshReadingHighlightStyles() {
+        if (!binding.readView.refreshHighlightRules()) {
+            ChapterProvider.upStyle()
+            if (isInitFinish) ReadBook.loadContent(resetPageOffset = false)
         }
     }
 
@@ -2715,6 +2803,10 @@ class ReadBookActivity : BaseReadBookActivity(),
 
     override fun showContentSettings() {
         showDialogFragment<ReadContentSettingsDialog>()
+    }
+
+    override fun showCharacterSettings() {
+        showDialogFragment<ReadCharacterSettingsDialog>()
     }
 
     override fun showFloatingSettings() {
@@ -3298,10 +3390,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                     10 -> ChapterProvider.upLayout()
                     11 -> readView.submitRenderTask()
                     12 -> readView.upPageTouchClick()
-                    13 -> if (!readView.refreshHighlightRules()) {
-                        ChapterProvider.upStyle()
-                        if (isInitFinish) ReadBook.loadContent(resetPageOffset = false)
-                    }
+                    13 -> refreshReadingHighlightStyles()
                     14 -> readView.refreshEpubStyle()
                 }
             }

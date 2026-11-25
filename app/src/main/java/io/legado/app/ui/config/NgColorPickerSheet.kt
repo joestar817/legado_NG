@@ -205,6 +205,7 @@ internal fun NgInlineColorPicker(
     onRestoreOriginal: (() -> Unit)? = null,
     headerContentSpacing: Dp = 0.dp,
     heightLimit: Dp? = null,
+    topContent: (@Composable () -> Unit)? = null,
 ) {
     val state = remember(title, forceOpaque) { NgColorPickerState(initialColor, forceOpaque) }
     val originalColor = remember(title, forceOpaque) { state.color }
@@ -222,6 +223,10 @@ internal fun NgInlineColorPicker(
         NgColorPickerHeader(title = title, onPick = takeColor, onClose = onBack, inline = true)
         Spacer(Modifier.height(headerContentSpacing))
         Column(modifier = Modifier.weight(1f, fill = fillAvailableHeight).verticalScroll(rememberScrollState())) {
+            if (topContent != null) {
+                topContent()
+                Spacer(Modifier.height(10.dp))
+            }
             NgColorPickerContent(
                 state = state,
                 originalColor = originalColor,

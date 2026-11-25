@@ -18,9 +18,10 @@ internal enum class ReadBottomTool(
     INTERFACE("interface", R.string.interface_setting, R.drawable.ic_read_menu_interface),
     MORE("more", R.string.more, R.drawable.ic_manga_menu_settings),
     PAGE_TURNING("page_turning", R.string.read_settings_tab_page, R.drawable.ic_read_menu_page_turning),
-    SCROLL("scroll", R.string.read_menu_scroll, R.drawable.ic_auto_page),
     CONTENT("content", R.string.content, R.drawable.ic_read_menu_content),
     FLOATING("floating", R.string.read_menu_floating, R.drawable.ic_read_menu_floating),
+    CHARACTERS("characters", R.string.book_characters, R.drawable.ic_bookshelf_action_user),
+    SCROLL("scroll", R.string.read_menu_scroll, R.drawable.ic_auto_page),
 }
 
 internal object ReadBottomToolbarSettings {
@@ -28,7 +29,7 @@ internal object ReadBottomToolbarSettings {
 
     fun hiddenTools(context: Context): Set<ReadBottomTool> {
         val keys = context.getPrefString(PreferKey.readBottomToolbarHidden).orEmpty().split(',')
-        return configurableTools.filter { it.key in keys }.toSet()
+        return withDefaultSlot(configurableTools.filter { it.key in keys }.toSet())
     }
 
     fun saveHiddenTools(context: Context, tools: Set<ReadBottomTool>) {
@@ -49,10 +50,31 @@ internal object ReadBottomToolbarSettings {
     fun visibleRows(
         hidden: Set<ReadBottomTool>,
         order: List<ReadBottomTool> = ReadBottomTool.entries,
-    ): List<List<ReadBottomTool>> = order
-        .filter { it == ReadBottomTool.MORE || it !in hidden }
-        .chunked(4)
+    ): List<List<ReadBottomTool>> {
+        val effectiveHidden = withDefaultSlot(hidden)
+        return order.filter { it == ReadBottomTool.MORE || it !in effectiveHidden }.chunked(4)
+    }
 
-    fun shortcuts(hidden: Set<ReadBottomTool>): List<ReadBottomTool> =
-        configurableTools.filter { it in hidden && it != ReadBottomTool.SCROLL }
+    fun updateVisibility(
+        hidden: Set<ReadBottomTool>,
+        tool: ReadBottomTool,
+        visible: Boolean,
+    ): Set<ReadBottomTool> {
+        if (!visible) return withDefaultSlot(hidden) + tool
+        val updated = hidden - tool
+        return when (tool) {
+            ReadBottomTool.CHARACTERS -> updated + ReadBottomTool.SCROLL
+            ReadBottomTool.SCROLL -> updated + ReadBottomTool.CHARACTERS
+            else -> withDefaultSlot(updated)
+        }
+    }
+
+    fun shortcuts(hidden: Set<ReadBottomTool>): List<ReadBottomTool> {
+        val effectiveHidden = withDefaultSlot(hidden)
+        return configurableTools.filter { it in effectiveHidden }
+    }
+
+    private fun withDefaultSlot(hidden: Set<ReadBottomTool>): Set<ReadBottomTool> =
+        if (ReadBottomTool.CHARACTERS in hidden || ReadBottomTool.SCROLL in hidden) hidden
+        else hidden + ReadBottomTool.SCROLL
 }

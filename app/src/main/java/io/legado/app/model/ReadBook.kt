@@ -22,6 +22,7 @@ import io.legado.app.help.book.simulatedTotalChapterNum
 import io.legado.app.help.book.update
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadCharacterMarkSettings
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.globalExecutor
 import io.legado.app.model.localBook.TextFile
@@ -29,9 +30,11 @@ import io.legado.app.model.webBook.WebBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.service.CacheBookService
 import io.legado.app.ui.book.read.page.entities.TextChapter
+import io.legado.app.ui.book.read.CharacterNameMarks
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.ui.book.read.page.provider.LayoutProgressListener
 import io.legado.app.ui.book.read.page.provider.NativeTextHighlightResolver
+import io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.stackTraceStr
 import io.legado.app.utils.toastOnUi
@@ -65,6 +68,15 @@ import kotlin.math.min
 @Suppress("MemberVisibilityCanBePrivate")
 object ReadBook : CoroutineScope by MainScope() {
     var book: Book? = null
+    @Volatile
+    internal var characterNameMarks = CharacterNameMarks.empty
+
+    internal fun highlightMatcher(bookUrl: String): ReadHighlightMatcher {
+        val names = characterNameMarks.forBook(bookUrl)
+        val style = if (names.isEmpty) null else ReadCharacterMarkSettings.load(appCtx).textStyle
+        return ReadHighlightMatcher(ReadBookConfig.highlightRules, names, style)
+    }
+
     var callBack: CallBack? = null
     var inBookshelf = false
     var chapterSize = 0

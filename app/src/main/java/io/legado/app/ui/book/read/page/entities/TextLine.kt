@@ -359,21 +359,34 @@ data class TextLine(
                 ?: style.resolveTextColor(ReadBookConfig.isNightTheme)
                 ?: ReadBookConfig.textColor
             val lineY = height + style.underlineOffset.dpToPx()
-            when (style.underlineMode) {
-                1 -> canvas.drawLine(column.start, lineY, end, lineY, paint)
-                2 -> {
-                    paint.pathEffect = DashPathEffect(floatArrayOf(8.dpToPx().toFloat(), 5.dpToPx().toFloat()), 0f)
-                    canvas.drawLine(column.start, lineY, end, lineY, paint)
-                }
-                3 -> drawWavyUnderline(canvas, paint, column.start, end, lineY)
-                4 -> {
-                    canvas.drawLine(column.start, lineY, end, lineY, paint)
-                    canvas.drawLine(column.start, lineY + 3.dpToPx(), end, lineY + 3.dpToPx(), paint)
-                }
-                5 -> drawSvgUnderline(canvas, paint, column.start, end, lineY, style.underlineSvgPath)
-            }
+            drawStyledUnderline(canvas, paint, column.start, end, lineY, style.underlineMode, style.underlineSvgPath)
             PaintPool.recycle(paint)
             index = next
+        }
+    }
+
+    internal fun drawStyledUnderline(
+        canvas: Canvas,
+        paint: Paint,
+        start: Float,
+        end: Float,
+        y: Float,
+        mode: Int,
+        svgPath: String = "",
+    ) {
+        when (mode) {
+            1 -> canvas.drawLine(start, y, end, y, paint)
+            2 -> {
+                paint.pathEffect = DashPathEffect(floatArrayOf(8.dpToPx().toFloat(), 5.dpToPx().toFloat()), 0f)
+                canvas.drawLine(start, y, end, y, paint)
+                paint.pathEffect = null
+            }
+            3 -> drawWavyUnderline(canvas, paint, start, end, y)
+            4 -> {
+                canvas.drawLine(start, y, end, y, paint)
+                canvas.drawLine(start, y + 3.dpToPx(), end, y + 3.dpToPx(), paint)
+            }
+            5 -> drawSvgUnderline(canvas, paint, start, end, y, svgPath)
         }
     }
 

@@ -1,6 +1,10 @@
 package io.legado.app.ui.book.read.page.provider
 
+import io.legado.app.data.entities.BookCharacter
+import io.legado.app.help.config.ReadCharacterMarkMode
+import io.legado.app.help.config.ReadCharacterMarkSettings
 import io.legado.app.help.config.ReadHighlightRule
+import io.legado.app.ui.book.read.CharacterNameMarks
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,6 +12,76 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReadHighlightMatcherTest {
+    private val characterSettings = ReadCharacterMarkSettings(mode = ReadCharacterMarkMode.BOLD)
+
+    @Test
+    fun boldCharactersKeepExistingRuleColorsAndMarkUniqueAliases() {
+        val names = CharacterNameMarks.from(
+            "book",
+            listOf(BookCharacter(id = 1L, name = "叶天", aliasesJson = "[\"丹王\"]")),
+        )
+        val rule = ReadHighlightRule(pattern = "叶天说", textColor = 17, bgColor = 34, underlineMode = 3)
+        val matcher = ReadHighlightMatcher(listOf(rule), names, characterSettings.textStyle)
+        val styles = checkNotNull(matcher.match("叶天说丹王来了", isTitle = false))
+
+        assertEquals(listOf(700, 700, 400, 700, 700, null, null), styles.map { it?.fontWeight })
+        assertEquals(listOf(17, 17, 17, null, null, null, null), styles.map { it?.textColor })
+        assertEquals(listOf(34, 34, 34, null, null, null, null), styles.map { it?.bgColor })
+        assertEquals(listOf(3, 3, 3, 0, 0, null, null), styles.map { it?.underlineMode })
+    }
+
+    @Test
+    fun boldCharactersCanRenderWithoutAnyRegularHighlightRules() {
+        val names = CharacterNameMarks.from("book", listOf(BookCharacter(id = 1L, name = "Ann")))
+        val matcher = ReadHighlightMatcher(emptyList(), names, characterSettings.textStyle)
+        val sentence = "ANN met Annie"
+        assertEquals(
+            listOf(700, 700, 700) + List(sentence.length - 3) { null },
+            matcher.match(sentence, isTitle = false)?.map { it?.fontWeight },
+        )
+        assertNull(
+            ReadHighlightMatcher(emptyList(), names.forBook("other"), characterSettings.textStyle)
+                .match(sentence, isTitle = false),
+        )
+    }
+
+    @Test
+    fun configuredCharacterWeightAndPalettesOverlayOnlyMatchingNames() {
+        val names = CharacterNameMarks.from("book", listOf(BookCharacter(id = 1, name = "叶天")))
+        val roleSettings = characterSettings.copy(
+            appearance = characterSettings.appearance.copy(
+                fontWeight = 400,
+                isItalic = true,
+                textColor = 17,
+                bgColor = 34,
+                nightFollowDay = false,
+                textColorNight = 51,
+                bgColorNightMode = ReadHighlightRule.NIGHT_DEFAULT,
+            ),
+        )
+        val base = ReadHighlightRule(
+            pattern = "叶天说",
+            fontWeight = 900,
+            textColor = 68,
+            bgColor = 85,
+            underlineMode = 3,
+            underlineColorNight = 102,
+        )
+        val styles = checkNotNull(ReadHighlightMatcher(listOf(base), names, roleSettings.textStyle).match("叶天说", false))
+        val role = checkNotNull(styles[0])
+        assertEquals(role, styles[1])
+        assertEquals(400, role.fontWeight)
+        assertTrue(role.explicitFontWeight)
+        assertTrue(role.isItalic)
+        assertEquals(17, role.resolveTextColor(false))
+        assertEquals(51, role.resolveTextColor(true))
+        assertEquals(34, role.resolveBackgroundColor(false))
+        assertEquals(85, role.resolveBackgroundColor(true))
+        assertEquals(3, role.underlineMode)
+        assertEquals(102, role.resolveUnderlineColor(true))
+        assertEquals(900, styles[2]?.fontWeight)
+        assertEquals(68, styles[2]?.textColor)
+    }
 
     @Test
     fun cachedMatchesCarryBothPalettesWithoutChangingRangesOrPrecedence() {

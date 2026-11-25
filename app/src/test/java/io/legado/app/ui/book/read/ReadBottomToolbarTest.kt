@@ -24,11 +24,12 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w411dp-h891dp-xxhdpi", application = InterfaceFontTestApplication::class)
 class ReadBottomToolbarTest {
     @Test
-    fun defaultsKeepTheOriginalRowsAndMoreRemainsReachable() {
+    fun defaultsPutCharactersInTheLastSlotAndKeepMoreReachable() {
         assertEquals(
-            ReadBottomTool.entries.chunked(4),
+            ReadBottomTool.entries.filterNot { it == ReadBottomTool.SCROLL }.chunked(4),
             ReadBottomToolbarSettings.visibleRows(emptySet()),
         )
+        assertEquals(ReadBottomTool.CHARACTERS, ReadBottomToolbarSettings.visibleRows(emptySet()).last().last())
         assertEquals(
             listOf(listOf(ReadBottomTool.MORE)),
             ReadBottomToolbarSettings.visibleRows(ReadBottomTool.entries.toSet()),
@@ -36,7 +37,7 @@ class ReadBottomToolbarTest {
     }
 
     @Test
-    fun hiddenShortcutsExcludeScrollAndMore() {
+    fun hiddenShortcutsIncludeCharactersAndScrollButExcludeMore() {
         assertEquals(
             listOf(
                 ReadBottomTool.CATALOG,
@@ -45,9 +46,26 @@ class ReadBottomToolbarTest {
                 ReadBottomTool.PAGE_TURNING,
                 ReadBottomTool.CONTENT,
                 ReadBottomTool.FLOATING,
+                ReadBottomTool.CHARACTERS,
+                ReadBottomTool.SCROLL,
             ),
             ReadBottomToolbarSettings.shortcuts(ReadBottomTool.entries.toSet()),
         )
+    }
+
+    @Test
+    fun scrollAndCharactersReplaceEachOtherInTheToolbar() {
+        val scrollShown = ReadBottomToolbarSettings.updateVisibility(
+            emptySet(), ReadBottomTool.SCROLL, visible = true,
+        )
+        assertEquals(listOf(ReadBottomTool.CHARACTERS), ReadBottomToolbarSettings.shortcuts(scrollShown))
+        assertEquals(ReadBottomTool.SCROLL, ReadBottomToolbarSettings.visibleRows(scrollShown).last().last())
+
+        val charactersShown = ReadBottomToolbarSettings.updateVisibility(
+            scrollShown, ReadBottomTool.CHARACTERS, visible = true,
+        )
+        assertEquals(listOf(ReadBottomTool.SCROLL), ReadBottomToolbarSettings.shortcuts(charactersShown))
+        assertEquals(ReadBottomTool.CHARACTERS, ReadBottomToolbarSettings.visibleRows(charactersShown).last().last())
     }
 
     @Test
@@ -58,7 +76,7 @@ class ReadBottomToolbarTest {
         val original = preferences.getString(key, null)
         try {
             preferences.edit().remove(key).commit()
-            assertEquals(emptySet<ReadBottomTool>(), ReadBottomToolbarSettings.hiddenTools(context))
+            assertEquals(setOf(ReadBottomTool.SCROLL), ReadBottomToolbarSettings.hiddenTools(context))
             val hidden = setOf(ReadBottomTool.INTERFACE, ReadBottomTool.SCROLL)
             ReadBottomToolbarSettings.saveHiddenTools(context, hidden + ReadBottomTool.MORE)
             assertEquals("interface,scroll", preferences.getString(key, null))
@@ -87,7 +105,7 @@ class ReadBottomToolbarTest {
             assertEquals(
                 listOf(
                     listOf(ReadBottomTool.FLOATING, ReadBottomTool.MORE, ReadBottomTool.READ_ALOUD, ReadBottomTool.INTERFACE),
-                    listOf(ReadBottomTool.PAGE_TURNING, ReadBottomTool.CONTENT),
+                    listOf(ReadBottomTool.PAGE_TURNING, ReadBottomTool.CONTENT, ReadBottomTool.CHARACTERS),
                 ),
                 ReadBottomToolbarSettings.visibleRows(hidden, savedOrder),
             )
@@ -107,6 +125,7 @@ class ReadBottomToolbarTest {
             ReadBottomTool.INTERFACE,
             ReadBottomTool.SCROLL,
             ReadBottomTool.FLOATING,
+            ReadBottomTool.CHARACTERS,
         )
 
         binding.applyBottomToolRows(ReadBottomToolbarSettings.visibleRows(hidden))
@@ -122,7 +141,15 @@ class ReadBottomToolbarTest {
 
         binding.applyBottomToolRows(ReadBottomToolbarSettings.visibleRows(emptySet()))
         assertEquals(View.VISIBLE, binding.llBottomActionsSecondary.visibility)
+        assertSame(binding.llReadCharacters, binding.llBottomActionsSecondary.findViewById<View>(R.id.ll_read_characters))
+        assertNull(binding.llAutoPage.parent)
+
+        val scrollShown = ReadBottomToolbarSettings.updateVisibility(
+            emptySet(), ReadBottomTool.SCROLL, visible = true,
+        )
+        binding.applyBottomToolRows(ReadBottomToolbarSettings.visibleRows(scrollShown))
         assertSame(binding.llAutoPage, binding.llBottomActionsSecondary.findViewById<View>(R.id.ll_auto_page))
+        assertNull(binding.llReadCharacters.parent)
     }
 
     @Test
@@ -135,10 +162,10 @@ class ReadBottomToolbarTest {
         val secondRow = binding.llBottomActionsSecondary
         val width = View.MeasureSpec.makeMeasureSpec(1003, View.MeasureSpec.EXACTLY)
         val height = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-        val optionalTools = listOf(ReadBottomTool.PAGE_TURNING, ReadBottomTool.SCROLL, ReadBottomTool.CONTENT)
+        val optionalTools = listOf(ReadBottomTool.PAGE_TURNING, ReadBottomTool.CHARACTERS, ReadBottomTool.CONTENT)
 
         for (secondRowSize in 1..4) {
-            val hidden = optionalTools.take(4 - secondRowSize).toSet()
+            val hidden = optionalTools.take(4 - secondRowSize).toSet() + ReadBottomTool.SCROLL
             binding.applyBottomToolRows(ReadBottomToolbarSettings.visibleRows(hidden))
 
             listOf(firstRow, secondRow).forEach { row ->

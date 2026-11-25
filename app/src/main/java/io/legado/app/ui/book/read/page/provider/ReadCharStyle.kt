@@ -22,7 +22,10 @@ data class ReadCharStyle(
     val npTop: Float = 0.1f,
     val npBottom: Float = 0.1f,
     val nightColors: ReadHighlightColors? = null,
+    val explicitFontWeight: Boolean = false,
 ) {
+    val hasTypeface get() = fontPath.isNotBlank() || fontWeight != 400 || isItalic || explicitFontWeight
+
     // Resolve paint identities once per matched rule, never allocate per glyph/frame.
     // Dormant night colors must not split an otherwise identical daytime underline.
     private val dayStyle: ReadCharStyle? = if (nightColors == null) null else copy(nightColors = null)

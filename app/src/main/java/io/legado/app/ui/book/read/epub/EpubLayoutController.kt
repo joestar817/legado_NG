@@ -14,11 +14,13 @@ import io.legado.app.data.appDb
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadCharacterMarkSettings
 import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.EpubLayoutPreferences
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
+import io.legado.app.ui.book.read.CharacterNameMarks
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.ui.book.read.page.ContentTextView
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
@@ -78,6 +80,7 @@ internal class EpubLayoutController(
     private val neighboringChapters: () -> List<TextChapter>,
     private val selectionChanged: (JSONObject?, Boolean) -> Unit,
     private val highlightClick: (Bookmark, Float, Float, Float) -> Unit,
+    private val characterClick: (Long) -> Unit,
     private val imageLongPress: (Float, Float, String) -> Unit = { _, _, _ -> },
     private val openingPreparation: () -> EpubOpeningPreparation? = { null },
     private val openingPreview: () -> EpubOpeningPreview? = { null },
@@ -125,6 +128,10 @@ internal class EpubLayoutController(
     private var selectionEnabled = true
     private var selectionTransparent = false
     private var textHighlights: List<Bookmark> = emptyList()
+    private var characterNames = CharacterNameMarks.empty
+    private var characterMarkSettings = ReadCharacterMarkSettings.load(host.context)
+    private val hasCharacterMarksOverlay
+        get() = characterMarkSettings.underlineStyle != null || characterMarkSettings.opensPortrait
     private data class SearchSelection(val chapter: TextChapter, val from: Int, val to: Int, var needsSeek: Boolean)
     private var pendingSearchSelection: SearchSelection? = null
     private var requestedPosition = 0
@@ -463,6 +470,12 @@ internal class EpubLayoutController(
                             next.top + rect.optDouble("bottom").toFloat() * scale)
                         return@interactReady
                     }
+                    if (characterMarkSettings.opensPortrait) {
+                        result.optString("character").toLongOrNull()?.let {
+                            characterClick(it)
+                            return@interactReady
+                        }
+                    }
                     val href = if (result.isNull("href")) "" else result.optString("href")
                     if (href.isEmpty()) {
                         inputReceivedAt = receivedAt
@@ -755,7 +768,7 @@ internal class EpubLayoutController(
         }
         if (!current.isCompleted) return
         val previous = preparedChapters
-        val highlightRules = ReadBookConfig.highlightRules.map { it.copy() }
+        val matcher = ReadBook.highlightMatcher(book.bookUrl)
         if (retained == null) {
             preparedContent = null
             if (!selectionNavigation) {
@@ -819,7 +832,7 @@ internal class EpubLayoutController(
                                     cached ?: withContext(Dispatchers.Default) {
                                         val work = currentCoroutineContext()
                                         EpubPreparedContent.create(book, candidate, session,
-                                            matcher = io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher(highlightRules),
+                                            matcher = matcher,
                                             checkCancelled = { work.ensureActive() })
                                     }
                                 }
@@ -910,13 +923,14 @@ internal class EpubLayoutController(
         if (existing != null && !existing.isCancelled) return existing
         if (existing != null) contentSlot.clear()
         val copy = book.copy(readConfig = book.readConfig?.copy())
-        val rules = ReadBookConfig.highlightRules.map { it.copy() }
+        val matcher = ReadBook.highlightMatcher(book.bookUrl)
         val source = if (opening) openingPreparation()?.takeSource(book, chapter.chapter, session) else null
         val record = if (opening) openingPreparation()?.takeRecord(book, chapter.chapter, session) else null
         return contentSlot.prepare(key) {
             val work = currentCoroutineContext()
-            EpubPreparedContent.create(copy, chapter, session, source, revision, record,
-                io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher(rules)) { work.ensureActive() }
+            EpubPreparedContent.create(copy, chapter, session, source, revision, record, matcher) {
+                work.ensureActive()
+            }
                 .also {
                     work.ensureActive()
                     // Speculative payloads have one slot and a byte budget; large chapters prepare on demand.
@@ -1099,6 +1113,31 @@ internal class EpubLayoutController(
         surface?.setSelectionHighlightTransparent(transparent)
     }
 
+    fun setCharacterNames(marks: CharacterNameMarks) {
+        if (characterNames === marks) return
+        val repaint = hasCharacterMarksOverlay && documents.any { document ->
+            characterNames.ranges(document.chapter) != marks.ranges(document.chapter)
+        }
+        characterNames = marks
+        if (repaint) updateCharacterMarksOverlay()
+    }
+
+    fun setCharacterMarkSettings(settings: ReadCharacterMarkSettings) {
+        if (characterMarkSettings == settings) return
+        val night = ReadBookConfig.isNightTheme
+        val repaint = characterMarkSettings.opensPortrait != settings.opensPortrait ||
+            characterMarkSettings.underlineStyle?.forTheme(night) != settings.underlineStyle?.forTheme(night)
+        characterMarkSettings = settings
+        if (repaint) updateCharacterMarksOverlay()
+    }
+
+    private fun updateCharacterMarksOverlay() {
+        if (snapshot == null || documents.getOrNull(documentIndex) == null) return
+        cancelTurn()
+        surface?.setHighlights(highlightData(container = true))
+        scheduleWarm()
+    }
+
     fun setTextHighlights(bookmarks: List<Bookmark>) {
         if (textHighlights == bookmarks) return
         fun noteGeometry(values: List<Bookmark>) = ReadNoteMarkerStyle.notes(values)
@@ -1192,8 +1231,28 @@ internal class EpubLayoutController(
     private fun highlightData(container: Boolean): JSONArray = JSONArray().apply {
         val book = boundBook ?: return@apply
         val noteIds = ReadNoteMarkerStyle.notes(textHighlights).mapTo(HashSet()) { it.time }
+        val underline = characterMarkSettings.underlineStyle
+        val nameColor = EpubCharStyles.cssColor(
+            underline?.resolveUnderlineColor(ReadBookConfig.isNightTheme) ?: ReadBookConfig.textAccentColor,
+        )
         documents.forEachIndexed { index, document ->
             if (!container && index != documentIndex) return@forEachIndexed
+            val nameRanges = if (hasCharacterMarksOverlay) characterNames.ranges(document.chapter) else emptyList()
+            var rangeIndex = CharacterNameMarks.firstEndingAfter(nameRanges, document.first)
+            while (rangeIndex < nameRanges.size && nameRanges[rangeIndex].start < document.last) {
+                val range = nameRanges[rangeIndex++]
+                val from = maxOf(document.first, range.start)
+                val to = minOf(document.last, range.endExclusive)
+                if (to > from) {
+                    put(JSONObject().put("id", "character-${range.characterId}-$index-$from")
+                        .put("character", range.characterId.toString()).put("occurrence", index)
+                        .put("from", from).put("to", to).put("underlineMode", underline?.underlineMode ?: 0)
+                        .put("lineWidth", underline?.underlineWidth ?: 0)
+                        .put("lineOffset", underline?.underlineOffset ?: 0)
+                        .put("clickable", characterMarkSettings.opensPortrait)
+                        .put("color", nameColor))
+                }
+            }
             val chapterIndex = document.chapter.chapter.index
             textHighlights.asSequence().filter {
                 it.bookName == book.name && it.bookAuthor == book.author && it.coversChapter(chapterIndex)
@@ -1714,7 +1773,7 @@ internal class EpubLayoutController(
         val previous = preparedChapters
         val window = documents
         val content = contentGeneration
-        val matcher = io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher(ReadBookConfig.highlightRules)
+        val matcher = ReadBook.highlightMatcher(current.chapter.chapter.bookUrl)
         cancelTurn()
         scope.launch {
             try {
@@ -1891,7 +1950,9 @@ internal class EpubLayoutController(
             selectionAnchor != null || selectionDrag != null || pendingSelectionHit != null ||
             pendingSearchSelection != null || pendingChapterLink != null || pendingHighlightUpdate ||
             speechFollowPosition != null || pendingReadAloud != null || aloudPaintSignature != "[]" ||
-            textHighlights.isNotEmpty() || gestures?.isActive == true ||
+            textHighlights.isNotEmpty() ||
+            hasCharacterMarksOverlay && documents.any { characterNames.ranges(it.chapter).isNotEmpty() } ||
+            gestures?.isActive == true ||
             autoPaging() || isScroll() || !animationsEnabled() || !recordAnimationFrames() ||
             !host.isShown || request.direction != lastDirection) return false
         val current = preparedContent ?: return false
@@ -1922,7 +1983,8 @@ internal class EpubLayoutController(
         val target = neighbors.firstOrNull {
             it.isCompleted && it.chapter.index == native.chapter.index + request.direction
         } ?: return false
-        if (preparedChapters[target.chapter.index]?.chapter === target) return false
+        if (preparedChapters[target.chapter.index]?.chapter === target ||
+            hasCharacterMarksOverlay && characterNames.ranges(target).isNotEmpty()) return false
         val book = boundBook ?: return false
         val opened = snapshot ?: return false
         val key = PreparationKey(target, opened.publicationSession, opened.identity.contentRevision,

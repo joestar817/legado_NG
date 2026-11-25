@@ -1,13 +1,19 @@
 package io.legado.app.ui.book.read.page.provider
 
+import io.legado.app.help.config.ReadHighlightColors
 import io.legado.app.help.config.ReadHighlightRule
+import io.legado.app.ui.book.read.CharacterNameMarks
 import java.util.WeakHashMap
 
 /** Immutable title or body text before wrapping. Shared by its paragraph slices, never persisted. */
 internal class ReadHighlightContext(val text: String)
 
 /** The existing matcher shared by native layout and EPUB style-only updates. */
-internal class ReadHighlightMatcher(rules: List<ReadHighlightRule>) {
+internal class ReadHighlightMatcher(
+    rules: List<ReadHighlightRule>,
+    private val characterNames: CharacterNameMarks = CharacterNameMarks.empty,
+    private val characterStyle: ReadCharStyle? = null,
+) {
     private data class CompiledRule(
         val rule: ReadHighlightRule,
         val regex: Regex,
@@ -29,7 +35,7 @@ internal class ReadHighlightMatcher(rules: List<ReadHighlightRule>) {
         context: ReadHighlightContext? = null,
         contextOffset: Int = 0,
     ): Array<ReadCharStyle?>? {
-        if (text.isEmpty() || compiledHighlightRules.isEmpty()) return null
+        if (text.isEmpty() || compiledHighlightRules.isEmpty() && characterStyle == null) return null
         require(context == null || contextOffset in 0..(context.text.length - text.length)) {
             "Highlight input must be a slice of its context"
         }
@@ -47,7 +53,47 @@ internal class ReadHighlightMatcher(rules: List<ReadHighlightRule>) {
             }
             styles = applyRanges(styles, text.length, offset, ranges, compiled.style)
         }
-        return styles
+        return applyCharacterStyles(text, styles)
+    }
+
+    private fun applyCharacterStyles(
+        text: String,
+        styles: Array<ReadCharStyle?>?,
+    ): Array<ReadCharStyle?>? {
+        val character = characterStyle ?: return styles
+        val marks = characterNames.find(text)
+        if (marks.isEmpty()) return styles
+        val active = styles ?: arrayOfNulls<ReadCharStyle>(text.length)
+        val merged = HashMap<ReadCharStyle, ReadCharStyle>()
+        marks.forEach { mark ->
+            for (index in mark.start until mark.endExclusive) {
+                active[index] = active[index]?.let { base ->
+                    merged.getOrPut(base) { mergeCharacterStyle(base, character) }
+                } ?: character
+            }
+        }
+        return active
+    }
+
+    private fun mergeCharacterStyle(base: ReadCharStyle, character: ReadCharStyle): ReadCharStyle {
+        val day = ReadHighlightColors(
+            character.textColor ?: base.textColor,
+            character.bgColor ?: base.bgColor,
+            base.underlineColor,
+        )
+        val night = ReadHighlightColors(
+            character.resolveTextColor(true) ?: base.resolveTextColor(true),
+            character.resolveBackgroundColor(true) ?: base.resolveBackgroundColor(true),
+            base.resolveUnderlineColor(true),
+        )
+        return base.copy(
+            textColor = day.textColor,
+            bgColor = day.bgColor,
+            fontWeight = character.fontWeight,
+            isItalic = character.isItalic || base.isItalic,
+            nightColors = night.takeUnless { it == day },
+            explicitFontWeight = character.explicitFontWeight,
+        )
     }
 
     /** Preview uses the same paragraph rules and exact original offsets as the reader. */

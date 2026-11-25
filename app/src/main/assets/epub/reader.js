@@ -348,20 +348,32 @@
             catch (_) { resourceWarnings.add('部分高亮与当前显示文本不一致'); return; }
             if (!range) return;
             Array.from(range.getClientRects()).filter(visible).forEach(function (r) {
+                if (!value.character || value.clickable) highlightRects.push({ rect: r, value: value });
+                if (value.character && !value.underlineMode) return;
+                var isCharacter = !!value.character;
+                var underlineMode = isCharacter ? value.underlineMode : value.style === 2 ? 3 : value.style;
+                var lineWidth = isCharacter ? value.lineWidth : 2;
+                var lineOffset = isCharacter ? value.lineOffset : 0;
                 var mark = document.createElement('span'), color = value.color || '#ffff7b';
-                style(mark, { position: 'absolute', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px',
-                    'box-sizing': 'border-box', background: value.style ? 'transparent' : color, opacity: value.style ? '1' : String(72 / 255),
-                    'border-bottom': value.style === 1 ? '2px solid ' + color : 'none' });
-                if (value.style === 2) {
+                var lineStyle = ['', 'solid', 'dashed', '', 'double'][underlineMode];
+                var borderWidth = underlineMode === 4 ? lineWidth * 2 + 1 : lineWidth;
+                var isUnderline = isCharacter || value.style;
+                style(mark, { position: 'absolute', left: r.left + 'px', top: (r.top + lineOffset) + 'px', width: r.width + 'px', height: r.height + 'px',
+                    'box-sizing': 'border-box', background: isUnderline ? 'transparent' : color,
+                    opacity: isUnderline ? '1' : String(72 / 255),
+                    'border-bottom': lineStyle ? borderWidth + 'px ' + lineStyle + ' ' + color : 'none' });
+                if (underlineMode === 3) {
+                    var waveHeight = isCharacter ? Math.max(5, lineWidth + 4) : 5;
                     var wave = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                    wave.setAttribute('width', r.width); wave.setAttribute('height', '5');
+                    wave.setAttribute('width', r.width); wave.setAttribute('height', waveHeight);
                     style(wave, { position: 'absolute', left: '0', bottom: '0' });
-                    var line = document.createElementNS(wave.namespaceURI, 'path'), d = 'M0 2.5';
+                    var line = document.createElementNS(wave.namespaceURI, 'path'), d = 'M0 ' + waveHeight / 2;
                     for (var x = 0; x < r.width; x += 8) d += ' q2 -3 4 0 q2 3 4 0';
                     line.setAttribute('d', d); line.setAttribute('fill', 'none'); line.setAttribute('stroke', color);
+                    if (isCharacter) line.setAttribute('stroke-width', lineWidth);
                     wave.appendChild(line); mark.appendChild(wave);
                 }
-                highlightLayer.appendChild(mark); highlightRects.push({ rect: r, value: value });
+                highlightLayer.appendChild(mark);
             });
         });
         if (window.__ngEpubContent) window.__ngEpubContent.noteRects().filter(visible).forEach(function (r) {
@@ -710,7 +722,7 @@
                 })[0];
                 if (note) return { token: state.token, highlight: note.rect.id, highlightRect: note.rect };
                 var mark = highlightRects.slice().reverse().find(function (h) { var r = h.rect; return value.x >= r.left && value.x <= r.right && value.y >= r.top && value.y <= r.bottom; });
-                if (mark) { var r = mark.rect; return { token: state.token, highlight: mark.value.id,
+                if (mark && !mark.value.character) { var r = mark.rect; return { token: state.token, highlight: mark.value.id,
                     highlightRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }; }
                 var hit = document.elementFromPoint(value.x, value.y);
                 var observer = hit;
@@ -719,6 +731,7 @@
                 var link = hit;
                 while (link && link.localName !== 'a') link = link.parentElement;
                 var href = link && (link.getAttribute('href') || link.getAttributeNS('http://www.w3.org/1999/xlink', 'href'));
+                if (!href && mark && mark.value.character) return { token: state.token, character: mark.value.character };
                 return { token: state.token, href: href ? new URL(href, document.baseURI).href : null };
             }
             if (value.action === 'gallerySwipe') return { token: state.token,

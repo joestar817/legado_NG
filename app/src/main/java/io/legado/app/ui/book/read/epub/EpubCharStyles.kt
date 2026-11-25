@@ -69,8 +69,7 @@ internal class EpubCharStyles(private val loadFont: (String) -> ByteArray?) {
                 }
             }
             if (systemFont) value.put("systemFont", true)
-            if ((style.fontPath.isBlank() || systemFont || font != null) &&
-                (style.fontPath.isNotBlank() || style.fontWeight != 400 || style.isItalic)) {
+            if ((style.fontPath.isBlank() || systemFont || font != null) && style.hasTypeface) {
                 value.put("weight", style.fontWeight).put("italic", style.isItalic)
                 font?.let { value.put("font", it) }
             }

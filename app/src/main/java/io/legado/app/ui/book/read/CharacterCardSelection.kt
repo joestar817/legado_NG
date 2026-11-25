@@ -1,8 +1,7 @@
 package io.legado.app.ui.book.read
 
 import io.legado.app.data.entities.BookCharacter
-import io.legado.app.utils.GSON
-import io.legado.app.utils.fromJsonObject
+import io.legado.app.ui.book.character.aliases
 
 /**
  * 正文选中文字与已有角色卡的匹配规则。
@@ -29,24 +28,20 @@ internal object CharacterCardSelection {
     }
 
     fun normalizeSelectedName(text: String): String? {
-        val name = text.trim()
-            .trim(*boundaryChars)
-            .trim()
+        val name = unwrappedName(text)
         if (name.isBlank() || name.length > 24 || name.contains('\n')) return null
         if (name.any { it in sentencePunctuation }) return null
         return name
     }
 
     private fun BookCharacter.matchesAlias(selectedKey: String): Boolean {
-        val aliases = aliasesJson
-            ?.let { GSON.fromJsonObject<List<String>>(it).getOrNull() }
-            .orEmpty()
-        return aliases.any { comparisonKey(it) == selectedKey }
+        return aliases().any { comparisonKey(it) == selectedKey }
     }
 
+    internal fun unwrappedName(value: String): String = value.trim().trim(*boundaryChars).trim()
+
     private fun comparisonKey(value: String): String {
-        return value.trim()
-            .trim(*boundaryChars)
+        return unwrappedName(value)
             .replace(Regex("\\s+"), " ")
             .lowercase()
     }

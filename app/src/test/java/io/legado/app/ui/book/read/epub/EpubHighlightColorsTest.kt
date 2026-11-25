@@ -1,7 +1,10 @@
 package io.legado.app.ui.book.read.epub
 
+import io.legado.app.help.config.ReadCharacterMarkMode
+import io.legado.app.help.config.ReadCharacterMarkSettings
 import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher
+import io.legado.app.ui.design.theme.InterfaceFontTestApplication
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -10,8 +13,30 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(manifest = Config.NONE)
+@Config(sdk = [35], manifest = Config.NONE, application = InterfaceFontTestApplication::class)
 class EpubHighlightColorsTest {
+    @Test
+    fun characterStyleProjectsExplicitNormalWeightAndIndependentNightColor() {
+        val settings = ReadCharacterMarkSettings(
+            mode = ReadCharacterMarkMode.BOLD,
+            appearance = ReadHighlightRule(
+                fontWeight = 400,
+                textColor = 0xff112233.toInt(),
+                textColorNight = 0xff99aabb.toInt(),
+                nightFollowDay = false,
+            ),
+        )
+        val projected = EpubCharStyles { null }
+        projected.add(1, 3, checkNotNull(settings.textStyle))
+        val day = projected.styles.getJSONObject(0)
+        val night = projected.nightStyles.getJSONObject(0)
+        assertEquals(400, day.getInt("weight"))
+        assertEquals(400, night.getInt("weight"))
+        assertEquals("rgba(17,34,51,1.0)", day.getString("color"))
+        assertEquals("rgba(153,170,187,1.0)", night.getString("color"))
+        assertEquals(projected.ranges.toString(), projected.nightRanges.toString())
+    }
+
     @Test
     fun bothPalettesUseTheSameStyleIdAndKeepNightDefaultsAbsent() {
         val rule = ReadHighlightRule(

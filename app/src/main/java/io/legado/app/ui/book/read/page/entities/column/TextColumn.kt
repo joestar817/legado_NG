@@ -66,11 +66,7 @@ data class TextColumn(
             color = textColor
             textLine.titleTextSize?.let { textSize = it }
             readStyle?.let { style ->
-                ChapterProvider.resolveStyledTypeface(
-                    style.fontPath,
-                    style.fontWeight,
-                    style.isItalic,
-                )?.let { typeface = it }
+                ChapterProvider.resolveStyledTypeface(style)?.let { typeface = it }
             }
         }
         val y = textLine.lineBase - textLine.lineTop

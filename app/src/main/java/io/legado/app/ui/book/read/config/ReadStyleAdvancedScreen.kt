@@ -53,6 +53,8 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.SpanStyle
@@ -62,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.PathParser
@@ -74,6 +77,7 @@ import io.legado.app.ui.book.read.page.provider.ReadCharStyle
 import io.legado.app.ui.book.read.page.provider.ReadHighlightImageRenderer
 import io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher
 import io.legado.app.ui.config.NgInlineColorPicker
+import io.legado.app.ui.design.components.compose.NgFormGroupDivider
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.components.compose.NgSwitchControl
@@ -451,31 +455,12 @@ internal fun HighlightRuleEditorPage(
                                 actions.onPageSelected(ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR)
                             },
                         )
-                        AdvancedSliderRow(
-                            title = stringResource(R.string.read_style_underline_width),
-                            valueText = String.format(Locale.ROOT, "%.1f dp", draft.underlineWidth),
-                            value = draft.underlineWidth.coerceIn(0.1f, 10f),
-                            range = 0.1f..10f,
-                            steps = 98,
+                        HighlightUnderlineGeometryRows(
+                            width = draft.underlineWidth,
+                            offset = draft.underlineOffset,
                             contentColor = contentColor,
-                            onValueChanged = {
-                                actions.onHighlightDraftChanged(
-                                    draft.copy(underlineWidth = (it * 10).roundToInt() / 10f)
-                                )
-                            },
-                        )
-                        AdvancedSliderRow(
-                            title = stringResource(R.string.read_style_underline_offset),
-                            valueText = String.format(Locale.ROOT, "%.1f dp", draft.underlineOffset),
-                            value = draft.underlineOffset.coerceIn(0f, 20f),
-                            range = 0f..20f,
-                            steps = 199,
-                            contentColor = contentColor,
-                            onValueChanged = {
-                                actions.onHighlightDraftChanged(
-                                    draft.copy(underlineOffset = (it * 10).roundToInt() / 10f)
-                                )
-                            },
+                            onWidthChanged = { actions.onHighlightDraftChanged(draft.copy(underlineWidth = it)) },
+                            onOffsetChanged = { actions.onHighlightDraftChanged(draft.copy(underlineOffset = it)) },
                         )
                         if (draft.underlineMode == 5) {
                             AdvancedTextField(
@@ -506,17 +491,10 @@ internal fun HighlightRuleEditorPage(
                         onSelect = actions.onSelectHighlightFont,
                         onClear = actions.onClearHighlightFont,
                     )
-                    AdvancedSliderRow(
-                        title = stringResource(R.string.font_weight),
-                        valueText = draft.fontWeight.toString(),
-                        value = draft.fontWeight.toFloat().coerceIn(100f, 900f),
-                        range = 100f..900f,
-                        steps = 7,
+                    HighlightFontWeightRow(
+                        weight = draft.fontWeight,
                         contentColor = contentColor,
-                        onValueChanged = {
-                            val weight = ((it / 100f).roundToInt() * 100).coerceIn(100, 900)
-                            actions.onHighlightDraftChanged(draft.copy(fontWeight = weight))
-                        },
+                        onWeightChanged = { actions.onHighlightDraftChanged(draft.copy(fontWeight = it)) },
                     )
                     AdvancedSwitchRow(
                         title = stringResource(R.string.highlight_rule_italic),
@@ -917,6 +895,7 @@ internal fun AdvancedColorPage(
     showAlphaSlider: Boolean = true,
     forceOpaque: Boolean = false,
     onRestoreOriginal: (() -> Unit)? = null,
+    topContent: (@Composable () -> Unit)? = null,
 ) {
     val pickerHeight = LocalConfiguration.current.screenHeightDp.dp * 0.86f
     Column(
@@ -939,6 +918,7 @@ internal fun AdvancedColorPage(
             compactResetAction = true,
             headerContentSpacing = 8.dp,
             heightLimit = pickerHeight,
+            topContent = topContent,
         )
     }
 }
@@ -1154,13 +1134,15 @@ private fun OptionalColorRow(
                     .clip(CircleShape)
                     .background(Color(color))
                     .border(0.7.dp, contentColor.copy(alpha = 0.18f), CircleShape)
+                    .semantics { contentDescription = title }
                     .clickable(role = Role.Button, onClick = onClick),
             )
         }
         NgSwitchControl(
             checked = color != null,
             onCheckedChange = onEnabledChanged,
-            modifier = Modifier.size(width = 52.dp, height = 36.dp),
+            modifier = Modifier.size(width = 52.dp, height = 36.dp)
+                .semantics { contentDescription = title },
         )
     }
 }
@@ -1229,6 +1211,63 @@ private fun AdvancedFileRow(
 }
 
 @Composable
+internal fun HighlightUnderlineGeometryRows(
+    width: Float,
+    offset: Float,
+    contentColor: Color,
+    onWidthChanged: (Float) -> Unit,
+    onOffsetChanged: (Float) -> Unit,
+    inline: Boolean = false,
+) {
+    val widthLabel = stringResource(R.string.read_style_underline_width)
+    val offsetLabel = stringResource(R.string.read_style_underline_offset)
+    val labelWidth = if (inline) {
+        readTypographyMetricLabelWidth(listOf(widthLabel, offsetLabel)).coerceAtLeast(62.dp)
+    } else null
+    AdvancedSliderRow(
+        title = widthLabel,
+        valueText = String.format(Locale.ROOT, "%.1f dp", width),
+        value = width.coerceIn(0.1f, 10f),
+        range = 0.1f..10f,
+        steps = 98,
+        contentColor = contentColor,
+        inlineLabelWidth = labelWidth,
+        onValueChanged = { onWidthChanged((it * 10).roundToInt() / 10f) },
+    )
+    if (inline) NgFormGroupDivider()
+    AdvancedSliderRow(
+        title = offsetLabel,
+        valueText = String.format(Locale.ROOT, "%.1f dp", offset),
+        value = offset.coerceIn(0f, 20f),
+        range = 0f..20f,
+        steps = 199,
+        contentColor = contentColor,
+        inlineLabelWidth = labelWidth,
+        onValueChanged = { onOffsetChanged((it * 10).roundToInt() / 10f) },
+    )
+}
+
+@Composable
+internal fun HighlightFontWeightRow(
+    weight: Int,
+    contentColor: Color,
+    onWeightChanged: (Int) -> Unit,
+    inline: Boolean = false,
+) {
+    val title = stringResource(R.string.font_weight)
+    AdvancedSliderRow(
+        title = title,
+        valueText = weight.toString(),
+        value = weight.toFloat().coerceIn(100f, 900f),
+        range = 100f..900f,
+        steps = 7,
+        contentColor = contentColor,
+        inlineLabelWidth = if (inline) readTypographyMetricLabelWidth(listOf(title)).coerceAtLeast(62.dp) else null,
+        onValueChanged = { onWeightChanged(((it / 100f).roundToInt() * 100).coerceIn(100, 900)) },
+    )
+}
+
+@Composable
 private fun AdvancedSliderRow(
     title: String,
     valueText: String,
@@ -1237,7 +1276,23 @@ private fun AdvancedSliderRow(
     steps: Int,
     contentColor: Color,
     onValueChanged: (Float) -> Unit,
+    inlineLabelWidth: Dp? = null,
 ) {
+    if (inlineLabelWidth != null) {
+        val valueWidth = 48.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
+        ReadFormSliderRow(title, valueText, inlineLabelWidth, valueWidth, contentColor) { modifier ->
+            NgSlider(
+                value = value,
+                onValueChange = onValueChanged,
+                valueRange = range,
+                steps = steps,
+                visualSteps = 0,
+                variant = NgSliderVariant.CONTINUOUS,
+                modifier = modifier.semantics { contentDescription = title },
+            )
+        }
+        return
+    }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(text = title, modifier = Modifier.weight(1f), color = contentColor, fontSize = 14.sp)

@@ -197,7 +197,7 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
 
     private fun changeBottomToolVisibility(tool: ReadBottomTool, visible: Boolean) {
         if (tool == ReadBottomTool.MORE) return
-        hiddenTools = if (visible) hiddenTools - tool else hiddenTools + tool
+        hiddenTools = ReadBottomToolbarSettings.updateVisibility(hiddenTools, tool, visible)
         ReadBottomToolbarSettings.saveHiddenTools(requireContext(), hiddenTools)
     }
 
@@ -227,7 +227,12 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
             ReadBottomTool.PAGE_TURNING -> showNestedDrawer(forPageTurning(), "readMorePageTurning")
             ReadBottomTool.CONTENT -> showNestedDrawer(ReadContentSettingsDialog())
             ReadBottomTool.FLOATING -> showNestedDrawer(ReadStyleDialog.forFloating())
-            ReadBottomTool.SCROLL, ReadBottomTool.MORE -> Unit
+            ReadBottomTool.CHARACTERS -> showNestedDrawer(ReadCharacterSettingsDialog())
+            ReadBottomTool.SCROLL -> {
+                dismissAllowingStateLoss()
+                host.autoPage()
+            }
+            ReadBottomTool.MORE -> Unit
         }
     }
 

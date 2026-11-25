@@ -63,6 +63,13 @@
     <string name="favorites">Favorites</string>
     <string name="favorite">Favorite</string>
     <string name="book_characters">Characters</string>
+    <string name="read_book_character_list">Characters in this book</string>
+    <string name="read_character_mark_mode">Mark character names</string>
+    <string name="read_character_mark_underline">Underline</string>
+    <string name="read_character_mark_text">Text highlight</string>
+    <string name="read_character_mark_line_style">Underline style</string>
+    <string name="read_character_mark_open_portrait">Tap a name to view portrait</string>
+    <string name="read_character_color_no_background">No background color</string>
     <string name="character_count_format">All %1$d</string>
     <string name="book_info_characters_empty">No characters yet.</string>
     <string name="book_info_character_position">Character %1$d of %2$d</string>

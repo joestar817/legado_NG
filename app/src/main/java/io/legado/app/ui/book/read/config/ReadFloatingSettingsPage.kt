@@ -1,11 +1,6 @@
 package io.legado.app.ui.book.read.config
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,10 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Palette
@@ -24,7 +17,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -32,8 +24,6 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -213,36 +203,19 @@ private fun FloatingColorChoice(
     actions: ReadStyleActions,
 ) {
     val previewColor = floatingColorPreviewSeed(color.seed, mode)
-    val colorSource = if (color.followsApplication) {
-        stringResource(R.string.read_style_floating_color_follow)
-    } else {
-        "#%06X".format(previewColor and 0x00FFFFFF)
-    }
-    val choiceColor = contentColor.copy(alpha = if (enabled) 0.72f else 0.38f)
-    Row(
-        Modifier.heightIn(min = 48.dp)
-            .clickable(enabled = enabled, role = Role.Button) {
-                actions.onEditorModeChanged(mode.ordinal)
-                actions.onPickFloatingColor()
-            }
-            .semantics(mergeDescendants = true) {
-                contentDescription = "$label $title"
-                stateDescription = colorSource
-            }
-            .padding(horizontal = 6.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, color = choiceColor, fontSize = 12.sp, maxLines = 1)
-        Spacer(Modifier.width(4.dp))
-        if (color.followsApplication) {
-            Text(stringResource(R.string.theme_mode_follow_short), color = choiceColor,
-                fontSize = 12.sp, maxLines = 1)
-        } else {
-            Box(Modifier.size(18.dp).clip(CircleShape).background(Color(previewColor))
-                .border(0.7.dp, choiceColor.copy(alpha = 0.25f), CircleShape))
-        }
-    }
+    ReadFormColorChoice(
+        label = label,
+        title = title,
+        color = previewColor,
+        contentColor = contentColor,
+        enabled = enabled,
+        valueLabel = if (color.followsApplication) stringResource(R.string.theme_mode_follow_short) else null,
+        valueDescription = if (color.followsApplication) stringResource(R.string.read_style_floating_color_follow) else null,
+        onClick = {
+            actions.onEditorModeChanged(mode.ordinal)
+            actions.onPickFloatingColor()
+        },
+    )
 }
 
 @Composable
@@ -255,7 +228,7 @@ private fun FloatingPercentSliderRow(
     onValueChangeFinished: () -> Unit,
 ) {
     val valueWidth = 40.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
-    val slider: @Composable (Modifier) -> Unit = { modifier ->
+    ReadFormSliderRow(title, "$value%", labelWidth, valueWidth, color) { modifier ->
         NgSlider(
             value = value.toFloat(),
             onValueChange = {
@@ -272,29 +245,6 @@ private fun FloatingPercentSliderRow(
             onValueChangeFinished = onValueChangeFinished,
             modifier = modifier.semantics { contentDescription = title },
         )
-    }
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (maxWidth >= labelWidth + valueWidth + 140.dp) {
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(title, Modifier.width(labelWidth), color = color, fontSize = 14.sp,
-                    fontFamily = NgTheme.fontFamily, maxLines = 1)
-                slider(Modifier.weight(1f).padding(horizontal = 10.dp))
-                Text("$value%", Modifier.width(valueWidth), color = color.copy(alpha = 0.7f), fontSize = 13.sp,
-                    maxLines = 1, textAlign = TextAlign.End)
-            }
-        } else {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, Modifier.weight(1f), color = color, fontSize = 14.sp,
-                        fontFamily = NgTheme.fontFamily)
-                    Text("$value%", color = color.copy(alpha = 0.7f), fontSize = 13.sp)
-                }
-                slider(Modifier.fillMaxWidth())
-            }
-        }
     }
 }
 

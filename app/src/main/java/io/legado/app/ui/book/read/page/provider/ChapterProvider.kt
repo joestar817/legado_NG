@@ -372,11 +372,18 @@ object ChapterProvider {
         }
     }.getOrNull()
 
-    fun resolveStyledTypeface(fontPath: String, fontWeight: Int, italic: Boolean): Typeface? {
-        if (fontPath.isBlank() && fontWeight == 400 && !italic) return null
-        val base = loadOptionalTypeface(fontPath) ?: if (fontPath.isBlank()) typeface else return null
-        val weighted = applyFontWeight(base, fontWeight)
-        return if (italic) Typeface.create(weighted, Typeface.ITALIC) else weighted
+    fun resolveStyledTypeface(style: ReadCharStyle): Typeface? {
+        if (!style.hasTypeface) return null
+        val base = loadOptionalTypeface(style.fontPath) ?: if (style.fontPath.isBlank()) typeface else return null
+        if (style.explicitFontWeight && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return Typeface.create(base ?: Typeface.DEFAULT, style.fontWeight, style.isItalic)
+        }
+        val weighted = applyFontWeight(base, style.fontWeight)
+        return when {
+            !style.isItalic -> weighted
+            style.explicitFontWeight && weighted.isBold -> Typeface.create(weighted, Typeface.BOLD_ITALIC)
+            else -> Typeface.create(weighted, Typeface.ITALIC)
+        }
     }
 
     private fun applyTextShadow(paint: TextPaint) {

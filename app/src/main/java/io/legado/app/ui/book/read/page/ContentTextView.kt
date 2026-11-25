@@ -15,8 +15,10 @@ import io.legado.app.data.entities.Bookmark
 import io.legado.app.help.book.isOnLineTxt
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadCharacterMarkSettings
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.association.OpenUrlConfirmActivity
+import io.legado.app.ui.book.read.CharacterNameMarks
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.page.api.ReaderSelection
 import io.legado.app.ui.book.read.page.delegate.PageDelegate
@@ -82,6 +84,11 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
     val selectStart = TextPos(0, -1, -1)
     private val selectEnd = TextPos(0, -1, -1)
     private var textHighlights: List<Bookmark> = emptyList()
+    private var characterNames = CharacterNameMarks.empty
+    private var characterMarkSettings = ReadCharacterMarkSettings.load(context)
+    private val characterNamePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+    }
     private data class ResolvedHighlight(val range: NativeHighlightPositionMap.Range?, val end: Int?)
     private val highlightRanges = WeakHashMap<NativeHighlightPositionMap, MutableMap<Long, ResolvedHighlight>>()
     private var textHighlightNotesByEndChapter: Map<Int, List<Bookmark>> = emptyMap()
@@ -129,6 +136,20 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         } else {
             invalidate()
         }
+    }
+
+    internal fun setCharacterNames(marks: CharacterNameMarks) {
+        if (characterNames === marks) return
+        characterNames = marks
+        postInvalidate()
+    }
+
+    internal fun setCharacterMarkSettings(settings: ReadCharacterMarkSettings) {
+        if (characterMarkSettings == settings) return
+        val night = ReadBookConfig.isNightTheme
+        val repaint = characterMarkSettings.underlineStyle?.forTheme(night) != settings.underlineStyle?.forTheme(night)
+        characterMarkSettings = settings
+        if (repaint) postInvalidate()
     }
 
     fun setTextHighlights(bookmarks: List<Bookmark>) {
@@ -209,6 +230,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         collectTextHighlightNoteMarkers(page, relativeOffset)
         drawTextHighlights(canvas, page, relativeOffset, backgroundPass = true)
         page.draw(this, canvas, relativeOffset)
+        drawCharacterNames(canvas, page, relativeOffset)
         drawTextHighlights(canvas, page, relativeOffset, backgroundPass = false)
     }
 
@@ -231,41 +253,72 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                 val columns = line.columns
                 if (columns.isEmpty()) return@forEach
                 pageHighlights.forEach { (highlight, range) ->
-                    var chapterPosition = line.chapterPosition
-                    var segmentStart: Float? = null
-                    var segmentEnd = 0f
-                    columns.forEach { column ->
-                        val marked = column is TextBaseColumn &&
-                            chapterPosition >= range.start && chapterPosition < range.endExclusive
-                        chapterPosition += column.highlightTextLength()
-                        if (marked) {
-                            if (segmentStart == null) segmentStart = column.start
-                            segmentEnd = column.end
-                        } else if (segmentStart != null) {
-                            drawTextHighlightSegment(
-                                canvas,
-                                line,
-                                segmentStart!!,
-                                segmentEnd,
-                                highlight,
-                            )
-                            segmentStart = null
+                    forMarkedSegments(line, range.start, range.endExclusive) { start, end ->
+                        forUnbrokenSegments(line, start, end) { left, right ->
+                            drawTextHighlightSegmentWithoutSpacers(canvas, line, left, right, highlight)
                         }
-                    }
-                    segmentStart?.let { start ->
-                        drawTextHighlightSegment(canvas, line, start, segmentEnd, highlight)
                     }
                 }
             }
         }
     }
 
-    private fun drawTextHighlightSegment(
-        canvas: Canvas,
+    private fun drawCharacterNames(canvas: Canvas, page: TextPage, relativeOffset: Float) {
+        val underline = characterMarkSettings.underlineStyle ?: return
+        if (page.lines.isEmpty()) return
+        val marks = characterNames.ranges(page.getTextChapter())
+        if (marks.isEmpty()) return
+        characterNamePaint.color = underline.resolveUnderlineColor(ReadBookConfig.isNightTheme)
+            ?: ReadBookConfig.textAccentColor
+        characterNamePaint.strokeWidth = underline.underlineWidth.dpToPx()
+        val offset = underline.underlineOffset.dpToPx() - 1.dpToPx()
+        canvas.withTranslation(0f, relativeOffset) {
+            page.lines.forEach { line ->
+                val lineEnd = line.chapterPosition + line.charSize
+                var index = CharacterNameMarks.firstEndingAfter(marks, line.chapterPosition)
+                while (index < marks.size && marks[index].start < lineEnd) {
+                    val mark = marks[index++]
+                    forMarkedSegments(line, mark.start, mark.endExclusive) { start, end ->
+                        forUnbrokenSegments(line, start, end) { left, right ->
+                            val y = line.lineBottom + offset
+                            line.drawStyledUnderline(
+                                this, characterNamePaint, left, right, y, underline.underlineMode,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private inline fun forMarkedSegments(
+        line: TextLine,
+        from: Int,
+        to: Int,
+        draw: (Float, Float) -> Unit,
+    ) {
+        var position = line.chapterPosition
+        var segmentStart: Float? = null
+        var segmentEnd = 0f
+        line.columns.forEach { column ->
+            val marked = column is TextBaseColumn && position >= from && position < to
+            position += column.highlightTextLength()
+            if (marked) {
+                if (segmentStart == null) segmentStart = column.start
+                segmentEnd = column.end
+            } else if (segmentStart != null) {
+                draw(segmentStart!!, segmentEnd)
+                segmentStart = null
+            }
+        }
+        segmentStart?.let { draw(it, segmentEnd) }
+    }
+
+    private inline fun forUnbrokenSegments(
         line: TextLine,
         start: Float,
         end: Float,
-        highlight: Bookmark,
+        draw: (Float, Float) -> Unit,
     ) {
         if (end <= start) return
         var segmentStart = start
@@ -274,24 +327,12 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
             if (spacerX <= segmentStart) {
                 inlineOffset += textHighlightNoteSpacerWidthPx
             } else if (spacerX < end) {
-                drawTextHighlightSegmentWithoutSpacers(
-                    canvas = canvas,
-                    line = line,
-                    start = segmentStart + inlineOffset,
-                    end = spacerX + inlineOffset,
-                    highlight = highlight,
-                )
+                draw(segmentStart + inlineOffset, spacerX + inlineOffset)
                 segmentStart = spacerX
                 inlineOffset += textHighlightNoteSpacerWidthPx
             }
         }
-        drawTextHighlightSegmentWithoutSpacers(
-            canvas = canvas,
-            line = line,
-            start = segmentStart + inlineOffset,
-            end = end + inlineOffset,
-            highlight = highlight,
-        )
+        draw(segmentStart + inlineOffset, end + inlineOffset)
     }
 
     private fun drawTextHighlightSegmentWithoutSpacers(
@@ -621,8 +662,10 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         }
         var handled = false
         touch(x, y) { relativeOffset, textPos, textPage, textLine, column ->
-            if (column is TextBaseColumn) {
-                val chapterPosition = columnChapterPosition(textLine, column)
+            val chapterPosition = (column as? TextBaseColumn)?.let {
+                columnChapterPosition(textLine, it)
+            }
+            if (chapterPosition != null) {
                 val highlight = textHighlights
                     .asSequence()
                     .filter {
@@ -703,6 +746,14 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                         }
                         handled = true
                     }
+                }
+            }
+            if (!handled && characterMarkSettings.opensPortrait && chapterPosition != null &&
+                textPos.columnIndex in textLine.columns.indices
+            ) {
+                characterNames.characterAt(textPage.getTextChapter(), chapterPosition)?.let {
+                    callBack.onCharacterNameClick(it)
+                    handled = true
                 }
             }
         }
@@ -1316,6 +1367,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         fun onLongScreenshotTouchEvent(event: MotionEvent): Boolean
         fun oldClickImg(src: String): Boolean
         fun clickImg(click: String, src: String)
+        fun onCharacterNameClick(characterId: Long)
         fun onTextHighlightClick(
             bookmark: Bookmark,
             anchorX: Float,

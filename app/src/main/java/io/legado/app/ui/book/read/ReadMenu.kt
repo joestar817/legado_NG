@@ -818,6 +818,9 @@ class ReadMenu @JvmOverloads constructor(
         llAutoPage.setOnClickListener {
             runMenuOut { callBack.autoPage() }
         }
+        llReadCharacters.setOnClickListener {
+            runMenuOut { callBack.showCharacterSettings() }
+        }
         llContent.setOnClickListener {
             runMenuOut { callBack.showContentSettings() }
         }
@@ -977,6 +980,7 @@ class ReadMenu @JvmOverloads constructor(
         fun showMoreSetting()
         fun showPageTurningSettings()
         fun showContentSettings()
+        fun showCharacterSettings()
         fun showFloatingSettings()
         fun upSystemUiVisibility()
         fun onReadThemeChanged()
@@ -1016,6 +1020,7 @@ internal fun ViewReadMenuBinding.applyBottomToolRows(toolRows: List<List<ReadBot
         ReadBottomTool.SCROLL to llAutoPage,
         ReadBottomTool.CONTENT to llContent,
         ReadBottomTool.FLOATING to llFloating,
+        ReadBottomTool.CHARACTERS to llReadCharacters,
     )
     val rows = listOf(llBottomActionsPrimary, llBottomActionsSecondary)
     buttons.values.forEach { button -> (button.parent as? ViewGroup)?.removeView(button) }

@@ -152,7 +152,7 @@ class TextChapterLayout(
     private val textFullJustify = ReadBookConfig.textFullJustify
     private val adaptSpecialStyle = AppConfig.adaptSpecialStyle
     private val pageAnim = book.getPageAnim()
-    private val highlightMatcher = ReadHighlightMatcher(ReadBookConfig.highlightRules)
+    private val highlightMatcher = ReadBook.highlightMatcher(book.bookUrl)
     // init 会立即启动后台排版，所需缓存必须在启动任务前完成初始化。
     private val nineSliceDimensions = mutableMapOf<String, Pair<Int, Int>?>()
     private val startupTiming = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("native-${textChapter.position}") else null
@@ -1272,16 +1272,12 @@ class TextChapterLayout(
         basePaint: TextPaint,
         widths: FloatArray,
     ) {
-        if (styles == null || styles.none {
-                it != null && (it.fontPath.isNotBlank() || it.fontWeight != 400 || it.isItalic)
-            }) return
+        if (styles == null || styles.none { it?.hasTypeface == true }) return
         val measurePaint = TextPaint(basePaint)
         var index = 0
         while (index < text.length) {
             val style = styles[index]
-            if (style == null || (
-                    style.fontPath.isBlank() && style.fontWeight == 400 && !style.isItalic
-                )) {
+            if (style == null || !style.hasTypeface) {
                 index++
                 continue
             }
@@ -1290,16 +1286,13 @@ class TextChapterLayout(
             while (index < text.length && styles[index]?.let {
                     it.fontPath == style.fontPath &&
                         it.fontWeight == style.fontWeight &&
-                        it.isItalic == style.isItalic
+                        it.isItalic == style.isItalic &&
+                        it.explicitFontWeight == style.explicitFontWeight
                 } == true
             ) {
                 index++
             }
-            val typeface = ChapterProvider.resolveStyledTypeface(
-                style.fontPath,
-                style.fontWeight,
-                style.isItalic,
-            ) ?: continue
+            val typeface = ChapterProvider.resolveStyledTypeface(style) ?: continue
             measurePaint.typeface = typeface
             val measured = FloatArray(index - start)
             measurePaint.getTextWidths(text, start, index, measured)

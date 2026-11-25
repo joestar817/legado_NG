@@ -244,7 +244,7 @@ internal fun ReadBottomToolbarConfigScreen(
 }
 
 @Composable
-private fun ReadSettingsDrawer(
+internal fun ReadSettingsDrawer(
     title: String,
     onBack: (() -> Unit)? = null,
     maxHeight: Dp = LocalConfiguration.current.screenHeightDp.dp,

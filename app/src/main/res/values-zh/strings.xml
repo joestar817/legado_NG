@@ -61,6 +61,13 @@
     <string name="favorites">收藏夹</string>
     <string name="favorite">收藏</string>
     <string name="book_characters">角色</string>
+    <string name="read_book_character_list">本书角色</string>
+    <string name="read_character_mark_mode">标记方式</string>
+    <string name="read_character_mark_underline">下划线</string>
+    <string name="read_character_mark_text">文字高亮</string>
+    <string name="read_character_mark_line_style">下划线样式</string>
+    <string name="read_character_mark_open_portrait">点击角色名看立绘</string>
+    <string name="read_character_color_no_background">无底色</string>
     <string name="character_count_format">全部 %1$d</string>
     <string name="book_info_characters_empty">还没有角色卡</string>
     <string name="book_info_character_position">第 %1$d 个角色，共 %2$d 个</string>
