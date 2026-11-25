@@ -53,11 +53,17 @@ interface BookCharacterDao {
     @Query("select * from bookCharacters where id = :id")
     fun getCharacter(id: Long): BookCharacter?
 
+    @Query("select exists(select 1 from bookCharacters where portraitUri = :uri)")
+    fun hasPortraitReference(uri: String): Boolean
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertProfile(profile: BookCharacterProfile)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertCharacter(character: BookCharacter): Long
+
+    @Insert
+    fun insertManualCharacter(character: BookCharacter): Long
 
     @Update
     fun updateProfile(profile: BookCharacterProfile)

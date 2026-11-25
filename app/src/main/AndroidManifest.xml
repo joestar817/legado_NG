@@ -192,6 +192,9 @@
             android:name=".ui.book.character.BookCharacterActivity"
             android:launchMode="singleTop" />
         <activity
+            android:name=".ui.book.character.BookCharacterDetailActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.book.character.BookCharacterTtsActivity"
             android:launchMode="singleTop" />
         <activity

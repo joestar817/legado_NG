@@ -41,6 +41,8 @@ import io.legado.app.ui.book.bgm.BgmListeningDialog
 import io.legado.app.ui.book.character.BookCharacterActivity
 import io.legado.app.ui.book.character.BookCharacterTtsActivity
 import io.legado.app.ui.book.character.BookStoryboardActivity
+import io.legado.app.ui.book.character.automaticCharacterSilhouetteStyle
+import io.legado.app.ui.book.character.putAutomaticCharacterSilhouetteStyle
 import io.legado.app.ui.book.read.page.provider.ChapterProvider.reviewChar
 import io.legado.app.ui.book.read.page.provider.ChapterProvider.srcReplaceChar
 import io.legado.app.ui.config.ConfigActivity
@@ -1042,6 +1044,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
                 putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, it.name)
                 putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, it.author)
                 putExtra(BookCharacterActivity.EXTRA_BOOK_URL, it.bookUrl)
+                putAutomaticCharacterSilhouetteStyle(it.automaticCharacterSilhouetteStyle())
             }
         }
     }

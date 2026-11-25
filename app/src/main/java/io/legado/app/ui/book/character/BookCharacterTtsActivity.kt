@@ -18,9 +18,7 @@ import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookCharacterTtsBinding
 import io.legado.app.data.entities.BookTtsCastRole
 import io.legado.app.help.config.AppConfig
-import io.legado.app.help.tts.BookTtsBindingPolicy
 import io.legado.app.help.tts.BookTtsCastingCoordinator
-import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.lib.dialogs.alert
@@ -28,14 +26,13 @@ import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.config.TtsSheetLaunchDebouncer
-import io.legado.app.ui.config.TtsVoiceOption
-import io.legado.app.ui.config.TtsVoiceSelectionSheet
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
@@ -47,6 +44,7 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
 
     override val binding by viewBinding(ComposeActivityBinding::inflate)
     override val bindNgToolbarMenu: Boolean = false
+    protected open val showSilhouetteSettings: Boolean = false
     private val cardClickDebouncer = TtsSheetLaunchDebouncer()
     private lateinit var workKey: String
     private var bookName: String = ""
@@ -54,6 +52,7 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
     private var bookUrl: String? = null
     private var page by mutableStateOf(BookCharacterTtsPage.TEMPORARY)
     private var snapshot = Snapshot()
+    private var voiceCatalogJob: Job? = null
     private var renderedRows: List<Row> = emptyList()
     private var uiRows by mutableStateOf<List<BookCharacterTtsUiRow>>(emptyList())
     private var disabledRoles by mutableStateOf<List<DisabledRoleUiItem>>(emptyList())
@@ -104,6 +103,9 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
                     onAdd = { showCharacterDialog() },
                     onReassign = ::confirmReassign,
                     onShowDisabledRoles = ::showDisabledRoleManager,
+                    onChooseSilhouetteStyle = if (showSilhouetteSettings) {
+                        { showDialogFragment(BookCharacterEditDialog.forSilhouetteStyle()) }
+                    } else null,
                     onDismissDisabledRoles = { disabledRoleDialogVisible = false },
                     onReenableDisabledRoles = ::reenableDisabledRoles,
                     onDeleteDisabledRecords = ::confirmDeleteDisabledRecords,
@@ -124,6 +126,7 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
     override fun onResume() {
         super.onResume()
         renderRouteWarning()
+        reloadVoiceCatalog()
     }
 
     private fun linkPromotedRolesOnce() {
@@ -165,12 +168,14 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
                 renderPage()
             }
         }
-        lifecycleScope.launch(IO) {
-            val voiceCatalog = VoiceCatalogSnapshot.load()
-            withContext(kotlinx.coroutines.Dispatchers.Main) {
-                snapshot = snapshot.copy(voiceCatalog = voiceCatalog)
-                renderPage()
-            }
+    }
+
+    private fun reloadVoiceCatalog() {
+        voiceCatalogJob?.cancel()
+        voiceCatalogJob = lifecycleScope.launch {
+            val voiceCatalog = withContext(IO) { BookCharacterVoiceCatalog.load() }
+            snapshot = snapshot.copy(voiceCatalog = voiceCatalog)
+            renderPage()
         }
     }
 
@@ -307,8 +312,8 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
             .thenBy { it.id }
     }
 
-    private fun showCharacterDialog(characterId: Long = 0L, castRoleId: Long = 0L) {
-        showDialogFragment(BookCharacterEditDialog(workKey, characterId, castRoleId))
+    private fun showCharacterDialog(castRoleId: Long = 0L) {
+        showDialogFragment(BookCharacterEditDialog(workKey, castRoleId = castRoleId))
     }
 
     private fun showPromoteDialog(role: BookTtsCastRole) {
@@ -326,7 +331,9 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
     private fun onRowClick(key: String) {
         val row = rowForKey(key) ?: return
         if (row is Row.Character) {
-            showCharacterDialog(characterId = row.character.id)
+            BookCharacterDetailActivity.open(
+                this, row.character.workKey, row.character.id, intent.automaticCharacterSilhouetteStyle(),
+            )
         } else if (cardClickDebouncer.tryAcquire(SystemClock.elapsedRealtime())) {
             showVoiceSheet(row)
         }
@@ -372,105 +379,12 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
     }
 
     private fun showVoiceSheet(row: Row) {
-        val selectedBinding = row.binding()
-        TtsVoiceSelectionSheet(
-            context = this,
-            lifecycleScope = lifecycleScope,
+        showBookCharacterVoiceSheet(
             title = row.title(),
-            searchHint = getString(R.string.default_tts_voice_search),
-            emptyText = getString(R.string.character_tts_no_voice_options),
-            engines = { selectableEngines(row) },
-            isSelected = { option -> isSelected(selectedBinding, option) },
-            onSelect = { option -> saveBinding(row, option) },
-            beforePreview = {
-                if (BaseReadAloudService.isPlay()) ReadAloud.pause(this)
-            },
-            titleAction = when {
-                selectedBinding == null -> null
-                row is Row.Narrator || row is Row.DialogueFallback -> {
-                    getString(R.string.clear) to { clearBinding(row) }
-                }
-                else -> {
-                    getString(R.string.character_tts_use_dialogue_fallback) to {
-                        saveInheritBinding(row)
-                    }
-                }
-            }
-        ).show()
-    }
-
-    private fun selectableEngines(row: Row) = when (row) {
-        is Row.Narrator -> TtsEngineStore.engines().filter { it.enabled }
-        else -> listOfNotNull(
-            TtsEngineStore.engine(AppConfig.multiRoleTtsEngineId)
-                ?.takeIf { it.isSelectable && it.usesGeneratedAudio }
+            target = row.newBinding(),
+            binding = row.binding(),
+            onCatalogRefreshed = ::reloadVoiceCatalog,
         )
-    }
-
-    private fun saveBinding(row: Row, option: TtsVoiceOption) {
-        lifecycleScope.launch(IO) {
-            val now = System.currentTimeMillis()
-            val old = row.binding()
-            val oldEngineId = old?.engineId
-            val stored = (old ?: row.newBinding()).apply {
-                engineId = option.engine.id
-                voiceId = option.voice.id.takeUnless { option.systemDefault }
-                bindingMode = BookCharacterTtsBinding.BindingMode.MANUAL
-                if (createdAt <= 0L) createdAt = now
-                updatedAt = now
-            }
-            if (row is Row.Narrator && !oldEngineId.isNullOrBlank() && oldEngineId != option.engine.id) {
-                appDb.bookCharacterDao.deleteTtsBinding(
-                    workKey,
-                    BookCharacterTtsBinding.TargetType.NARRATOR,
-                    0L,
-                    oldEngineId
-                )
-            }
-            appDb.bookCharacterDao.upsertTtsBinding(stored)
-            withContext(kotlinx.coroutines.Dispatchers.Main) {
-                toastOnUi(getString(R.string.character_tts_binding_saved))
-                refreshRunningReadAloud()
-            }
-        }
-    }
-
-    private fun clearBinding(row: Row) {
-        val target = row.target()
-        val engineId = row.binding()?.engineId ?: AppConfig.multiRoleTtsEngineId.orEmpty()
-        lifecycleScope.launch(IO) {
-            appDb.bookCharacterDao.deleteTtsBinding(workKey, target.first, target.second, engineId)
-            withContext(kotlinx.coroutines.Dispatchers.Main) {
-                toastOnUi(getString(R.string.character_tts_binding_cleared))
-                refreshRunningReadAloud()
-            }
-        }
-    }
-
-    private fun saveInheritBinding(row: Row) {
-        val engineId = AppConfig.multiRoleTtsEngineId.orEmpty()
-        if (engineId.isBlank()) return
-        lifecycleScope.launch(IO) {
-            val now = System.currentTimeMillis()
-            val stored = (row.binding() ?: row.newBinding()).apply {
-                this.engineId = engineId
-                voiceId = null
-                bindingMode = BookCharacterTtsBinding.BindingMode.INHERIT
-                if (createdAt <= 0L) createdAt = now
-                updatedAt = now
-            }
-            appDb.bookCharacterDao.upsertTtsBinding(stored)
-            withContext(kotlinx.coroutines.Dispatchers.Main) {
-                toastOnUi(getString(R.string.character_tts_binding_saved))
-                refreshRunningReadAloud()
-            }
-        }
-    }
-
-    private fun refreshRunningReadAloud() {
-        if (BaseReadAloudService.isRun && AppConfig.readAloudMultiRole) {
-            ReadAloud.refreshTtsRoute(this)
-        }
     }
 
     private fun ignoredTemporaryRoles(): List<BookTtsCastRole> {
@@ -586,11 +500,18 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
                     }
                 }
             }
+            characters.forEach(::discardUnusedPortrait)
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 setResult(RESULT_OK)
                 toastOnUi(getString(R.string.character_disabled_delete_done, deletedCount))
                 refreshRunningReadAloud()
             }
+        }
+    }
+
+    private fun discardUnusedPortrait(character: BookCharacter) {
+        runCatching {
+            BookCharacterPortraits.discardIfUnreferenced(applicationContext, character.portraitUri)
         }
     }
 
@@ -626,6 +547,9 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
                     appDb.bookCharacterDao.updateCharacterCount(workKey, now)
                 }
             }
+            if (mode == BookCharacterDeleteMode.DELETE_ONLY) {
+                rows.filterIsInstance<Row.Character>().forEach { discardUnusedPortrait(it.character) }
+            }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 setResult(RESULT_OK)
                 toastOnUi(
@@ -644,75 +568,20 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
     }
 
     private fun Row.voiceSummary(): String {
+        val catalog = snapshot.voiceCatalog
         val speaker = when (this) {
-            is Row.Narrator -> bindingVoiceName(binding())
+            is Row.Narrator -> catalog.bindingVoiceName(this@BookCharacterTtsActivity, binding())
                 ?: defaultNarratorVoiceName()
                 ?: globalVoiceName()
 
-            is Row.DialogueFallback -> bindingVoiceName(binding())
+            is Row.DialogueFallback -> catalog.bindingVoiceName(this@BookCharacterTtsActivity, binding())
                 ?: defaultDialogueVoiceName(gender)
                 ?: getString(R.string.character_tts_voice_unset)
 
-            is Row.Character -> roleVoiceName(binding(), character.gender)
-            is Row.CastRole -> roleVoiceName(binding(), role.gender)
+            is Row.Character -> catalog.roleVoiceName(this@BookCharacterTtsActivity, binding(), character.gender)
+            is Row.CastRole -> catalog.roleVoiceName(this@BookCharacterTtsActivity, binding(), role.gender)
         }
         return getString(R.string.character_tts_speaker_summary, speaker)
-    }
-
-    private fun roleVoiceName(binding: BookCharacterTtsBinding?, gender: String): String {
-        if (binding?.bindingMode == BookCharacterTtsBinding.BindingMode.INHERIT) {
-            return fallbackVoiceName(gender)
-        }
-        if (!snapshot.voiceCatalog.loaded) {
-            return bindingVoiceName(binding) ?: fallbackVoiceName(gender)
-        }
-        val engine = binding?.let { snapshot.voiceCatalog.engines[it.engineId] }
-            ?.takeIf { it.isSelectable }
-        val usableVoiceIds = engine
-            ?.let { snapshot.voiceCatalog.enabledVoiceIds[it.id] }
-            .orEmpty()
-        return when (BookTtsBindingPolicy.autoState(binding, usableVoiceIds)) {
-            BookTtsBindingPolicy.AutoState.PENDING -> pendingVoiceName(gender)
-            BookTtsBindingPolicy.AutoState.PROVISIONAL -> getString(
-                R.string.character_tts_provisional_voice,
-                bindingVoiceName(binding) ?: pendingVoiceName(gender)
-            )
-
-            BookTtsBindingPolicy.AutoState.STABLE,
-            BookTtsBindingPolicy.AutoState.PROTECTED ->
-                bindingVoiceName(binding) ?: fallbackVoiceName(gender)
-        }
-    }
-
-    private fun bindingVoiceName(binding: BookCharacterTtsBinding?): String? {
-        binding ?: return null
-        if (binding.bindingMode == BookCharacterTtsBinding.BindingMode.INHERIT) return null
-        val voiceId = binding.voiceId
-        return if (voiceId.isNullOrBlank()) {
-            getString(R.string.character_tts_system_default_voice)
-        } else {
-            snapshot.voiceCatalog.voiceNames[binding.engineId to voiceId] ?: voiceId
-        }
-    }
-
-    private fun fallbackVoiceName(gender: String): String {
-        return getString(
-            when (gender) {
-                BookCharacter.Gender.MALE -> R.string.character_tts_fallback_male
-                BookCharacter.Gender.FEMALE -> R.string.character_tts_fallback_female
-                else -> R.string.character_tts_fallback_generic
-            }
-        )
-    }
-
-    private fun pendingVoiceName(gender: String): String {
-        return getString(
-            when (gender) {
-                BookCharacter.Gender.MALE -> R.string.character_tts_pending_male
-                BookCharacter.Gender.FEMALE -> R.string.character_tts_pending_female
-                else -> R.string.character_tts_pending_generic
-            }
-        )
     }
 
     private fun globalVoiceName(): String {
@@ -771,18 +640,6 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
         }
     }
 
-    private fun isSelected(
-        binding: BookCharacterTtsBinding?,
-        option: TtsVoiceOption
-    ): Boolean {
-        binding ?: return false
-        return binding.engineId == option.engine.id && if (option.systemDefault) {
-            binding.voiceId.isNullOrBlank()
-        } else {
-            binding.voiceId == option.voice.id
-        }
-    }
-
     private fun Row.title(): String = when (this) {
         is Row.Narrator -> getString(R.string.character_tts_narrator)
         is Row.DialogueFallback -> getString(
@@ -826,18 +683,6 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
 
         is Row.Character -> BookCharacterTtsBinding.character(workKey, character.id)
         is Row.CastRole -> BookCharacterTtsBinding.castRole(workKey, role.id)
-    }
-
-    private fun Row.target(): Pair<String, Long> = when (this) {
-        is Row.Narrator -> BookCharacterTtsBinding.TargetType.NARRATOR to 0L
-        is Row.DialogueFallback -> if (gender == BookCharacter.Gender.MALE) {
-            BookCharacterTtsBinding.TargetType.DIALOGUE_MALE to 0L
-        } else {
-            BookCharacterTtsBinding.TargetType.DIALOGUE_FEMALE to 0L
-        }
-
-        is Row.Character -> BookCharacterTtsBinding.TargetType.CHARACTER to character.id
-        is Row.CastRole -> BookCharacterTtsBinding.TargetType.CAST_ROLE to role.id
     }
 
     private fun Row.toUiRow(): BookCharacterTtsUiRow {
@@ -897,36 +742,8 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
         val characters: List<BookCharacter> = emptyList(),
         val castRoles: List<BookTtsCastRole> = emptyList(),
         val bindings: List<BookCharacterTtsBinding> = emptyList(),
-        val voiceCatalog: VoiceCatalogSnapshot = VoiceCatalogSnapshot()
+        val voiceCatalog: BookCharacterVoiceCatalog = BookCharacterVoiceCatalog()
     )
-
-    private data class VoiceCatalogSnapshot(
-        val loaded: Boolean = false,
-        val engines: Map<String, TtsEngineSetting> = emptyMap(),
-        val enabledVoiceIds: Map<String, Set<String>> = emptyMap(),
-        val voiceNames: Map<Pair<String, String>, String> = emptyMap(),
-        val activeEngineId: String? = null
-    ) {
-        companion object {
-            fun load(): VoiceCatalogSnapshot {
-                val engines = TtsEngineStore.engines()
-                val activeEngineId = TtsEngineStore.activeEngineId().takeIf { it.isNotBlank() }
-                return VoiceCatalogSnapshot(
-                    loaded = true,
-                    engines = engines.associateBy { it.id },
-                    enabledVoiceIds = engines.associate { engine ->
-                        engine.id to engine.enabledVoices().mapTo(mutableSetOf()) { it.id }
-                    },
-                    voiceNames = engines.flatMap { engine ->
-                        engine.effectiveVoices().map { voice ->
-                            (engine.id to voice.id) to voice.name
-                        }
-                    }.toMap(),
-                    activeEngineId = activeEngineId
-                )
-            }
-        }
-    }
 
     private sealed interface Row {
         data class Narrator(val binding: BookCharacterTtsBinding?) : Row

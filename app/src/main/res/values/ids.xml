@@ -40,6 +40,7 @@
     <item name="menu_delete" type="id" />
     <item name="menu_batch_manage" type="id" />
     <item name="menu_restore_temporary" type="id" />
+    <item name="menu_character_silhouette_style" type="id" />
 
     <item name="menu_ai_assistant" type="id" />
     <item name="menu_add_books" type="id" />

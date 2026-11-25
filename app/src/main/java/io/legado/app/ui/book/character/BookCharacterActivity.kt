@@ -1,10 +1,11 @@
 package io.legado.app.ui.book.character
 
 /**
- * 书籍角色入口。角色资料与发音人配置共用 [BookCharacterTtsActivity] 的页面，
- * 仅根据入口选择不同的初始分页。
+ * 书籍角色入口，默认打开正式角色并提供全局剪影设置。
  */
 class BookCharacterActivity : BookCharacterTtsActivity() {
+
+    override val showSilhouetteSettings: Boolean = true
 
     override fun initialPage(): BookCharacterTtsPage = BookCharacterTtsPage.FORMAL
 

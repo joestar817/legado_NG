@@ -52,6 +52,8 @@ import io.legado.app.utils.longSnackbar
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.service.ExportBookService
 import io.legado.app.ui.book.character.BookCharacterActivity
+import io.legado.app.ui.book.character.automaticCharacterSilhouetteStyle
+import io.legado.app.ui.book.character.putAutomaticCharacterSilhouetteStyle
 import io.legado.app.ui.book.audio.AudioPlayActivity
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.changesource.ChangeBookSourceDrawer
@@ -360,6 +362,7 @@ class BooksFragment() : BaseFragment(0),
             putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, book.name)
             putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, book.author)
             putExtra(BookCharacterActivity.EXTRA_BOOK_URL, book.bookUrl)
+            putAutomaticCharacterSilhouetteStyle(book.automaticCharacterSilhouetteStyle())
         }
     }
 

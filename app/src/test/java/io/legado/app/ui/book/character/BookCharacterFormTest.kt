@@ -8,6 +8,13 @@ import org.junit.Test
 class BookCharacterFormTest {
 
     @Test
+    fun editingExistingCharacterKeepsPortraitInTheDraft() {
+        val uri = "file:///character-portraits/portrait-test.image"
+        val character = BookCharacter(name = "比比东", portraitUri = uri)
+        assertEquals(uri, initialCharacterFormValue(character, null).portraitUri)
+    }
+
+    @Test
     fun promotionDefaultsToLeadRoleByGender() {
         assertEquals(
             BookCharacter.RoleTag.MALE_LEAD,

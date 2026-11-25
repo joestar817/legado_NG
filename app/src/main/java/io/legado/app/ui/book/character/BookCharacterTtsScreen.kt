@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,6 +56,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,6 +72,7 @@ import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.NgStatusTagStyle
 import io.legado.app.ui.design.components.NgStatusTagVariant
 import io.legado.app.ui.design.components.compose.NgButton
+import io.legado.app.ui.design.components.compose.NgCircularSelectionIndicator
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
@@ -79,12 +82,14 @@ import io.legado.app.ui.design.components.compose.NgFlatActionRailItem
 import io.legado.app.ui.design.components.compose.NgFlatActionRailVariant
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgIconButton
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgStatusTag
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.components.compose.ngDraggedItem
 import io.legado.app.ui.design.components.compose.ngReorderHandle
+import io.legado.app.ui.design.components.compose.rememberNgExpandableActionMenuContentWidth
 import io.legado.app.ui.design.components.compose.rememberNgLazyReorderState
 import io.legado.app.ui.design.theme.NgTheme
 
@@ -144,6 +149,7 @@ internal fun BookCharacterTtsScreen(
     onAdd: () -> Unit,
     onReassign: () -> Unit,
     onShowDisabledRoles: () -> Unit,
+    onChooseSilhouetteStyle: (() -> Unit)?,
     onDismissDisabledRoles: () -> Unit,
     onReenableDisabledRoles: (Set<String>) -> Unit,
     onDeleteDisabledRecords: (Set<String>) -> Unit,
@@ -198,6 +204,7 @@ internal fun BookCharacterTtsScreen(
             },
             onReassign = onReassign,
             onShowDisabledRoles = onShowDisabledRoles,
+            onChooseSilhouetteStyle = onChooseSilhouetteStyle,
         )
         if (routeWarningVisible) {
             RouteWarning()
@@ -287,6 +294,7 @@ private fun CharacterTopBar(
     onEnterSelection: () -> Unit,
     onReassign: () -> Unit,
     onShowDisabledRoles: () -> Unit,
+    onChooseSilhouetteStyle: (() -> Unit)?,
 ) {
     val menuState = remember { NgPopupToggleState() }
     val disabledRolesTitle = stringResource(
@@ -302,6 +310,16 @@ private fun CharacterTopBar(
                     iconRes = R.drawable.ic_add,
                 ),
             )
+            if (onChooseSilhouetteStyle != null) {
+                add(
+                    NgExpandableActionMenuItem(
+                        itemId = R.id.menu_character_silhouette_style,
+                        titleRes = R.string.character_silhouette_style,
+                        iconRes = R.drawable.ic_image,
+                        leadingIconSize = 16.dp,
+                    ),
+                )
+            }
         }
         val hasDeletableRoles = when (page) {
             BookCharacterTtsPage.FORMAL -> hasFormalRoles
@@ -436,6 +454,7 @@ private fun CharacterTopBar(
                                 menuState.close()
                                 when (item.itemId) {
                                     R.id.menu_add -> onAdd()
+                                    R.id.menu_character_silhouette_style -> onChooseSilhouetteStyle?.invoke()
                                     R.id.menu_batch_manage -> onEnterSelection()
                                     R.id.menu_refresh -> if (!reassigning) onReassign()
                                     R.id.menu_restore_temporary -> onShowDisabledRoles()
@@ -590,8 +609,9 @@ private fun CharacterCard(
     onVoiceClick: () -> Unit,
     onPromote: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
-    Surface(
+    val radius = NgTheme.shapes.mediumDp.dp
+    val shape = RoundedCornerShape(radius)
+    NgGlassSurface(
         modifier = Modifier
             .fillMaxWidth()
             .height(70.dp)
@@ -606,13 +626,13 @@ private fun CharacterCard(
             .clip(shape)
             .semantics { this.selected = selected }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        color = colorResource(R.color.ng_surface_card),
         shape = shape,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        style = NgGlassDefaults.bookDetailStyle(),
+        role = NgMaterialRole.CONTENT,
+        liquidCornerRadius = radius,
     ) {
         Row(
-            modifier = Modifier.padding(start = 14.dp, end = 10.dp),
+            modifier = Modifier.fillMaxHeight().padding(start = 14.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CharacterAvatar(row)
@@ -625,10 +645,10 @@ private fun CharacterCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = row.title,
-                        color = Color(NgTheme.colors.onSurface),
+                        color = Color(NgTheme.colors.onSurface).copy(alpha = 0.88f),
                         fontSize = 16.sp,
                         lineHeight = 20.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -646,9 +666,15 @@ private fun CharacterCard(
                     text = row.voiceSummary,
                     modifier = Modifier
                         .padding(top = 2.dp)
-                        .clickable {
-                            if (selectionMode) onClick() else onVoiceClick()
-                        },
+                        .then(
+                            if (row.kind == BookCharacterTtsRowKind.FORMAL) {
+                                Modifier
+                            } else {
+                                Modifier.clickable {
+                                    if (selectionMode) onClick() else onVoiceClick()
+                                }
+                            }
+                        ),
                     color = colorResource(R.color.tv_text_summary),
                     fontSize = 14.sp,
                     lineHeight = 18.sp,
@@ -657,17 +683,24 @@ private fun CharacterCard(
                 )
             }
             if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = null,
+                NgCircularSelectionIndicator(
+                    state = if (selected) ToggleableState.On else ToggleableState.Off,
                     modifier = Modifier.size(48.dp),
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = Color(NgTheme.colors.primary),
-                        checkmarkColor = Color.White,
-                    ),
                 )
             } else if (row.kind == BookCharacterTtsRowKind.TEMPORARY) {
                 PromoteButton(onClick = onPromote)
+            } else if (row.kind == BookCharacterTtsRowKind.FORMAL) {
+                NgIconButton(
+                    onClick = onVoiceClick,
+                    modifier = Modifier.size(48.dp).testTag("character_voice_button_${row.key}"),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_character_voice_outline),
+                        contentDescription = stringResource(R.string.character_tts_change_voice),
+                        tint = Color(NgTheme.colors.primary),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             } else {
                 Icon(
                     painter = painterResource(R.drawable.ic_chevron_right_20),
@@ -773,6 +806,18 @@ private fun CharacterSelectionDock(
     onDelete: () -> Unit,
 ) {
     val menuState = remember { NgPopupToggleState() }
+    val menuItems = listOf(
+        NgExpandableActionMenuItem(
+            itemId = R.id.menu_del_selection,
+            titleRes = R.string.delete,
+            iconRes = R.drawable.ic_book_info_delete,
+            danger = true,
+        ),
+    )
+    val menuWidth = rememberNgExpandableActionMenuContentWidth(menuItems)
+    val railWidth = 220.dp
+    val moreSegmentWidth = railWidth / 3f
+    val contentPadding = 12.dp
     NgGlassSurface(
         modifier = Modifier
             .fillMaxWidth()
@@ -787,7 +832,7 @@ private fun CharacterSelectionDock(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = contentPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -798,7 +843,7 @@ private fun CharacterSelectionDock(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Box(modifier = Modifier.width(220.dp)) {
+            Box(modifier = Modifier.width(railWidth)) {
                 NgFlatActionRail(
                     items = listOf(
                         NgFlatActionRailItem(
@@ -830,25 +875,21 @@ private fun CharacterSelectionDock(
                         NgExpandableActionMenu(
                             expanded = menuState.expanded,
                             onDismissRequest = menuState::onDismissRequest,
-                            items = listOf(
-                                NgExpandableActionMenuItem(
-                                    itemId = R.id.menu_del_selection,
-                                    titleRes = R.string.delete,
-                                    iconRes = R.drawable.ic_book_info_delete,
-                                    danger = true,
-                                ),
-                            ),
+                            items = menuItems,
                             onItemClick = {
                                 menuState.close()
                                 onDelete()
                             },
-                            width = 174.dp,
+                            width = menuWidth,
                             rowMinHeight = 36.dp,
                             bottomPointerHeight = 8.dp,
                             bottomPointerWidth = 18.dp,
-                            bottomPointerEndOffset = 65.dp,
+                            bottomPointerEndOffset = contentPadding + moreSegmentWidth / 2f,
                             menuContainerColor = colorResource(R.color.ng_surface_card),
-                            offset = DpOffset(x = (-89).dp, y = (-12).dp),
+                            offset = DpOffset(
+                                x = contentPadding + moreSegmentWidth - menuWidth,
+                                y = (-12).dp,
+                            ),
                         )
                     },
                 )

@@ -1,5 +1,7 @@
 package io.legado.app.ui.book.character
 
+import android.content.Context
+import android.net.Uri
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookTtsCastRole
@@ -12,7 +14,8 @@ data class BookCharacterFormValue(
     val gender: String,
     val roleTag: String,
     val intro: String?,
-    val imagePrompt: String? = null
+    val imagePrompt: String? = null,
+    val portraitUri: String? = null,
 )
 
 internal fun initialCharacterFormValue(
@@ -29,6 +32,7 @@ internal fun initialCharacterFormValue(
                 ?: BookCharacter.RoleTag.UNKNOWN,
             intro = character.displayIntro(),
             imagePrompt = character.imagePrompt,
+            portraitUri = character.portraitUri,
         )
     }
     if (castRole != null) {
@@ -60,39 +64,54 @@ internal fun parseCharacterAliases(raw: String): List<String> = raw
 
 object BookCharacterEditor {
     fun save(
+        context: Context,
         workKey: String,
         current: BookCharacter?,
         castRole: BookTtsCastRole?,
-        value: BookCharacterFormValue
+        value: BookCharacterFormValue,
     ): Long {
+        val portraitChanged = value.portraitUri != current?.portraitUri
+        val imported = value.portraitUri?.takeIf { portraitChanged }?.let {
+            BookCharacterPortraits.copyFrom(context, it)
+        }
         val now = System.currentTimeMillis()
-        val mergedAliases = mergePromotedAliases(
-            canonicalName = value.name,
-            formAliases = value.aliases,
-            castRole = castRole
-        )
-        val item = (current ?: BookCharacter(workKey = workKey, createdAt = now)).apply {
-            name = value.name
-            gender = value.gender
-            roleTag = value.roleTag
-            identity = null
-            aliasesJson = mergedAliases.takeIf { it.isNotEmpty() }?.let(GSON::toJson)
-            intro = value.intro
-            imagePrompt = value.imagePrompt?.trim()?.ifBlank { null }
-            shortIntro = null
-            updatedAt = now
-        }
-        return appDb.runInTransaction<Long> {
-            val savedId = if (item.id == 0L) {
-                appDb.bookCharacterDao.insertCharacter(item)
-            } else {
-                appDb.bookCharacterDao.updateCharacter(item)
-                item.id
+        val mergedAliases = mergePromotedAliases(value.name, value.aliases, castRole)
+        val dao = appDb.bookCharacterDao
+        val (savedId, previousPortrait) = try {
+            appDb.runInTransaction<Pair<Long, String?>> {
+                val stored = current?.let {
+                    checkNotNull(dao.getCharacter(it.id)).also { check(it.workKey == workKey) }
+                }
+                val item = (stored?.copy() ?: BookCharacter(workKey = workKey, createdAt = now)).apply {
+                    name = value.name
+                    gender = value.gender
+                    roleTag = value.roleTag
+                    identity = null
+                    aliasesJson = mergedAliases.takeIf { it.isNotEmpty() }?.let(GSON::toJson)
+                    intro = value.intro
+                    imagePrompt = value.imagePrompt?.trim()?.ifBlank { null }
+                    if (portraitChanged) portraitUri = imported?.let { Uri.fromFile(it).toString() }
+                    shortIntro = null
+                    updatedAt = now
+                }
+                val id = when {
+                    item.id > 0L -> {
+                        dao.updateCharacter(item)
+                        item.id
+                    }
+                    castRole != null -> dao.insertCharacter(item)
+                    else -> dao.insertManualCharacter(item)
+                }
+                castRole?.let { dao.mergeTtsCastRoleIntoCharacter(it, id) }
+                dao.updateCharacterCount(workKey, now)
+                id to stored?.portraitUri?.takeIf { portraitChanged }
             }
-            castRole?.let { appDb.bookCharacterDao.mergeTtsCastRoleIntoCharacter(it, savedId) }
-            appDb.bookCharacterDao.updateCharacterCount(workKey, now)
-            savedId
+        } catch (error: Exception) {
+            imported?.delete()
+            throw error
         }
+        runCatching { BookCharacterPortraits.discardIfUnreferenced(context, previousPortrait) }
+        return savedId
     }
 }
 
@@ -114,8 +133,9 @@ internal fun mergePromotedAliases(
     .filter { it.isNotBlank() && !it.equals(canonicalName.trim(), ignoreCase = true) }
     .distinctBy { it.lowercase() }
 
-private fun BookCharacter.aliases(): List<String> {
-    return aliasesJson?.let { GSON.fromJsonObject<List<String>>(it).getOrNull() }.orEmpty()
+internal fun BookCharacter.aliases(): List<String> {
+    return aliasesJson?.let { GSON.fromJsonObject<List<String?>>(it).getOrNull() }
+        ?.filterNotNull().orEmpty()
 }
 
 internal fun defaultPromotedRoleTag(gender: String): String = when (gender) {
