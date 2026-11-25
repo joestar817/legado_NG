@@ -10,6 +10,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import io.legado.app.help.http.NetworkLogInterceptor
+import io.legado.app.help.http.networkLogSource
 import okhttp3.Call
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -42,6 +44,7 @@ private val aiProviderHttpClient by lazy {
             }
             chain.proceed(request)
         }
+        .addInterceptor(NetworkLogInterceptor.aiRequests)
         .addNetworkInterceptor { chain ->
             val request = chain.request()
             val response = chain.proceed(request)
@@ -65,6 +68,11 @@ internal fun aiHttpClient(timeoutSeconds: Int): OkHttpClient {
         .readTimeout(timeout, TimeUnit.SECONDS)
         .callTimeout(timeout, TimeUnit.SECONDS)
         .build()
+}
+
+internal fun Request.withAiTextLog(params: AiTextParams): Request {
+    val source = params.networkLogSource ?: return this
+    return newBuilder().apply { networkLogSource(source) }.build()
 }
 
 internal suspend fun <T> Call.readCancellableStream(read: suspend (Response) -> T): T =

@@ -1444,6 +1444,7 @@ class AiChatClient internal constructor(
                     .workBuddyAuthorization(account)
                     .post(body)
                     .build()
+                    .withAiTextLog(params)
                 client.executeStreamChat(
                     request, "reasoning_content", null, onStreamUpdate, generationTest, assistantTurn,
                     null, null, workBuddyResponse = true,
@@ -1481,6 +1482,7 @@ class AiChatClient internal constructor(
                 .providerMessages(wireMessages, webPlan.systemInstruction)
                 .map { it.asJsonObject }
             val request = codec.request(providerMessages, tools, params, stream, conversationId)
+                .withAiTextLog(params)
             var partialContent = ""
             var partialReasoning: String? = null
             val client = if (subscription) chatGptHttpClient(setting.timeoutSeconds) else this
@@ -1544,6 +1546,7 @@ class AiChatClient internal constructor(
                 buildRequestBody(setting, model, wireMessages, tools, params, stream, webPlan, deepSeekHistory),
             ))
             .build()
+            .withAiTextLog(params)
         val reasoningKey = setting.reasoningOptions(model.id).reasoningOutputField.ifBlank { "reasoning_content" }
         val openRouterHistory = setting.openRouterChatHistory(model.id)
         val completion = if (stream) {

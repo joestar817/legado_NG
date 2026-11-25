@@ -1631,6 +1631,7 @@ object BookTtsCastingCoordinator {
                 AiMessage(AiMessage.Role.USER, GSON.toJson(payload))
             ),
             params = AiConfig.readAloudStoryboardParams(targets.size, supportsReasoning = false)
+                .copy(networkLogSource = "AI听书 · 自动选音")
         )
         check(result.content.isNotBlank()) { "AI 自动选音返回为空" }
         val normalized = result.content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()

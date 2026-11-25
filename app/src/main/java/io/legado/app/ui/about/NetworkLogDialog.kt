@@ -117,9 +117,10 @@ class NetworkLogDialog : BaseComposeDialogFragment(), CodeDialog.ExportCallback 
             loading = true
             try {
                 val requestId = "network_log_${item.id}_${item.time}"
-                exportEntries[requestId] = item
+                val current = NetworkLog.find(item.id) ?: item
+                exportEntries[requestId] = current
                 val detail = withContext(Dispatchers.Default) {
-                    item.formatDetail(preview = true)
+                    current.formatDetail(preview = true)
                 }
                 if (isAdded) {
                     showDialogFragment(
@@ -171,9 +172,13 @@ class NetworkLogDialog : BaseComposeDialogFragment(), CodeDialog.ExportCallback 
             appendSection("Request headers", requestHeaders)
             appendSection("Request body · ${requestBody.bodyType()}", requestBody.formatBody(preview))
             appendSection("Response headers", responseHeaders)
+            val eventStream = responseHeaders?.lineSequence()?.any { header ->
+                header.substringBefore(':').equals("Content-Type", ignoreCase = true) &&
+                    header.substringAfter(':').trim().startsWith("text/event-stream", ignoreCase = true)
+            } == true
             appendSection(
-                "Response body · ${responseBody.bodyType()}",
-                responseBody.formatBody(preview),
+                "Response body · ${if (eventStream) "SSE" else responseBody.bodyType()}",
+                responseBody.formatBody(preview, showEnd = eventStream),
             )
             appendSection("Error", error)
         }
@@ -196,10 +201,14 @@ class NetworkLogDialog : BaseComposeDialogFragment(), CodeDialog.ExportCallback 
         }
     }
 
-    private fun String?.formatBody(preview: Boolean): String? {
+    private fun String?.formatBody(preview: Boolean, showEnd: Boolean = false): String? {
         val value = this?.trim() ?: return null
         if (value.isBlank()) return null
         if (preview && value.length > BODY_PREVIEW_MAX_LENGTH) {
+            if (showEnd) {
+                val half = BODY_PREVIEW_MAX_LENGTH / 2
+                return value.take(half) + "\n\n…\n\n" + value.takeLast(half)
+            }
             return value.take(BODY_PREVIEW_MAX_LENGTH) + getString(
                 R.string.large_text_preview_suffix,
                 BODY_PREVIEW_MAX_LENGTH,

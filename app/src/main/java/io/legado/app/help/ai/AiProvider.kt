@@ -21,6 +21,7 @@ data class AiTextParams(
     val jsonResponse: Boolean = false,
     val assistantReasoningProtocol: AiReasoningProtocol? = null,
     val assistantReasoningMaxTokens: Int? = null,
+    internal val networkLogSource: String? = null,
 )
 
 data class AiTextResult(

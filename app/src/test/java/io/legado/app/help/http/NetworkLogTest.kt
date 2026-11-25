@@ -1,6 +1,19 @@
 package io.legado.app.help.http
 
 import okhttp3.Headers
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.asResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
+import okio.BufferedSource
+import okio.Source
+import okio.Timeout
+import okio.buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,6 +21,121 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NetworkLogTest {
+
+    @Test
+    fun aiMetadataLogDoesNotReadTheStreamOrExposeRequestData() {
+        var streamReads = 0
+        val request = Request.Builder()
+            .url("https://reader:private@copilot.tencent.com/v2/chat/completions?state=private#private")
+            .header("Authorization", "Bearer fixture-token")
+            .post("private prompt".toRequestBody())
+            .build()
+        val response = Response.Builder()
+            .request(request)
+            .protocol(Protocol.HTTP_2)
+            .code(200)
+            .message("OK")
+            .header("X-User-Id", "private-user-id")
+            .body(object : ResponseBody() {
+                override fun contentType() = "text/event-stream".toMediaType()
+                override fun contentLength() = -1L
+                override fun source(): BufferedSource {
+                    streamReads++
+                    error("Log should not read from this stream")
+                }
+            })
+            .build()
+
+        val entry = NetworkLog.okHttpEntry(request, response, 25L, error = null, aiRequest = true)
+
+        assertEquals("AI", entry.source)
+        assertEquals("POST", entry.method)
+        assertEquals("https://copilot.tencent.com/v2/chat/completions", entry.url)
+        assertEquals(200, entry.statusCode)
+        assertEquals(25L, entry.tookMs)
+        assertEquals(0, streamReads)
+        assertNull(entry.requestHeaders)
+        assertNull(entry.requestBody)
+        assertNull(entry.responseHeaders)
+        assertNull(entry.responseBody)
+    }
+
+    @Test
+    fun aiTextRequestLogKeepsPayloadAndRedactsCredentials() {
+        val request = Request.Builder()
+            .url("https://copilot.tencent.com/v2/chat/completions?credential=fixture")
+            .header("Authorization", "Bearer fixture-token")
+            .header("X-User-Id", "fixture-account")
+            .apply { networkLogSource("AI听书 · 分镜归因") }
+            .post("""{"model":"hy4flash-free","max_tokens":64000,"messages":[]}""".toRequestBody())
+            .build()
+
+        val entry = NetworkLog.okHttpEntry(request, null, 30L, error = null, aiRequest = true)
+
+        assertEquals("AI听书 · 分镜归因", entry.source)
+        assertEquals("https://copilot.tencent.com/v2/chat/completions", entry.url)
+        assertTrue(entry.requestBody.orEmpty().contains("hy4flash-free"))
+        assertTrue(entry.requestBody.orEmpty().contains("\"max_tokens\":64000"))
+        assertTrue(entry.requestHeaders.orEmpty().contains("Authorization: [已脱敏]"))
+        assertFalse(entry.detail.contains("fixture-token"))
+        assertFalse(entry.detail.contains("fixture-account"))
+    }
+
+    @Test
+    fun aiStreamLogDoesNotReadAheadOrDrainOnClose() {
+        val firstFrame = "data: {\"choices\":[]}\n\n"
+        var reads = 0
+        var closed = false
+        val source = object : Source {
+            override fun read(sink: Buffer, byteCount: Long): Long {
+                reads++
+                check(reads == 1) { "The logger should not read ahead" }
+                sink.writeUtf8(firstFrame)
+                return firstFrame.toByteArray().size.toLong()
+            }
+
+            override fun timeout(): Timeout = Timeout.NONE
+            override fun close() {
+                closed = true
+            }
+        }
+        val body = source.buffer().asResponseBody("text/event-stream".toMediaType())
+        val previews = mutableListOf<String>()
+        val response = responseWithBody(body).captureNetworkLogBody { previews += it }
+
+        assertEquals(0, reads)
+        response.use {
+            assertEquals(firstFrame.trim(), it.body.source().readUtf8Line())
+            assertTrue(previews.isEmpty())
+        }
+        assertEquals(1, reads)
+        assertTrue(closed)
+        assertEquals(listOf(firstFrame), previews)
+    }
+
+    @Test
+    fun largeAiStreamLogKeepsTheFinishReasonAndUsage() {
+        val start = "data: {\"model\":\"hy4flash-free\"}\n\n"
+        val end = "data: {\"choices\":[{\"finish_reason\":\"length\"}],\"usage\":{\"completion_tokens\":64000}}\n\ndata: [DONE]\n\n"
+        val body = start + "x".repeat(NetworkLog.BODY_PREVIEW_SIZE.toInt()) + "\n\n" + end
+        val previews = mutableListOf<String>()
+        val response = responseWithBody(body.toResponseBody("text/event-stream".toMediaType()))
+            .captureNetworkLogBody { previews += it }
+
+        assertEquals(body, response.use { it.body.string() })
+        val preview = previews.single()
+        assertTrue(preview.startsWith(start))
+        assertTrue(preview.endsWith(end))
+        assertTrue(preview.contains("bytes omitted"))
+    }
+
+    private fun responseWithBody(body: ResponseBody): Response = Response.Builder()
+        .request(Request.Builder().url("https://copilot.tencent.com/v2/chat/completions").build())
+        .protocol(Protocol.HTTP_2)
+        .code(200)
+        .message("OK")
+        .body(body)
+        .build()
 
     @Test
     fun formatHeadersRedactsAuthenticationCredentials() {

@@ -91,6 +91,7 @@ class OpenAiCompatibleProvider : AiProvider {
             .addHeader("Content-Type", "application/json")
             .post(jsonBody(requestBody))
             .build()
+            .withAiTextLog(params)
 
         val (response, body) = client.executeJsonOrThrow(request)
         if (!response.isSuccessful) {

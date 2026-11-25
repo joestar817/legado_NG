@@ -87,6 +87,7 @@ class ClaudeAiProvider : AiProvider {
             .addHeader("Content-Type", "application/json")
             .post(jsonBody(requestBody))
             .build()
+            .withAiTextLog(params)
         val json = aiHttpClient(setting.timeoutSeconds).executeJson(request)
         val content = json.arrayOrNull("content")
             ?.mapNotNull { it.textPart() }

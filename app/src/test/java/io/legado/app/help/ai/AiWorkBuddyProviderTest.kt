@@ -5,6 +5,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import io.legado.app.R
+import io.legado.app.help.http.NetworkLog
 import io.legado.app.ui.config.iconRes
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -52,6 +53,7 @@ class AiWorkBuddyProviderTest {
         val http = mockHttp { request ->
             assertEquals(WORK_BUDDY_CHAT_PATH, request.url.encodedPath)
             assertEquals("Bearer access-1", request.header("Authorization"))
+            assertEquals("AI听书 · 分镜归因", request.tag(NetworkLog.SourceLabel::class.java)?.value)
             val body = Buffer().also { request.body!!.writeTo(it) }.readUtf8().let(::json)
             assertEquals("hy4", body.get("model").asString)
             assertTrue(body.get("stream").asBoolean)
@@ -72,7 +74,7 @@ class AiWorkBuddyProviderTest {
                 AiMessage(AiMessage.Role.SYSTEM, "Return only JSON."),
                 AiMessage(AiMessage.Role.USER, "Label this passage."),
             ),
-            params = AiTextParams(maxTokens = 4096, jsonResponse = true),
+            params = AiTextParams(maxTokens = 4096, jsonResponse = true, networkLogSource = "AI听书 · 分镜归因"),
         )
         assertEquals(output, result.content)
         assertEquals("hy4", result.model)

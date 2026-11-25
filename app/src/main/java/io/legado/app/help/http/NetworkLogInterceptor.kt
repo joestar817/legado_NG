@@ -6,38 +6,32 @@ import java.io.IOException
 
 object NetworkLogInterceptor : Interceptor {
 
+    internal val aiRequests = Interceptor { chain -> intercept(chain, aiRequest = true) }
+
     @Throws(IOException::class)
-    override fun intercept(chain: Interceptor.Chain): Response {
+    override fun intercept(chain: Interceptor.Chain): Response =
+        intercept(chain, aiRequest = false)
+
+    private fun intercept(chain: Interceptor.Chain, aiRequest: Boolean): Response {
         val request = chain.request()
         if (!NetworkLog.isEnabled) {
             return chain.proceed(request)
         }
         val start = System.nanoTime()
-        return try {
-            val response = chain.proceed(request)
-            NetworkLog.recordOkHttp(
-                request = request,
-                response = response,
-                tookMs = elapsedMs(start)
-            )
-            response
-        } catch (e: IOException) {
-            NetworkLog.recordOkHttp(
-                request = request,
-                response = null,
-                tookMs = elapsedMs(start),
-                error = e
-            )
-            throw e
+        val response = try {
+            chain.proceed(request)
         } catch (e: Throwable) {
-            NetworkLog.recordOkHttp(
-                request = request,
-                response = null,
-                tookMs = elapsedMs(start),
-                error = e
-            )
+            if (aiRequest) {
+                NetworkLog.recordAiHttp(request, null, elapsedMs(start), e)
+            } else {
+                NetworkLog.recordOkHttp(request, null, elapsedMs(start), e)
+            }
             throw e
         }
+        val tookMs = elapsedMs(start)
+        if (aiRequest) return NetworkLog.recordAiHttp(request, response, tookMs) ?: response
+        NetworkLog.recordOkHttp(request, response, tookMs)
+        return response
     }
 
     private fun elapsedMs(start: Long): Long {

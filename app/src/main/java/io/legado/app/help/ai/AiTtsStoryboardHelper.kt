@@ -743,6 +743,7 @@ object AiTtsStoryboardHelper {
         supportsReasoning: Boolean
     ): PreparedModelResult {
         val content = selection.requestStoryboardText(
+            logSource = "AI听书 · 合并分镜",
             messages = listOf(
                 AiMessage(
                     AiMessage.Role.SYSTEM,
@@ -811,6 +812,7 @@ object AiTtsStoryboardHelper {
             contextParagraphs = paragraphs
         )
         val content = selection.requestStoryboardText(
+            logSource = "AI听书 · 场景划分",
             messages = listOf(
                 AiMessage(AiMessage.Role.SYSTEM, readAssetPrompt(PERFORMANCE_SCENES_SKILL_ASSET)),
                 AiMessage(AiMessage.Role.USER, GSON.toJson(payload))
@@ -920,6 +922,7 @@ object AiTtsStoryboardHelper {
     ): List<ModelUnitResult> {
         val payload = request.toPayload(targetUnits)
         val content = selection.requestStoryboardText(
+            logSource = "AI听书 · 分镜归因",
             messages = listOf(
                 AiMessage(AiMessage.Role.SYSTEM, systemPrompt),
                 AiMessage(AiMessage.Role.USER, GSON.toJson(payload))
@@ -940,13 +943,14 @@ object AiTtsStoryboardHelper {
     }
 
     private suspend fun AiModelSelection.requestStoryboardText(
+        logSource: String,
         messages: List<AiMessage>,
         params: AiTextParams
     ): String {
         val result = try {
             AiManager.generateText(
                 messages,
-                params,
+                params.copy(networkLogSource = logSource),
                 providerId,
                 modelId
             )

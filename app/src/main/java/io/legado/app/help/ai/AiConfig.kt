@@ -459,7 +459,8 @@ object AiConfig {
             temperature = 0f,
             enableThinking = level != AiReasoningLevel.OFF && level != AiReasoningLevel.AUTO,
             disableThinking = level == AiReasoningLevel.OFF,
-            reasoningEffort = level.reasoningEffort
+            reasoningEffort = level.reasoningEffort,
+            networkLogSource = "AI净化"
         )
     }
 

@@ -28,6 +28,9 @@ object NetworkLog {
         "x-goog-api-key",
         "x-auth-token",
         "x-access-token",
+        "x-user-id",
+        "x-enterprise-id",
+        "chatgpt-account-id",
         "x-csrf-token",
         "csrf-token",
         "x-xsrf-token",
@@ -81,22 +84,58 @@ object NetworkLog {
         error: Throwable? = null
     ) {
         if (!isEnabled) return
-        add(
-            Entry(
-                id = nextId.incrementAndGet(),
-                time = System.currentTimeMillis(),
-                source = displaySource(request.networkLogSource()),
-                type = "OkHttp",
-                method = request.method,
-                url = redactUrlForLog(request.url.toString()),
-                statusCode = response?.code,
-                tookMs = tookMs,
-                requestHeaders = formatHeaders(request.headers),
-                requestBody = requestBodyText(request),
-                responseHeaders = response?.headers?.let { formatHeaders(it) },
-                responseBody = response?.previewBodyText(),
-                error = error?.let { redactThrowableForLog(it).stackTraceToString() }
-            )
+        add(okHttpEntry(request, response, tookMs, error, aiRequest = false))
+    }
+
+    internal fun recordAiHttp(
+        request: Request,
+        response: Response?,
+        tookMs: Long,
+        error: Throwable? = null
+    ): Response? {
+        if (!isEnabled) return response
+        val entry = okHttpEntry(request, response, tookMs, error, aiRequest = true)
+        add(entry)
+        if (response == null || request.networkLogSource() == null) return response
+        val mediaType = response.body.contentType()
+        if (mediaType != null && mediaType.type != "text" &&
+            mediaType.subtype != "json" && !mediaType.subtype.endsWith("+json")
+        ) return response
+        return response.captureNetworkLogBody { body ->
+            if (isEnabled) updateResponseBody(entry.id, body.redactedForNetworkLog())
+        }
+    }
+
+    internal fun okHttpEntry(
+        request: Request,
+        response: Response?,
+        tookMs: Long,
+        error: Throwable?,
+        aiRequest: Boolean
+    ): Entry {
+        val source = request.networkLogSource()
+        val captureDetails = !aiRequest || source != null
+        val url = if (aiRequest) {
+            request.url.newBuilder().username("").password("").query(null).fragment(null).build()
+        } else {
+            request.url
+        }
+        return Entry(
+            id = nextId.incrementAndGet(),
+            time = System.currentTimeMillis(),
+            source = displaySource(source ?: "AI".takeIf { aiRequest }),
+            type = "OkHttp",
+            method = request.method,
+            url = redactUrlForLog(url.toString()),
+            statusCode = response?.code,
+            tookMs = tookMs,
+            requestHeaders = if (captureDetails) formatHeaders(request.headers) else null,
+            requestBody = if (captureDetails) requestBodyText(request) else null,
+            responseHeaders = if (captureDetails) response?.headers?.let(::formatHeaders) else null,
+            responseBody = if (aiRequest) null else response?.previewBodyText(),
+            error = error?.let {
+                if (aiRequest) it.javaClass.simpleName else redactThrowableForLog(it).stackTraceToString()
+            }
         )
     }
 
@@ -139,6 +178,12 @@ object NetworkLog {
         while (items.size > MAX_LOG_SIZE) {
             items.removeLastOrNull()
         }
+    }
+
+    @Synchronized
+    private fun updateResponseBody(id: Long, body: String) {
+        val index = items.indexOfFirst { it.id == id }
+        if (index >= 0) items[index] = items[index].copy(responseBody = body)
     }
 
     internal fun displaySource(source: String?): String {
@@ -243,10 +288,11 @@ object NetworkLog {
 
     private fun requestBodyText(request: Request): String? {
         val body = request.body ?: return null
+        if (body.isOneShot() || body.isDuplex()) return null
         return runCatching {
             val buffer = okio.Buffer()
             body.writeTo(buffer)
-            buffer.readUtf8().limitPreview().redactedForNetworkLog()
+            buffer.readUtf8().redactedForNetworkLog().limitPreview()
         }.getOrElse {
             "[request body unavailable: ${it.localizedMessage}]"
         }
