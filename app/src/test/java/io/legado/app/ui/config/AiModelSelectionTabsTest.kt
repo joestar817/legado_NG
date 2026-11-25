@@ -8,6 +8,7 @@ import io.legado.app.help.ai.AiModelValue
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.modelConfigurationKey
+import io.legado.app.help.ai.usesAccountLogin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -19,7 +20,7 @@ class AiModelSelectionTabsTest {
     )
 
     @Test
-    fun providerTabsRequireEnabledAndNonBlankKeyButNotCachedModels() {
+    fun apiKeyProviderTabsRequireUsableCredentialsButNotCachedModels() {
         val base = AiProviderSetting(
             id = "base", type = AiProviderType.OPENAI,
             name = "Base", baseUrl = "https://example.invalid",
@@ -27,6 +28,7 @@ class AiModelSelectionTabsTest {
         val settings = listOf(
             base.copy(id = "no-key", models = listOf(AiModel("cached"))),
             base.copy(id = "blank-key", apiKey = "  "),
+            base.copy(id = "key-for-another-endpoint", apiKey = "key", apiKeyOrigin = "https://other.invalid/"),
             base.copy(id = "disabled", enabled = false, apiKey = "key"),
             base.copy(id = "empty-catalog", apiKey = "key"),
             base.copy(id = "cached", apiKey = "key", models = listOf(AiModel("model"))),
@@ -34,6 +36,22 @@ class AiModelSelectionTabsTest {
         assertEquals(
             listOf("empty-catalog", "cached"),
             settings.modelSelectionEligibleProviders().map { it.id },
+        )
+    }
+
+    @Test
+    fun providerTabsAcceptAccountCredentialsWithoutAnApiKey() {
+        val accounts = AiDefaultProviders.all().filter { it.usesAccountLogin() }
+        val signedInIds = accounts.map { it.id }.toSet()
+        val available = accounts.modelSelectionEligibleProviders { it.id in signedInIds }
+        assertEquals(accounts.map { it.id }, available.map { it.id })
+
+        val signedOutId = AiDefaultProviders.CHATGPT_ID
+        val disabledId = AiDefaultProviders.CODEX_ID
+        val settings = accounts.map { it.copy(enabled = it.id != disabledId) }
+        assertEquals(
+            listOf(AiDefaultProviders.WORK_BUDDY_ID),
+            settings.modelSelectionEligibleProviders { it.id != signedOutId }.map { it.id },
         )
     }
 

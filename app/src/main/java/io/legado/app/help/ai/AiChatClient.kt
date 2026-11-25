@@ -49,6 +49,41 @@ class AiChatClient internal constructor(
 
     constructor() : this(clientForTimeout = ::aiHttpClient)
 
+    internal suspend fun generateAccountText(
+        setting: AiProviderSetting,
+        model: AiModel,
+        messages: List<AiMessage>,
+        params: AiTextParams,
+    ): AiTextResult {
+        require(setting.usesAccountLogin())
+        val completion = clientForTimeout(setting.timeoutSeconds).completeChat(
+            setting = setting.copy(streamResponseEnabled = true),
+            model = model,
+            messages = messages.map { message ->
+                JsonObject().apply {
+                    addProperty("role", message.role.apiValue)
+                    addProperty("content", message.content)
+                }
+            },
+            tools = emptyList(),
+            params = params,
+            conversationId = null,
+        )
+        completion.requireAssistantEnd()
+        check(completion.toolCalls.size() == 0 && completion.message.objectOrNull("function_call") == null) {
+            "模型返回了工具调用，请重新选择文本模型"
+        }
+        return AiTextResult(
+            content = completion.content,
+            reasoning = completion.reasoning,
+            model = completion.model ?: model.id,
+            finishReason = completion.finishReason,
+            promptTokens = completion.usage?.promptTokens,
+            completionTokens = completion.usage?.completionTokens,
+            totalTokens = completion.usage?.totalTokens,
+        )
+    }
+
     internal suspend fun testModelGeneration(
         setting: AiProviderSetting,
         model: AiModel,

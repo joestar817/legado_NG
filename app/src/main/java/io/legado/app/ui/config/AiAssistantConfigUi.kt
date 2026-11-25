@@ -48,7 +48,6 @@ import io.legado.app.help.ai.AiReasoningLevel
 import io.legado.app.help.ai.ENABLE_REASONING_CHOICE
 import io.legado.app.help.ai.assistantModelChoice
 import io.legado.app.help.ai.assistantModelChoices
-import io.legado.app.help.ai.apiKeyNeedsReentry
 import io.legado.app.help.ai.hasRequestCredentials
 import io.legado.app.help.ai.catalogFetchRequired
 import io.legado.app.help.ai.effectiveModelInfo
@@ -932,12 +931,12 @@ internal fun createModelCapabilityTag(
 internal fun AiProviderSetting.assistantEligibleModels(): List<AiModel> =
     assistantModelChoices().map { it.model }
 
-internal fun List<AiProviderSetting>.modelSelectionEligibleProviders(): List<AiProviderSetting> {
-    return filter { it.enabled && it.apiKey.isNotBlank() && !it.apiKeyNeedsReentry() }
-}
+internal fun List<AiProviderSetting>.modelSelectionEligibleProviders(
+    hasCredentials: (AiProviderSetting) -> Boolean = AiProviderSetting::hasRequestCredentials,
+): List<AiProviderSetting> = filter { it.enabled && hasCredentials(it) }
 
 internal fun assistantModelSelectionProviders(): List<AiModelSelectionProviderUiModel> {
-    return AiProviderStore.enabledProviders().filter { it.hasRequestCredentials() }
+    return AiProviderStore.providers().modelSelectionEligibleProviders()
         .map { it.toAssistantModelSelectionProviderUiModel() }
 }
 

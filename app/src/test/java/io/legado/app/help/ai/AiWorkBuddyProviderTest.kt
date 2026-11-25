@@ -26,6 +26,63 @@ class AiWorkBuddyProviderTest {
     private val preset = AiDefaultProviders.all().single { it.isWorkBuddyAccountProvider() }
 
     @Test
+    fun accountTextGenerationCollectsTheStreamWithoutAssistantTools() = runBlocking {
+        val output = """{"units":[]}"""
+        val http = mockHttp { request ->
+            assertEquals(WORK_BUDDY_CHAT_PATH, request.url.encodedPath)
+            assertEquals("Bearer access-1", request.header("Authorization"))
+            val body = Buffer().also { request.body!!.writeTo(it) }.readUtf8().let(::json)
+            assertEquals("hy4", body.get("model").asString)
+            assertTrue(body.get("stream").asBoolean)
+            assertEquals(4096, body.get("max_tokens").asInt)
+            assertEquals(
+                listOf(message("system", "Return only JSON."), message("user", "Label this passage.")),
+                body.getAsJsonArray("messages").map { it.asJsonObject },
+            )
+            assertFalse(body.has("tools"))
+            streamReply("{", output.drop(1), reasoning = "Classifying the passage")
+        }
+        val sessions = AiWorkBuddySessions(Storage(account()), { http })
+        val chat = AiChatClient(workBuddy = sessions) { http }
+        val result = chat.generateAccountText(
+            setting = preset.copy(workBuddyAccountId = "fixture", streamResponseEnabled = false),
+            model = AiModel("hy4"),
+            messages = listOf(
+                AiMessage(AiMessage.Role.SYSTEM, "Return only JSON."),
+                AiMessage(AiMessage.Role.USER, "Label this passage."),
+            ),
+            params = AiTextParams(maxTokens = 4096, jsonResponse = true),
+        )
+        assertEquals(output, result.content)
+        assertEquals("hy4", result.model)
+        assertEquals("stop", result.finishReason)
+        assertEquals("Classifying the passage", result.reasoning)
+    }
+
+    @Test
+    fun accountTextGenerationRejectsAnInterruptedWorkBuddyStream() {
+        val http = mockHttp {
+            Reply(
+                """data: {"choices":[{"delta":{"content":"partial text"}}]}""" + "\n\n",
+                type = "text/event-stream",
+            )
+        }
+        val sessions = AiWorkBuddySessions(Storage(account()), { http })
+        val chat = AiChatClient(workBuddy = sessions) { http }
+        val error = assertThrows(AiAssistantReplyEndException::class.java) {
+            runBlocking {
+                chat.generateAccountText(
+                    setting = preset.copy(workBuddyAccountId = "fixture"),
+                    model = AiModel("hy4"),
+                    messages = listOf(AiMessage(AiMessage.Role.USER, "Clean this passage.")),
+                    params = AiTextParams(),
+                )
+            }
+        }
+        assertEquals(AiAssistantReplyEndReason.INTERRUPTED, error.reason)
+    }
+
+    @Test
     fun signsInListsModelsAndStreamsTwoTurnsAcrossTokenRenewal() = runBlocking {
         val storage = Storage()
         val requests = mutableListOf<String>()

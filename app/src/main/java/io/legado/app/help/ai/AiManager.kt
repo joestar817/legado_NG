@@ -25,6 +25,7 @@ object AiManager {
     private val openAIProvider by lazy { OpenAiCompatibleProvider() }
     private val googleProvider by lazy { GoogleAiProvider() }
     private val claudeProvider by lazy { ClaudeAiProvider() }
+    private val accountTextClient by lazy { AiChatClient() }
     private val initialModelFetchLocks = ConcurrentHashMap<String, Mutex>()
     private val catalogRequests = mutableMapOf<String, Any>()
 
@@ -35,13 +36,16 @@ object AiManager {
         modelId: String? = null
     ): AiTextResult {
         val setting = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
-        check(!setting.usesAccountLogin()) { "Account provider models are used in the AI assistant" }
+        val accountProvider = setting.usesAccountLogin()
         val requestModel = modelId ?: setting.model
         check(setting.enabled) { "AI provider is disabled" }
         check(requestModel.isNotBlank()) { "AI model is empty" }
-        if (modelId != null) {
-            check(setting.availableCatalogModel(requestModel)?.isTextChatModel() == true) {
+        if (modelId != null || accountProvider) {
+            val model = checkNotNull(setting.availableCatalogModel(requestModel)?.takeIf { it.isTextChatModel() }) {
                 "Selected AI model is unavailable. Select a text model again."
+            }
+            if (accountProvider) {
+                return accountTextClient.generateAccountText(setting, model, messages, params)
             }
         }
         return providerFor(setting).generateText(setting.copy(model = requestModel), messages, params)
