@@ -5,22 +5,26 @@
 
 package io.legado.app.ui.book.info
 
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,34 +40,54 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -73,12 +97,22 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.PopupProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import io.legado.app.R
 import io.legado.app.data.entities.Book
+import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.menuCapabilities
+import io.legado.app.ui.book.character.BookCharacterLabels
+import io.legado.app.ui.book.character.BookCharacterPortraitImage
+import io.legado.app.ui.book.character.BookCharacterPortraits
+import io.legado.app.ui.book.character.BookCharacterSilhouetteStyle
+import io.legado.app.ui.book.character.forRole
 import io.legado.app.ui.book.search.SearchResultCard
 import io.legado.app.ui.config.rememberHasAssistantModelSelection
 import io.legado.app.ui.design.components.NgButtonVariant
@@ -98,8 +132,12 @@ import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
 import io.legado.app.ui.design.components.compose.NgVisualIconButton
 import io.legado.app.ui.design.components.compose.NgWindowLiquidGlassBackdropHost
+import io.legado.app.ui.design.theme.NgColorMath
 import io.legado.app.ui.design.theme.NgTheme
-import androidx.compose.ui.window.PopupProperties
+import io.legado.app.utils.defaultSharedPreferences
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal enum class BookInfoIntroRenderMode {
     TEXT,
@@ -130,8 +168,9 @@ internal data class BookInfoUiState(
     val charactersVisible: Boolean = false,
     val characters: List<BookInfoCharacterUiItem> = emptyList(),
     val characterCount: Int = 0,
+    val characterSilhouetteStyle: BookCharacterSilhouetteStyle = BookCharacterSilhouetteStyle.GENERIC,
     val otherWorksVisible: Boolean = false,
-    val autoLoadOtherWorks: Boolean = false,
+    val autoLoadOtherWorks: Boolean = BookInfoOtherWorksPreferences.DEFAULT_AUTO_LOAD,
     val otherWorksLoading: Boolean = false,
     val otherWorksState: BookInfoOtherWorksState = BookInfoOtherWorksState.Idle,
     val otherWorks: List<BookInfoOtherWorkUiItem> = emptyList(),
@@ -161,8 +200,9 @@ internal data class BookInfoCacheUiState(
 internal data class BookInfoCharacterUiItem(
     val id: Long,
     val name: String,
-    val intro: String,
-    val avatarColorRes: Int,
+    val roleTag: String,
+    val intro: String?,
+    val portraitUri: String?,
 )
 
 internal data class BookInfoOtherWorkUiItem(
@@ -199,6 +239,12 @@ internal enum class BookInfoMenuAction(val itemId: Int) {
     NetworkLog(0x7310),
     AutoLoadOtherWorks(0x7311),
     Settings(0x7312),
+    EditSource(0x7313),
+    ChangeSource(0x7314),
+    ChangeGroup(0x7315),
+    ViewToc(0x7316),
+    CacheBook(0x7317),
+    CharacterAi(0x7318),
     ;
 
     companion object {
@@ -226,8 +272,8 @@ internal sealed interface BookInfoUiEvent {
     data object ChangeGroup : BookInfoUiEvent
     data object OpenToc : BookInfoUiEvent
     data object CacheBook : BookInfoUiEvent
-    data object CharacterAi : BookInfoUiEvent
     data object OpenCharacters : BookInfoUiEvent
+    data class OpenCharacterDetail(val characterId: Long) : BookInfoUiEvent
     data object RefreshOtherWorks : BookInfoUiEvent
     data class OpenOtherWork(val book: SearchBook) : BookInfoUiEvent
     data class ExpandOtherWork(val book: SearchBook) : BookInfoUiEvent
@@ -250,16 +296,39 @@ internal sealed interface BookInfoUiEvent {
 internal fun BookInfoScreen(
     state: BookInfoUiState,
     introView: View,
+    layoutPreview: BookInfoLayout?,
     onEvent: (BookInfoUiEvent) -> Unit,
 ) {
+    val prefs = LocalContext.current.defaultSharedPreferences
+    var savedLayout by remember(prefs) { mutableStateOf(BookInfoLayoutStore.read(prefs)) }
+    var carouselPreferences by remember(prefs) {
+        mutableStateOf(BookInfoCarouselPreferences.read(prefs))
+    }
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == BookInfoLayoutStore.KEY) {
+                savedLayout = BookInfoLayoutStore.read(prefs)
+            }
+            if (key == null || key == BookInfoCarouselPreferences.KEY_AUTO_PLAY ||
+                key == BookInfoCarouselPreferences.KEY_INTERVAL
+            ) {
+                carouselPreferences = BookInfoCarouselPreferences.read(prefs)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        savedLayout = BookInfoLayoutStore.read(prefs)
+        carouselPreferences = BookInfoCarouselPreferences.read(prefs)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val layout = layoutPreview ?: savedLayout
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     NgWindowLiquidGlassBackdropHost(
         modifier = Modifier.fillMaxSize(),
     ) {
         if (isLandscape) {
-            BookInfoLandscape(state = state, introView = introView, onEvent = onEvent)
+            BookInfoLandscape(state, introView, layout, carouselPreferences, onEvent)
         } else {
-            BookInfoPortrait(state = state, introView = introView, onEvent = onEvent)
+            BookInfoPortrait(state, introView, layout, carouselPreferences, onEvent)
         }
     }
     if (state.deleteDialogVisible) {
@@ -274,6 +343,8 @@ internal fun BookInfoScreen(
 private fun BookInfoPortrait(
     state: BookInfoUiState,
     introView: View,
+    layout: BookInfoLayout,
+    carouselPreferences: BookInfoCarouselPreferences,
     onEvent: (BookInfoUiEvent) -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -281,7 +352,11 @@ private fun BookInfoPortrait(
         listState.scrollToItem(0)
     }
     Column(modifier = Modifier.fillMaxSize()) {
-        BookInfoTopBar(state = state, onEvent = onEvent)
+        BookInfoTopBar(
+            state = state,
+            layout = layout,
+            onEvent = onEvent,
+        )
         NgPullRefreshBox(
             isRefreshing = false,
             onRefresh = { onEvent(BookInfoUiEvent.Refresh) },
@@ -302,24 +377,16 @@ private fun BookInfoPortrait(
             ) {
                 state.book?.let { book ->
                     item(key = "hero") {
-                        BookInfoHeroCard(state = state, book = book, onEvent = onEvent)
+                        BookInfoHeroCard(state, book, onEvent, coverPercent = layout.coverPercent)
                     }
-                    item(key = "meta") {
-                        BookInfoMetaCard(state = state, onEvent = onEvent)
-                    }
-                    item(key = "intro") {
-                        BookInfoIntro(state = state, introView = introView, withSurface = true)
-                    }
-                    if (state.charactersVisible) {
-                        item(key = "characters") {
-                            BookInfoCharactersCard(state = state, onEvent = onEvent)
-                        }
-                    }
-                    if (state.otherWorksVisible) {
-                        item(key = "otherWorks") {
-                            BookInfoOtherWorks(state = state, onEvent = onEvent)
-                        }
-                    }
+                    bookInfoSections(
+                        sections = layout.visibleSections(state.charactersVisible, state.otherWorksVisible),
+                        state = state,
+                        introView = introView,
+                        listState = listState,
+                        carouselPreferences = carouselPreferences,
+                        onEvent = onEvent,
+                    )
                 }
             }
         }
@@ -331,6 +398,8 @@ private fun BookInfoPortrait(
 private fun BookInfoLandscape(
     state: BookInfoUiState,
     introView: View,
+    layout: BookInfoLayout,
+    carouselPreferences: BookInfoCarouselPreferences,
     onEvent: (BookInfoUiEvent) -> Unit,
 ) {
     val leftState = rememberLazyListState()
@@ -339,6 +408,9 @@ private fun BookInfoLandscape(
         leftState.scrollToItem(0)
         rightState.scrollToItem(0)
     }
+    val sections = layout.visibleSections(state.charactersVisible, state.otherWorksVisible)
+    // Keep the default two-pane summary, while a later metadata card follows the chosen order.
+    val metadataInSummary = sections.firstOrNull() == BookInfoSection.METADATA
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val contentWidth = maxWidth.coerceAtMost(1280.dp)
         val horizontalPadding = if (contentWidth >= 840.dp) 24.dp else 16.dp
@@ -349,7 +421,11 @@ private fun BookInfoLandscape(
             .coerceAtMost(paneWidth * 0.46f)
 
         Column(modifier = Modifier.fillMaxSize()) {
-            BookInfoTopBar(state = state, onEvent = onEvent)
+            BookInfoTopBar(
+                state = state,
+                layout = layout,
+                onEvent = onEvent,
+            )
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -376,10 +452,13 @@ private fun BookInfoLandscape(
                                 book = book,
                                 onEvent = onEvent,
                                 variant = BookInfoHeroVariant.LANDSCAPE,
+                                coverPercent = layout.coverPercent,
                             )
                         }
-                        item(key = "landMeta") {
-                            BookInfoMetaCard(state = state, onEvent = onEvent)
+                        if (metadataInSummary) {
+                            item(key = "landMeta") {
+                                BookInfoMetaCard(state = state, onEvent = onEvent)
+                            }
                         }
                     }
                 }
@@ -389,20 +468,15 @@ private fun BookInfoLandscape(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    state.book?.let {
-                        item(key = "landIntro") {
-                            BookInfoIntro(state = state, introView = introView, withSurface = true)
-                        }
-                        if (state.charactersVisible) {
-                            item(key = "landCharacters") {
-                                BookInfoCharactersCard(state = state, onEvent = onEvent)
-                            }
-                        }
-                        if (state.otherWorksVisible) {
-                            item(key = "landOtherWorks") {
-                                BookInfoOtherWorks(state = state, onEvent = onEvent)
-                            }
-                        }
+                    if (state.book != null) {
+                        bookInfoSections(
+                            sections = if (metadataInSummary) sections.drop(1) else sections,
+                            state = state,
+                            introView = introView,
+                            listState = rightState,
+                            carouselPreferences = carouselPreferences,
+                            onEvent = onEvent,
+                        )
                     }
                 }
             }
@@ -416,9 +490,28 @@ private fun BookInfoLandscape(
     }
 }
 
+private fun LazyListScope.bookInfoSections(
+    sections: List<BookInfoSection>,
+    state: BookInfoUiState,
+    introView: View,
+    listState: LazyListState,
+    carouselPreferences: BookInfoCarouselPreferences,
+    onEvent: (BookInfoUiEvent) -> Unit,
+) {
+    items(sections, key = { it.key }, contentType = { it }) { section ->
+        when (section) {
+            BookInfoSection.METADATA -> BookInfoMetaCard(state, onEvent)
+            BookInfoSection.INTRO -> BookInfoIntro(state, introView, withSurface = true)
+            BookInfoSection.CHARACTERS -> BookInfoCharactersCard(state, listState, carouselPreferences, onEvent)
+            BookInfoSection.OTHER_WORKS -> BookInfoOtherWorks(state, onEvent)
+        }
+    }
+}
+
 @Composable
 private fun BookInfoTopBar(
     state: BookInfoUiState,
+    layout: BookInfoLayout,
     onEvent: (BookInfoUiEvent) -> Unit,
 ) {
     Row(
@@ -430,7 +523,7 @@ private fun BookInfoTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BookInfoToolbarIcon(
-            iconRes = R.drawable.ic_arrow_back,
+            iconRes = R.drawable.ic_chevron_left_search,
             contentDescription = stringResource(R.string.back),
             tint = colorResource(R.color.ng_search_icon),
             onClick = { onEvent(BookInfoUiEvent.Back) },
@@ -443,16 +536,19 @@ private fun BookInfoTopBar(
                 onClick = { onEvent(BookInfoUiEvent.CustomButton) },
             )
         }
-        BookInfoMoreMenu(state = state, onEvent = onEvent)
+        BookInfoMoreMenu(state, layout, onEvent)
     }
 }
 
 @Composable
 private fun BookInfoMoreMenu(
     state: BookInfoUiState,
+    layout: BookInfoLayout,
     onEvent: (BookInfoUiEvent) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val showCharacterAi = BookInfoSection.CHARACTERS !in layout.hidden &&
+        rememberHasAssistantModelSelection()
     Box {
         BookInfoToolbarIcon(
             iconRes = R.drawable.ic_more_vert,
@@ -462,7 +558,11 @@ private fun BookInfoMoreMenu(
         NgExpandableActionMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            items = bookInfoMenuItems(state),
+            items = bookInfoMenuItems(
+                state = state,
+                metadataVisible = BookInfoSection.METADATA !in layout.hidden,
+                showCharacterAi = showCharacterAi,
+            ),
             variant = NgExpandableActionMenuVariant.DROPDOWN,
             widthVariant = NgExpandableActionMenuWidthVariant.GROUPED_LABELS,
             rowMinHeight = 44.dp,
@@ -479,7 +579,11 @@ private fun BookInfoMoreMenu(
     }
 }
 
-internal fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMenuItem> {
+internal fun bookInfoMenuItems(
+    state: BookInfoUiState,
+    metadataVisible: Boolean = true,
+    showCharacterAi: Boolean = false,
+): List<NgExpandableActionMenuItem> {
     val book = state.book
     return buildList {
         if (state.inBookshelf) {
@@ -496,6 +600,14 @@ internal fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionM
                 dividerBefore = true,
             ),
         )
+        if (book != null) {
+            if (showCharacterAi && state.charactersVisible) {
+                add(BookInfoMenuAction.CharacterAi.item(R.string.book_info_character_ai, R.drawable.ic_ai))
+            }
+            if (!metadataVisible) {
+                add(bookInfoMetadataMenu(state, book))
+            }
+        }
         add(
             NgExpandableActionMenuItem(
                 itemId = MENU_SOURCE_AND_LINKS,
@@ -554,6 +666,32 @@ internal fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionM
     }
 }
 
+private fun bookInfoMetadataMenu(state: BookInfoUiState, book: Book) =
+    NgExpandableActionMenuItem(
+        itemId = MENU_BOOK_METADATA,
+        titleRes = R.string.book_info,
+        iconRes = R.drawable.ic_book_info_read,
+        children = buildList {
+            if (state.sourceAvailable) {
+                add(BookInfoMenuAction.EditSource.item(R.string.edit_book_source, R.drawable.ic_web_outline))
+            }
+            if (book.menuCapabilities.changeSource) {
+                add(BookInfoMenuAction.ChangeSource.item(R.string.change_origin, R.drawable.ic_exchange))
+            }
+            add(BookInfoMenuAction.ChangeGroup.item(R.string.bookshelf_move_to_group, R.drawable.ic_groups))
+            if (state.showToc) {
+                add(BookInfoMenuAction.ViewToc.item(R.string.view_toc, R.drawable.ic_cfg_file_manage))
+            }
+            if (state.showCache) {
+                add(
+                    BookInfoMenuAction.CacheBook.item(
+                        R.string.book_cache, R.drawable.ic_download_line, enabled = state.cache.enabled,
+                    ),
+                )
+            }
+        },
+    )
+
 private fun BookInfoMenuAction.item(
     titleRes: Int,
     iconRes: Int,
@@ -592,59 +730,64 @@ private fun BookInfoHeroCard(
     book: Book,
     onEvent: (BookInfoUiEvent) -> Unit,
     variant: BookInfoHeroVariant = BookInfoHeroVariant.PORTRAIT,
+    coverPercent: Int,
 ) {
     val landscape = variant == BookInfoHeroVariant.LANDSCAPE
+    val baseCoverWidth = if (landscape) 96.dp else 78.dp
+    val coverSpacing = 16.dp
     BookInfoCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            NgBookCover(
-                book = book,
-                coverRadius = 8,
-                contentDescription = stringResource(R.string.img_cover),
-                revision = state.coverRevision,
-                modifier = Modifier
-                    .size(
-                        width = if (landscape) 96.dp else 78.dp,
-                        height = if (landscape) 128.dp else 104.dp,
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val coverWidthLimit = maxOf(baseCoverWidth, maxWidth * 0.45f)
+                .coerceAtMost((maxWidth - coverSpacing).coerceAtLeast(0.dp))
+            val coverWidth = (baseCoverWidth * (coverPercent / 100f)).coerceAtMost(coverWidthLimit)
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                NgBookCover(
+                    book = book,
+                    coverRadius = 8,
+                    contentDescription = stringResource(R.string.img_cover),
+                    revision = state.coverRevision,
+                    modifier = Modifier
+                        .size(width = coverWidth, height = coverWidth * (4f / 3f))
+                        .combinedClickable(
+                            onClick = { onEvent(BookInfoUiEvent.CoverClick) },
+                            onLongClick = { onEvent(BookInfoUiEvent.CoverLongClick) },
+                        ),
+                )
+                Spacer(Modifier.width(coverSpacing))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = book.name,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (landscape) Modifier else Modifier.basicMarquee())
+                            .combinedClickable(
+                                onClick = { onEvent(BookInfoUiEvent.NameClick) },
+                                onLongClick = { onEvent(BookInfoUiEvent.NameLongClick) },
+                            ),
+                        color = colorResource(R.color.primaryText),
+                        fontSize = if (landscape) 18.sp else 17.sp,
+                        lineHeight = if (landscape) 24.sp else 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = if (landscape) 2 else 1,
+                        overflow = if (landscape) TextOverflow.Ellipsis else TextOverflow.Clip,
                     )
-                    .combinedClickable(
-                        onClick = { onEvent(BookInfoUiEvent.CoverClick) },
-                        onLongClick = { onEvent(BookInfoUiEvent.CoverLongClick) },
-                    ),
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = book.name,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (landscape) Modifier else Modifier.basicMarquee())
-                        .combinedClickable(
-                            onClick = { onEvent(BookInfoUiEvent.NameClick) },
-                            onLongClick = { onEvent(BookInfoUiEvent.NameLongClick) },
-                        ),
-                    color = colorResource(R.color.primaryText),
-                    fontSize = if (landscape) 18.sp else 17.sp,
-                    lineHeight = if (landscape) 24.sp else 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = if (landscape) 2 else 1,
-                    overflow = if (landscape) TextOverflow.Ellipsis else TextOverflow.Clip,
-                )
-                Text(
-                    text = book.getRealAuthor(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp, bottom = 12.dp)
-                        .combinedClickable(
-                            onClick = { onEvent(BookInfoUiEvent.AuthorClick) },
-                            onLongClick = { onEvent(BookInfoUiEvent.AuthorLongClick) },
-                        ),
-                    color = colorResource(R.color.tv_text_summary),
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                BookInfoTags(tags = state.tags, onEvent = onEvent)
+                    Text(
+                        text = book.getRealAuthor(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp, bottom = 12.dp)
+                            .combinedClickable(
+                                onClick = { onEvent(BookInfoUiEvent.AuthorClick) },
+                                onLongClick = { onEvent(BookInfoUiEvent.AuthorLongClick) },
+                            ),
+                        color = colorResource(R.color.tv_text_summary),
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    BookInfoTags(tags = state.tags, onEvent = onEvent)
+                }
             }
         }
     }
@@ -944,82 +1087,190 @@ internal fun BookInfoIntro(
 @Composable
 private fun BookInfoCharactersCard(
     state: BookInfoUiState,
+    listState: LazyListState,
+    carouselPreferences: BookInfoCarouselPreferences,
     onEvent: (BookInfoUiEvent) -> Unit,
 ) {
-    BookInfoCard(
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 16.dp,
-            top = 8.dp,
-            end = 16.dp,
-            bottom = 4.dp,
-        ),
+    val openCharacters = { onEvent(BookInfoUiEvent.OpenCharacters) }
+    if (state.characters.isNotEmpty()) {
+        key(state.book?.bookUrl) {
+            BookInfoCharacterCarousel(
+                characters = state.characters,
+                characterCount = state.characterCount,
+                silhouetteStyle = state.characterSilhouetteStyle,
+                listState = listState,
+                carouselPreferences = carouselPreferences,
+                onOpenCharacters = openCharacters,
+                onOpenCharacter = { onEvent(BookInfoUiEvent.OpenCharacterDetail(it)) },
+            )
+        }
+    } else {
+        BookInfoCard(
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 4.dp),
+        ) {
+            BookInfoCharacterHeader(state.characterCount, openCharacters)
+            Text(
+                text = stringResource(R.string.book_info_characters_empty),
+                modifier = Modifier.fillMaxWidth()
+                    .clickable(role = Role.Button, onClick = openCharacters)
+                    .padding(bottom = 12.dp),
+                color = colorResource(R.color.tv_text_summary),
+                fontSize = 13.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BookInfoCharacterHeader(
+    characterCount: Int,
+    onOpenCharacters: () -> Unit,
+    modifier: Modifier = Modifier,
+    overArtwork: Boolean = false,
+) {
+    val primary = NgTheme.colors.primary
+    val chipColor = Color(0xFFF7FCFF).copy(alpha = 0.76f)
+    val chip = if (overArtwork) {
+        Modifier.background(chipColor, CircleShape).padding(horizontal = 7.dp, vertical = 3.dp)
+    } else {
+        Modifier
+    }
+    val titleColor = if (overArtwork) Color(0xFF344E60) else colorResource(R.color.primaryText)
+    val linkColor = if (overArtwork) {
+        Color(
+            NgColorMath.readableContentColor(
+                background = chipColor.compositeOver(Color.Black).toArgb(),
+                preferred = NgColorMath.blend(primary, Color.Black.toArgb(), 0.34f),
+            ),
+        )
+    } else {
+        Color(primary)
+    }
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = if (overArtwork) Alignment.Top else Alignment.CenterVertically,
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.book_characters),
-                modifier = Modifier.weight(1f),
-                color = colorResource(R.color.primaryText),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
+                modifier = chip,
+                color = titleColor,
+                fontSize = if (overArtwork) 10.sp else 15.sp,
+                lineHeight = if (overArtwork) 12.sp else 18.sp,
+                fontWeight = if (overArtwork) FontWeight.Medium else FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            if (rememberHasAssistantModelSelection()) {
-                IconButton(
-                    onClick = { onEvent(BookInfoUiEvent.CharacterAi) },
-                    modifier = Modifier.size(32.dp),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_ai),
-                        contentDescription = stringResource(R.string.ai_assistant),
-                        tint = colorResource(R.color.tv_text_summary),
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
         }
-        if (state.characters.isEmpty()) {
-            Text(
-                text = stringResource(R.string.book_character_empty),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onEvent(BookInfoUiEvent.OpenCharacters) }
-                    .padding(vertical = 10.dp),
-                color = colorResource(R.color.tv_text_summary),
-                fontSize = 13.sp,
-            )
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                state.characters.forEach { character ->
-                    BookInfoCharacterCard(character = character) {
-                        onEvent(BookInfoUiEvent.OpenCharacters)
-                    }
-                }
-            }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(24.dp)
-                .clickable { onEvent(BookInfoUiEvent.OpenCharacters) },
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            modifier = Modifier.heightIn(min = if (overArtwork) 48.dp else 44.dp)
+                .clickable(role = Role.Button, onClick = onOpenCharacters),
+            contentAlignment = if (overArtwork) Alignment.TopCenter else Alignment.Center,
         ) {
-            Text(
-                text = stringResource(R.string.character_count_format, state.characterCount),
-                color = colorResource(R.color.tv_text_summary),
-                fontSize = 13.sp,
+            Row(
+                modifier = if (overArtwork) chip else Modifier.padding(start = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (overArtwork) 4.dp else 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.character_count_format, characterCount),
+                    color = linkColor,
+                    fontSize = if (overArtwork) 10.sp else 13.sp,
+                    lineHeight = if (overArtwork) 12.sp else 16.sp,
+                    fontWeight = if (overArtwork) FontWeight.Medium else FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                Icon(
+                    painter = painterResource(R.drawable.ic_chevron_right_20),
+                    contentDescription = null,
+                    tint = linkColor,
+                    modifier = Modifier.size(if (overArtwork) 12.dp else 18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BookInfoCharacterCarousel(
+    characters: List<BookInfoCharacterUiItem>,
+    characterCount: Int,
+    silhouetteStyle: BookCharacterSilhouetteStyle,
+    listState: LazyListState,
+    carouselPreferences: BookInfoCarouselPreferences,
+    onOpenCharacters: () -> Unit,
+    onOpenCharacter: (Long) -> Unit,
+) {
+    val pagerState = rememberPagerState(pageCount = { characters.size })
+    val cardInteractions = remember { MutableInteractionSource() }
+    BookInfoCharacterAutoplay(pagerState, listState, carouselPreferences, cardInteractions)
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(NgTheme.shapes.smallDp.dp)),
+    ) {
+        val height = (maxWidth * 0.60f).coerceIn(172.dp, 224.dp)
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth().height(height),
+            key = { characters[it].id },
+        ) { page ->
+            val character = characters[page]
+            BookInfoCharacterCard(
+                character = character,
+                silhouetteStyle = silhouetteStyle,
+                page = page,
+                pageCount = characters.size,
+                interactionSource = cardInteractions,
+                onClick = { onOpenCharacter(character.id) },
             )
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_right_20),
-                contentDescription = null,
-                tint = colorResource(R.color.tv_text_summary),
-                modifier = Modifier.size(20.dp),
-            )
+        }
+        BookInfoCharacterHeader(
+            characterCount = characterCount,
+            onOpenCharacters = onOpenCharacters,
+            modifier = Modifier.align(Alignment.TopCenter).padding(start = 8.dp, end = 8.dp, top = 7.dp),
+            overArtwork = true,
+        )
+    }
+}
+
+@Composable
+private fun BookInfoCharacterAutoplay(
+    pagerState: PagerState,
+    listState: LazyListState,
+    preferences: BookInfoCarouselPreferences,
+    cardInteractions: MutableInteractionSource,
+) {
+    if (!preferences.autoPlay || pagerState.pageCount < 2) return
+    val isVisible by remember(listState) {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.any { it.key == BookInfoSection.CHARACTERS.key }
+        }
+    }
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    if (!isVisible || lifecycleState != Lifecycle.State.RESUMED || !windowFocused) return
+
+    val isPressed by cardInteractions.collectIsPressedAsState()
+    LaunchedEffect(pagerState, listState, preferences.intervalSeconds) {
+        fun isInteracting() = isPressed || pagerState.isScrollInProgress || listState.isScrollInProgress
+
+        while (true) {
+            snapshotFlow(::isInteracting).first { !it }
+            val interrupted = withTimeoutOrNull(preferences.intervalSeconds * 1_000L) {
+                snapshotFlow(::isInteracting).first { it }
+            } == true
+            if (interrupted || isInteracting()) continue
+
+            // A manual swipe can cancel the pager animation without cancelling the timer loop.
+            launch {
+                val lastPage = pagerState.pageCount - 1
+                if (lastPage < 1) return@launch
+                if (pagerState.settledPage >= lastPage) {
+                    pagerState.scrollToPage(0)
+                } else {
+                    pagerState.animateScrollToPage(pagerState.settledPage + 1)
+                }
+            }.join()
         }
     }
 }
@@ -1027,51 +1278,129 @@ private fun BookInfoCharactersCard(
 @Composable
 private fun BookInfoCharacterCard(
     character: BookInfoCharacterUiItem,
+    silhouetteStyle: BookCharacterSilhouetteStyle,
+    page: Int,
+    pageCount: Int,
+    interactionSource: MutableInteractionSource,
     onClick: () -> Unit,
 ) {
-    BookInfoCard(
-        modifier = Modifier.size(width = 150.dp, height = 64.dp).clickable(onClick = onClick),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 8.dp,
-            top = 8.dp,
-            end = 10.dp,
-            bottom = 8.dp,
-        ),
+    val portrait = remember(character.portraitUri) {
+        BookCharacterPortraits.localUri(character.portraitUri)
+    }
+    val silhouette = silhouetteStyle.forRole(character.roleTag, hasPortrait = portrait != null)
+    val artworkBackground = if (portrait == null) {
+        silhouette.background
+    } else {
+        Color(NgTheme.colors.surfaceVariant)
+    }
+    val artworkWidth = 0.68f
+    val artworkAlignment = if (portrait == null) BiasAlignment(0f, -0.7f) else Alignment.TopCenter
+    Box(
+        Modifier.fillMaxSize()
+            .background(artworkBackground)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                role = Role.Button,
+                onClick = onClick,
+            ),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(colorResource(character.avatarColorRes)),
-                contentAlignment = Alignment.Center,
+        BookCharacterPortraitImage(
+            portrait = portrait,
+            silhouette = silhouette,
+            contentDescription = null,
+            modifier = Modifier.align(Alignment.TopEnd).fillMaxWidth(artworkWidth).fillMaxHeight(),
+            alignment = artworkAlignment,
+        )
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.horizontalGradient(
+                    (1f - artworkWidth) to artworkBackground,
+                    0.45f to artworkBackground.copy(alpha = 0.69f),
+                    0.62f to artworkBackground.copy(alpha = 0f),
+                ),
+            ),
+        )
+        Column(
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.12f to Color.Black.copy(alpha = 0.43f),
+                        0.65f to Color.Black.copy(alpha = 0.66f),
+                        1f to Color.Black.copy(alpha = 0.78f),
+                    ),
+                )
+                .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = character.name,
+                        modifier = Modifier.weight(1f, fill = false),
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (character.roleTag != BookCharacter.RoleTag.UNKNOWN) {
+                        Text(
+                            text = BookCharacterLabels.roleLabel(LocalContext.current, character.roleTag),
+                            modifier = Modifier.background(Color(0xA33E567C), CircleShape)
+                                .padding(horizontal = 5.dp, vertical = 2.dp),
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            lineHeight = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (pageCount > 1) {
+                    BookInfoCharacterPosition(page, pageCount)
+                }
+            }
+            character.intro?.let { intro ->
                 Text(
-                    text = character.name.firstOrNull()?.toString().orEmpty(),
+                    text = intro,
                     color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = character.name,
-                    color = colorResource(R.color.primaryText),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = character.intro,
-                    modifier = Modifier.padding(top = 5.dp),
-                    color = colorResource(R.color.tv_text_summary),
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
+                    lineHeight = 15.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun BookInfoCharacterPosition(page: Int, pageCount: Int) {
+    val position = stringResource(R.string.book_info_character_position, page + 1, pageCount)
+    val active = lerp(Color(NgTheme.colors.primary), Color.White, 0.56f)
+    val inactive = Color.White.copy(alpha = 0.44f)
+    Row(
+        modifier = Modifier.semantics { contentDescription = position },
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(pageCount) { index ->
+            val selected = index == page
+            Box(
+                Modifier.size(width = if (selected) 9.dp else 3.dp, height = 3.dp)
+                    .background(if (selected) active else inactive, CircleShape),
+            )
         }
     }
 }
@@ -1081,47 +1410,52 @@ private fun BookInfoOtherWorks(
     state: BookInfoUiState,
     onEvent: (BookInfoUiEvent) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        BookInfoCard(
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+    val dividerColor = colorResource(R.color.secondaryText).copy(alpha = 0.12f)
+    val dividerPadding = Modifier.padding(horizontal = 16.dp)
+    val otherState = state.otherWorksState
+    BookInfoCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 36.dp)
+                .padding(start = 16.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Text(
+                text = stringResource(R.string.book_other_works),
+                modifier = Modifier.weight(1f),
+                color = colorResource(R.color.primaryText),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            IconButton(
+                onClick = { onEvent(BookInfoUiEvent.RefreshOtherWorks) },
+                enabled = !state.otherWorksLoading,
+                modifier = Modifier.size(32.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.book_other_works),
-                    modifier = Modifier.weight(1f),
-                    color = colorResource(R.color.primaryText),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                IconButton(
-                    onClick = { onEvent(BookInfoUiEvent.RefreshOtherWorks) },
-                    enabled = !state.otherWorksLoading,
-                    modifier = Modifier.size(32.dp),
-                ) {
-                    if (state.otherWorksLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = Color(NgTheme.colors.primary),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_refresh_black_24dp),
-                            contentDescription = stringResource(R.string.refresh),
-                            tint = colorResource(R.color.tv_text_summary),
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
+                if (state.otherWorksLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color(NgTheme.colors.primary),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_refresh_black_24dp),
+                        contentDescription = stringResource(R.string.refresh),
+                        tint = colorResource(R.color.tv_text_summary),
+                        modifier = Modifier.size(22.dp),
+                    )
                 }
             }
+        }
+        if (state.otherWorksLoading || otherState != BookInfoOtherWorksState.Idle) {
+            HorizontalDivider(modifier = dividerPadding, thickness = 0.5.dp, color = dividerColor)
         }
         if (state.otherWorksLoading) {
             BookInfoOtherWorksLoading()
         }
-        when (val otherState = state.otherWorksState) {
+        when (otherState) {
             BookInfoOtherWorksState.Idle -> Unit
             BookInfoOtherWorksState.Loading -> Unit
             BookInfoOtherWorksState.Empty -> if (!state.otherWorksLoading) {
@@ -1133,7 +1467,7 @@ private fun BookInfoOtherWorks(
                 )
             }
             BookInfoOtherWorksState.Success -> {
-                state.otherWorks.forEach { item ->
+                state.otherWorks.forEachIndexed { index, item ->
                     SearchResultCard(
                         book = item.book,
                         inBookshelf = item.inBookshelf,
@@ -1144,13 +1478,17 @@ private fun BookInfoOtherWorks(
                                 onEvent(BookInfoUiEvent.ExpandOtherWork(item.book))
                             }
                         },
-                        outerHorizontalPadding = 0.dp,
-                        outerVerticalPadding = 4.dp,
-                        cardCornerRadius = 10.dp,
-                        cardBackgroundColorRes = R.color.ng_book_detail_card_surface,
-                        cardStrokeColorRes = R.color.ng_book_detail_card_stroke,
-                        cardBorderWidth = 0.6.dp,
+                        outerHorizontalPadding = 8.dp,
+                        outerVerticalPadding = 0.dp,
+                        cardCornerRadius = 0.dp,
+                        cardContentPadding = 8.dp,
+                        cardContentTopPadding = if (index == 0) 4.dp else 8.dp,
+                        cardBackgroundColorRes = android.R.color.transparent,
+                        cardBorderWidth = 0.dp,
                     )
+                    if (index < state.otherWorks.lastIndex) {
+                        HorizontalDivider(modifier = dividerPadding, thickness = 0.5.dp, color = dividerColor)
+                    }
                 }
             }
         }
@@ -1252,14 +1590,15 @@ private fun BookInfoCard(
     modifier: Modifier = Modifier.fillMaxWidth(),
     contentPadding: androidx.compose.foundation.layout.PaddingValues =
         androidx.compose.foundation.layout.PaddingValues(0.dp),
+    cornerRadius: Dp = NgTheme.shapes.smallDp.dp,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     NgGlassSurface(
         modifier = modifier,
-        shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp),
+        shape = RoundedCornerShape(cornerRadius),
         style = NgGlassDefaults.bookDetailStyle(),
         role = NgMaterialRole.CONTENT,
-        liquidCornerRadius = NgTheme.shapes.smallDp.dp,
+        liquidCornerRadius = cornerRadius,
         contentPadding = contentPadding,
         content = content,
     )
@@ -1444,3 +1783,4 @@ private fun BookInfoUnsupportedFileDialog(
 
 private const val MENU_SOURCE_AND_LINKS = 0x7382
 private const val MENU_DATA_AND_DIAGNOSTICS = 0x7383
+private const val MENU_BOOK_METADATA = 0x7384

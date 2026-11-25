@@ -85,7 +85,11 @@ import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.audio.AudioPlayActivity
 import io.legado.app.ui.book.changecover.ChangeCoverDialog
 import io.legado.app.ui.book.character.BookCharacterActivity
-import io.legado.app.ui.book.character.BookCharacterLabels
+import io.legado.app.ui.book.character.BookCharacterDetailActivity
+import io.legado.app.ui.book.character.BookCharacterSilhouetteSettings
+import io.legado.app.ui.book.character.BookCharacterSilhouetteStyle
+import io.legado.app.ui.book.character.automaticCharacterSilhouetteStyle
+import io.legado.app.ui.book.character.putAutomaticCharacterSilhouetteStyle
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.changesource.ChangeBookSourceDrawer
 import io.legado.app.ui.book.info.edit.BookInfoEditActivity
@@ -243,6 +247,7 @@ class BookInfoActivity :
         get() = uiState
     internal val bookInfoSettingsSourceKey: String?
         get() = viewModel.bookSource?.getKey()
+    private var layoutPreview by mutableStateOf<Pair<String, BookInfoLayout>?>(null)
     private var pendingWebFileSuccess: ((Book) -> Unit)? = null
     private var pendingArchiveUri: Uri? = null
     private var pendingUnsupportedWebFile: BookInfoViewModel.WebFile? = null
@@ -301,7 +306,6 @@ class BookInfoActivity :
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         uiState = uiState.copy(
             tocText = getString(R.string.toc_s, getString(R.string.loading)),
-            autoLoadOtherWorks = getPrefBoolean(PreferKey.autoLoadBookOtherWorks),
         )
         binding.composeView.setViewCompositionStrategy(
             ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
@@ -311,6 +315,7 @@ class BookInfoActivity :
                 BookInfoScreen(
                     state = uiState,
                     introView = introContainer,
+                    layoutPreview = layoutPreview?.takeIf { it.first == uiState.book?.bookUrl }?.second,
                     onEvent = ::handleUiEvent,
                 )
             }
@@ -328,11 +333,25 @@ class BookInfoActivity :
         viewModel.otherWorksLoadingData.observe(this) {
             uiState = uiState.copy(otherWorksLoading = it)
         }
+        viewModel.otherWorksPreferences.observe(this) { preferences ->
+            uiState = uiState.copy(autoLoadOtherWorks = preferences.autoLoad)
+            viewModel.getBook(false)?.let(viewModel::prepareOtherWorks)
+        }
         viewModel.bookshelfChanged.observe(this) {
             updateOtherWorksUiItems()
         }
         viewModel.waitDialogData.observe(this) { upWaitDialogStatus(it) }
         viewModel.initData(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val current = uiState.book ?: return
+        if (!current.menuCapabilities.textContent) return
+        val style = characterSilhouetteStyle(current)
+        if (style != uiState.characterSilhouetteStyle) {
+            uiState = uiState.copy(characterSilhouetteStyle = style)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -361,12 +380,21 @@ class BookInfoActivity :
             BookInfoUiEvent.ChangeGroup -> changeGroup()
             BookInfoUiEvent.OpenToc -> openChapterListFromUi()
             BookInfoUiEvent.CacheBook -> viewModel.getBook()?.let(::startCacheBook)
-            BookInfoUiEvent.CharacterAi -> viewModel.getBook()?.let(::openCharacterCardAiAssistant)
             BookInfoUiEvent.OpenCharacters -> viewModel.getBook()?.let { current ->
                 openCharacterActivity(
                     current,
                     BookCharacterProfile.workKey(current.name, current.author),
                 )
+            }
+            is BookInfoUiEvent.OpenCharacterDetail -> viewModel.getBook()?.let { current ->
+                if (current.menuCapabilities.textContent) {
+                    BookCharacterDetailActivity.open(
+                        this,
+                        BookCharacterProfile.workKey(current.name, current.author),
+                        event.characterId,
+                        current.automaticCharacterSilhouetteStyle(),
+                    )
+                }
             }
             BookInfoUiEvent.RefreshOtherWorks -> viewModel.searchOtherWorks()
             is BookInfoUiEvent.OpenOtherWork -> showBookInfo(
@@ -412,6 +440,12 @@ class BookInfoActivity :
             BookInfoMenuAction.SetBookVariable -> showBookInfoSettings(BookInfoVariableKind.Book)
             BookInfoMenuAction.CopyBookUrl -> copyBookUrl()
             BookInfoMenuAction.CopyTocUrl -> copyTocUrl()
+            BookInfoMenuAction.EditSource -> handleUiEvent(BookInfoUiEvent.OriginClick)
+            BookInfoMenuAction.ChangeSource -> handleUiEvent(BookInfoUiEvent.ChangeSource)
+            BookInfoMenuAction.ChangeGroup -> handleUiEvent(BookInfoUiEvent.ChangeGroup)
+            BookInfoMenuAction.ViewToc -> handleUiEvent(BookInfoUiEvent.OpenToc)
+            BookInfoMenuAction.CacheBook -> handleUiEvent(BookInfoUiEvent.CacheBook)
+            BookInfoMenuAction.CharacterAi -> viewModel.getBook()?.let(::openCharacterCardAiAssistant)
             BookInfoMenuAction.CanUpdate -> toggleCanUpdate()
             BookInfoMenuAction.SplitLongChapter -> toggleSplitLongChapter()
             BookInfoMenuAction.DeleteAlert -> {
@@ -431,10 +465,7 @@ class BookInfoActivity :
             BookInfoMenuAction.Log -> showDialogFragment<AppLogDialog>()
             BookInfoMenuAction.NetworkLog -> showDialogFragment<NetworkLogDialog>()
             BookInfoMenuAction.AutoLoadOtherWorks -> {
-                val enabled = !uiState.autoLoadOtherWorks
-                putPrefBoolean(PreferKey.autoLoadBookOtherWorks, enabled)
-                uiState = uiState.copy(autoLoadOtherWorks = enabled)
-                viewModel.setAutoLoadOtherWorks(enabled)
+                putPrefBoolean(PreferKey.autoLoadBookOtherWorks, !uiState.autoLoadOtherWorks)
             }
         }
     }
@@ -442,6 +473,20 @@ class BookInfoActivity :
     internal fun onBookInfoSettingsAction(bookUrl: String, action: BookInfoMenuAction) {
         if (viewModel.getBook(false)?.bookUrl == bookUrl) {
             handleBookInfoMenuAction(action)
+        }
+    }
+
+    internal fun previewBookInfoLayout(bookUrl: String, layout: BookInfoLayout?) {
+        if (layout != null) {
+            layoutPreview = bookUrl to layout
+        } else if (layoutPreview?.first == bookUrl) {
+            layoutPreview = null
+        }
+    }
+
+    internal fun scrollToBookInfoCover(bookUrl: String) {
+        if (uiState.book?.bookUrl == bookUrl) {
+            uiState = uiState.copy(scrollResetToken = uiState.scrollResetToken + 1)
         }
     }
 
@@ -645,7 +690,7 @@ class BookInfoActivity :
         upKinds(book)
         upGroup(book)
         observeCharacterPreview(book)
-        viewModel.prepareOtherWorks(book, uiState.autoLoadOtherWorks)
+        viewModel.prepareOtherWorks(book)
     }
 
     private fun updateBookSnapshot(book: Book) {
@@ -681,6 +726,9 @@ class BookInfoActivity :
             charactersVisible = !bookChanged && book.menuCapabilities.textContent && uiState.charactersVisible,
             characters = if (bookChanged) emptyList() else uiState.characters,
             characterCount = if (bookChanged) 0 else uiState.characterCount,
+            characterSilhouetteStyle = if (book.menuCapabilities.textContent) {
+                characterSilhouetteStyle(book)
+            } else BookCharacterSilhouetteStyle.GENERIC,
             otherWorksState = if (bookChanged) {
                 BookInfoOtherWorksState.Idle
             } else {
@@ -821,9 +869,9 @@ class BookInfoActivity :
                 BookInfoCharacterUiItem(
                     id = character.id,
                     name = character.name,
-                    intro = character.displayIntro()
-                        ?: BookCharacterLabels.roleLabel(this, character.roleTag),
-                    avatarColorRes = character.avatarColor(),
+                    roleTag = character.roleTag,
+                    intro = character.displayIntro(),
+                    portraitUri = character.portraitUri,
                 )
             },
         )
@@ -845,13 +893,9 @@ class BookInfoActivity :
         }
     }
 
-    private fun BookCharacter.avatarColor(): Int {
-        return when (gender) {
-            BookCharacter.Gender.MALE -> R.color.character_avatar_male
-            BookCharacter.Gender.FEMALE -> R.color.character_avatar_female
-            else -> R.color.character_avatar_unknown
-        }
-    }
+    private fun characterSilhouetteStyle(book: Book): BookCharacterSilhouetteStyle =
+        BookCharacterSilhouetteSettings.get(this)
+            .resolve(book.automaticCharacterSilhouetteStyle())
 
     private fun openCharacterActivity(book: Book, workKey: String) {
         if (!book.menuCapabilities.textContent) return
@@ -860,6 +904,7 @@ class BookInfoActivity :
             putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, book.name)
             putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, book.author)
             putExtra(BookCharacterActivity.EXTRA_BOOK_URL, book.bookUrl)
+            putAutomaticCharacterSilhouetteStyle(book.automaticCharacterSilhouetteStyle())
         }
     }
 

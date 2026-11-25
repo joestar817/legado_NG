@@ -26,6 +26,20 @@ class BookInfoSettingsTest {
     )
 
     @Test
+    fun settingsTabsFollowTheBooksAvailableFeatures() {
+        val state = onlineState().copy(charactersVisible = true)
+        assertEquals(BookInfoSettingsTab.entries, bookInfoSettingsTabs(state))
+        assertEquals(
+            listOf(BookInfoSettingsTab.General, BookInfoSettingsTab.Layout, BookInfoSettingsTab.Characters),
+            bookInfoSettingsTabs(state.copy(sourceAvailable = false)),
+        )
+        assertEquals(
+            listOf(BookInfoSettingsTab.General, BookInfoSettingsTab.Layout, BookInfoSettingsTab.Variables),
+            bookInfoSettingsTabs(state.copy(charactersVisible = false)),
+        )
+    }
+
+    @Test
     fun onlineSettingsSeparateBookPreferencesAndSharedSourceVariables() {
         val sections = bookInfoSettingsSections(onlineState())
         assertEquals(
@@ -137,11 +151,65 @@ class BookInfoSettingsTest {
             BookInfoMenuAction.SetBookVariable,
             BookInfoMenuAction.SetSourceVariable,
         )
+        val metadataActions = setOf(
+            BookInfoMenuAction.EditSource,
+            BookInfoMenuAction.ChangeSource,
+            BookInfoMenuAction.ChangeGroup,
+            BookInfoMenuAction.ViewToc,
+            BookInfoMenuAction.CacheBook,
+        )
         assertTrue(settings.none { it.itemId in ids })
-        assertEquals((BookInfoMenuAction.entries.toSet() - settings).map { it.itemId }.toSet(), ids)
+        val expectedIds = (BookInfoMenuAction.entries.toSet() - settings - metadataActions -
+            BookInfoMenuAction.CharacterAi).map { it.itemId }.toSet()
+        assertEquals(expectedIds, ids)
         assertEquals(1, leafIds(bookInfoMenuItems(online)).count { it == BookInfoMenuAction.Settings.itemId })
         assertFalse(
             BookInfoMenuAction.Edit.itemId in leafIds(bookInfoMenuItems(online.copy(inBookshelf = false))),
         )
+    }
+
+    @Test
+    fun characterAiMenuRequiresTheCharacterSectionAndAnAssistantModel() {
+        val state = onlineState().copy(charactersVisible = true)
+        val actionId = BookInfoMenuAction.CharacterAi.itemId
+
+        assertFalse(bookInfoMenuItems(state).any { it.itemId == actionId })
+        assertFalse(
+            bookInfoMenuItems(state.copy(charactersVisible = false), showCharacterAi = true)
+                .any { it.itemId == actionId },
+        )
+        val item = bookInfoMenuItems(state, showCharacterAi = true).single { it.itemId == actionId }
+        assertEquals(R.string.book_info_character_ai, item.titleRes)
+    }
+
+    @Test
+    fun hidingBookInformationKeepsItsActionsReachable() {
+        val state = onlineState()
+        val menu = bookInfoMenuItems(state, metadataVisible = false)
+        val actions = menu.single { it.titleRes == R.string.book_info }.children
+        assertEquals(
+            listOf(
+                BookInfoMenuAction.EditSource,
+                BookInfoMenuAction.ChangeSource,
+                BookInfoMenuAction.ChangeGroup,
+                BookInfoMenuAction.ViewToc,
+                BookInfoMenuAction.CacheBook,
+            ).map { it.itemId },
+            actions.map { it.itemId },
+        )
+        assertEquals(state.cache.enabled, actions.last().enabled)
+        assertTrue(menu.any { it.itemId == BookInfoMenuAction.Settings.itemId })
+    }
+
+    @Test
+    fun hiddenInformationMenuRespectsBookCapabilities() {
+        val state = BookInfoUiState(
+            book = Book(originName = "novel.txt", type = BookType.local or BookType.text),
+            showToc = false,
+            showCache = false,
+        )
+        val actions = bookInfoMenuItems(state, metadataVisible = false)
+            .single { it.titleRes == R.string.book_info }.children
+        assertEquals(listOf(BookInfoMenuAction.ChangeGroup.itemId), actions.map { it.itemId })
     }
 }

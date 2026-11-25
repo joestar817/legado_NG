@@ -96,6 +96,7 @@ internal fun SearchResultCard(
     cardCornerRadius: Dp = 18.dp,
     minCardHeight: Dp = 120.dp,
     cardContentPadding: Dp = 10.dp,
+    cardContentTopPadding: Dp = cardContentPadding,
     coverWidth: Dp = 78.dp,
     coverHeight: Dp = 116.5.dp,
     cardBackgroundColorRes: Int = R.color.ng_surface_card,
@@ -137,7 +138,12 @@ internal fun SearchResultCard(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            .padding(cardContentPadding),
+            .padding(
+                start = cardContentPadding,
+                top = cardContentTopPadding,
+                end = cardContentPadding,
+                bottom = cardContentPadding,
+            ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
