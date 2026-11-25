@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -96,9 +97,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.theme.NgSolidButtonPalette
@@ -108,6 +111,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private val formRowStartPadding = 14.dp
 private val formRowEndPadding = 10.dp
@@ -466,6 +470,7 @@ fun NgFormSelectRow(
     enabled: Boolean = true,
     menuVariant: NgFormSelectMenuVariant = NgFormSelectMenuVariant.MATCH_ROW,
     contentStartPadding: Dp = formRowStartPadding,
+    useVisibleWindowBounds: Boolean = false,
 ) {
     NgFormChoiceRow(
         title = title,
@@ -479,6 +484,7 @@ fun NgFormSelectRow(
         menuVariant = menuVariant,
         multiple = false,
         contentStartPadding = contentStartPadding,
+        useVisibleWindowBounds = useVisibleWindowBounds,
     )
 }
 
@@ -544,11 +550,13 @@ private fun NgFormChoiceRow(
     menuVariant: NgFormSelectMenuVariant,
     multiple: Boolean,
     contentStartPadding: Dp = formRowStartPadding,
+    useVisibleWindowBounds: Boolean = false,
 ) {
     val colors = NgTheme.colors
     val layoutDensity = LocalDensity.current
     var expanded by remember { mutableStateOf(false) }
     var rowWidthPx by remember { mutableStateOf(0) }
+    var arrowBoundsInRoot by remember { mutableStateOf<IntRect?>(null) }
     val contentAlpha = if (enabled) 1f else 0.45f
     val rowWidth = with(layoutDensity) { rowWidthPx.toDp() }
     val filter = menuVariant == NgFormSelectMenuVariant.END_ANCHORED_FILTER
@@ -560,6 +568,42 @@ private fun NgFormChoiceRow(
         extraItemWidth = if (multiple) 32.dp else 0.dp,
     )
     val menuOffset = DpOffset(x = (rowWidth - menuWidth).coerceAtLeast(0.dp), y = 0.dp)
+    val menuShape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
+    val menuColor = ngDrawerContentCardColor()
+    val dismissMenu = { expanded = false }
+    val menuItems: @Composable ColumnScope.() -> Unit = {
+        options.forEach { option ->
+            val selected = isSelected(option.value)
+            DropdownMenuItem(
+                enabled = option.enabled,
+                modifier = Modifier
+                    .height(44.dp)
+                    .semantics { this.selected = selected },
+                text = {
+                    Text(
+                        text = option.label,
+                        color = Color(if ((filter || multiple) && selected) colors.primary else colors.onSurface)
+                            .copy(alpha = if (option.enabled) 1f else 0.45f),
+                        style = if (contentWidth) optionStyle else LocalTextStyle.current,
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                trailingIcon = if ((filter || multiple) && selected) {
+                    {
+                        Icon(Icons.Rounded.Check, contentDescription = null,
+                            modifier = Modifier.size(20.dp), tint = Color(colors.primary))
+                    }
+                } else null,
+                onClick = {
+                    if (!multiple) dismissMenu()
+                    onValueChange(option.value)
+                },
+                contentPadding = PaddingValues(horizontal = optionPadding),
+            )
+        }
+    }
 
     Box(
         modifier = modifier
@@ -597,54 +641,51 @@ private fun NgFormChoiceRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Icon(
-                painter = arrowIcon,
-                contentDescription = null,
-                modifier = Modifier.size(formChoiceArrowSize),
-                tint = Color(if (filter) colors.primary else colors.onSurfaceVariant).copy(alpha = contentAlpha),
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.width(menuWidth),
-            offset = menuOffset,
-            shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
-            containerColor = ngDrawerContentCardColor(),
-            tonalElevation = 0.dp,
-            shadowElevation = 4.dp,
-        ) {
-            options.forEach { option ->
-                val selected = isSelected(option.value)
-                DropdownMenuItem(
-                    enabled = option.enabled,
-                    modifier = Modifier
-                        .height(44.dp)
-                        .semantics { this.selected = selected },
-                    text = {
-                        Text(
-                            text = option.label,
-                            color = Color(if ((filter || multiple) && selected) colors.primary else colors.onSurface)
-                                .copy(alpha = if (option.enabled) 1f else 0.45f),
-                            style = if (contentWidth) optionStyle else LocalTextStyle.current,
-                            fontSize = 15.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    trailingIcon = if ((filter || multiple) && selected) {
-                        {
-                            Icon(Icons.Rounded.Check, contentDescription = null,
-                                modifier = Modifier.size(20.dp), tint = Color(colors.primary))
-                        }
-                    } else null,
-                    onClick = {
-                        if (!multiple) expanded = false
-                        onValueChange(option.value)
-                    },
-                    contentPadding = PaddingValues(horizontal = optionPadding),
+            val arrowModifier = if (useVisibleWindowBounds) {
+                Modifier.onGloballyPositioned { coordinates ->
+                    val position = coordinates.positionInRoot()
+                    val left = position.x.roundToInt()
+                    val top = position.y.roundToInt()
+                    arrowBoundsInRoot = IntRect(left, top, left + coordinates.size.width, top + coordinates.size.height)
+                }
+            } else Modifier
+            Box(arrowModifier.height(44.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = arrowIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(formChoiceArrowSize),
+                    tint = Color(if (filter) colors.primary else colors.onSurfaceVariant).copy(alpha = contentAlpha),
                 )
+                if (useVisibleWindowBounds) {
+                    NgPaneAwareDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = dismissMenu,
+                        modifier = Modifier.width(menuWidth),
+                        offset = DpOffset(0.dp, 4.dp),
+                        shape = menuShape,
+                        containerColor = menuColor,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 4.dp,
+                        properties = PopupProperties(focusable = true),
+                        endAnchored = true,
+                        anchorBoundsInRoot = arrowBoundsInRoot,
+                        content = menuItems,
+                    )
+                }
             }
+        }
+        if (!useVisibleWindowBounds) {
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = dismissMenu,
+                modifier = Modifier.width(menuWidth),
+                offset = menuOffset,
+                shape = menuShape,
+                containerColor = menuColor,
+                tonalElevation = 0.dp,
+                shadowElevation = 4.dp,
+                content = menuItems,
+            )
         }
     }
 }
@@ -1400,6 +1441,7 @@ enum class NgFormMultilineFieldVariant {
     DIALOG_UNDERLINE,
     COMPACT_UNDERLINE,
     INSET_ACTION,
+    PANEL,
 }
 
 /**
@@ -1408,6 +1450,7 @@ enum class NgFormMultilineFieldVariant {
  * DIALOG_UNDERLINE 保留旧规则弹窗的浮动标签与底部输入线；
  * COMPACT_UNDERLINE 提供变量输入所需的紧凑下划线和尾部操作；
  * INSET_ACTION 将操作放在同一底板的行尾下方，随输入区一起增高。
+ * PANEL 由连续表单提供底板和分隔线，输入区只绘制文字与光标。
  */
 @Composable
 fun NgFormMultilineField(
@@ -1430,6 +1473,7 @@ fun NgFormMultilineField(
 ) {
     val colors = NgTheme.colors
     val insetAction = variant == NgFormMultilineFieldVariant.INSET_ACTION
+    val inPanel = variant == NgFormMultilineFieldVariant.PANEL
     val shape = RoundedCornerShape(
         (if (insetAction) NgTheme.shapes.mediumDp else NgTheme.shapes.smallDp).dp,
     )
@@ -1445,12 +1489,16 @@ fun NgFormMultilineField(
         label?.takeIf { it.isNotBlank() }?.let {
             Text(
                 text = it,
-                modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
+                modifier = Modifier.padding(start = if (inPanel) 0.dp else 2.dp, bottom = 6.dp),
                 color = Color(
-                    if (underlined) colors.primary else colors.onSurfaceVariant
+                    when {
+                        inPanel -> colors.onSurface
+                        underlined -> colors.primary
+                        else -> colors.onSurfaceVariant
+                    }
                 ).copy(alpha = contentAlpha),
-                fontSize = 13.sp,
-                lineHeight = 16.sp,
+                fontSize = if (inPanel) 14.sp else 13.sp,
+                lineHeight = if (inPanel) 18.sp else 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1462,7 +1510,9 @@ fun NgFormMultilineField(
                 .fillMaxWidth()
                 .heightIn(min = minHeight, max = maxHeight)
                 .then(
-                    if (hideHint && emptyHint != null) {
+                    if (inPanel && !label.isNullOrBlank()) {
+                        Modifier.semantics { contentDescription = label }
+                    } else if (hideHint && emptyHint != null) {
                         Modifier.semantics { contentDescription = emptyHint }
                     } else Modifier
                 ),
@@ -1482,7 +1532,9 @@ fun NgFormMultilineField(
             keyboardActions = keyboardActions,
             decorationBox = { innerTextField ->
                 val fieldModifier = Modifier.fillMaxWidth().heightIn(min = minHeight, max = maxHeight)
-                val decorationModifier = if (underlined) {
+                val decorationModifier = if (inPanel) {
+                    fieldModifier
+                } else if (underlined) {
                     fieldModifier
                         .drawBehind {
                             val strokeWidth = (if (focused) 1.5.dp else 1.dp).toPx()
@@ -1550,7 +1602,7 @@ fun NgFormMultilineField(
                         ) { fieldContent() }
                         if (trailingContent != null) trailingContent() else Spacer(Modifier.width(10.dp))
                     }
-                    underlined -> Box(decorationModifier) { fieldContent() }
+                    inPanel || underlined -> Box(decorationModifier) { fieldContent() }
                     else -> Box(decorationModifier.padding(horizontal = 12.dp, vertical = 10.dp)) { fieldContent() }
                 }
             },

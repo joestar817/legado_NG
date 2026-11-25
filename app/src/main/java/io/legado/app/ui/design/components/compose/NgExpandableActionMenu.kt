@@ -75,6 +75,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
@@ -466,7 +467,7 @@ private fun NgDrillInExpandableActionMenu(
 }
 
 @Composable
-private fun NgPaneAwareDropdownMenu(
+internal fun NgPaneAwareDropdownMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     modifier: Modifier,
@@ -477,6 +478,7 @@ private fun NgPaneAwareDropdownMenu(
     shadowElevation: Dp,
     properties: PopupProperties,
     endAnchored: Boolean = false,
+    anchorBoundsInRoot: IntRect? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val pane = LocalNgPaneBounds.current
@@ -502,19 +504,22 @@ private fun NgPaneAwareDropdownMenu(
     val expandedState = remember { MutableTransitionState(false) }
     expandedState.targetState = expanded
     if (!expandedState.currentState && !expandedState.targetState) return
+    val geometry = if (anchorBoundsInRoot != null) rememberNgPopupWindowGeometry(LocalView.current) else null
     val transformOrigin = remember { mutableStateOf(TransformOrigin.Center) }
     // Let the position provider measure the available height before laying out the full list.
     val anchoredHeightLimit = remember { mutableIntStateOf(1) }
     val horizontalOffset = with(density) { offset.x.roundToPx() }
     val verticalOffset = with(density) { offset.y.roundToPx() }
     val margin = with(density) { if (endAnchored) 8.dp.roundToPx() else 48.dp.roundToPx() }
-    val positionProvider = remember(endAnchored, paneSize, horizontalOffset, verticalOffset, margin) {
+    val positionProvider = remember(endAnchored, paneSize, geometry, anchorBoundsInRoot, horizontalOffset, verticalOffset, margin) {
         if (endAnchored) {
             NgEndAnchoredDropdownPositionProvider(
                 paneSize = paneSize,
                 horizontalOffset = horizontalOffset,
                 gap = verticalOffset.coerceAtLeast(0),
                 margin = margin,
+                visibleBoundsProvider = geometry?.takeIf { paneSize == null }?.let { { it.visibleBoundsInWindow } },
+                anchorInWindow = anchorBoundsInRoot?.let { geometry?.anchorInWindow(it) },
             ) { heightLimit, origin ->
                 anchoredHeightLimit.intValue = heightLimit
                 transformOrigin.value = origin
@@ -569,6 +574,8 @@ internal class NgEndAnchoredDropdownPositionProvider(
     private val horizontalOffset: Int,
     private val gap: Int,
     private val margin: Int,
+    private val visibleBoundsProvider: (() -> IntRect?)? = null,
+    private val anchorInWindow: IntRect? = null,
     private val onPlacement: (heightLimit: Int, transformOrigin: TransformOrigin) -> Unit,
 ) : PopupPositionProvider {
     override fun calculatePosition(
@@ -577,27 +584,36 @@ internal class NgEndAnchoredDropdownPositionProvider(
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize,
     ): IntOffset {
-        val width = minOf(windowSize.width, paneSize?.width ?: windowSize.width)
-        val height = minOf(windowSize.height, paneSize?.height ?: windowSize.height)
-        val horizontalSpace = (width - popupContentSize.width).coerceAtLeast(0)
+        val anchor = anchorInWindow ?: anchorBounds
+        val bounds = visibleBoundsProvider?.invoke()?.takeIf { it.width > 0 && it.height > 0 }
+            ?: IntRect(
+                0, 0,
+                minOf(windowSize.width, paneSize?.width ?: windowSize.width),
+                minOf(windowSize.height, paneSize?.height ?: windowSize.height),
+            )
+        val horizontalSpace = (bounds.width - popupContentSize.width).coerceAtLeast(0)
         val sideMargin = margin.coerceAtMost(horizontalSpace / 2)
         val desiredX = when (layoutDirection) {
-            LayoutDirection.Ltr -> anchorBounds.right - popupContentSize.width + horizontalOffset
-            LayoutDirection.Rtl -> anchorBounds.left - horizontalOffset
+            LayoutDirection.Ltr -> anchor.right - popupContentSize.width + horizontalOffset
+            LayoutDirection.Rtl -> anchor.left - horizontalOffset
         }
-        val x = desiredX.coerceIn(sideMargin, horizontalSpace - sideMargin)
+        val x = desiredX.coerceIn(bounds.left + sideMargin, bounds.left + horizontalSpace - sideMargin)
 
-        val belowTop = anchorBounds.bottom + gap
-        val aboveBottom = anchorBounds.top - gap
-        val belowHeight = (height - margin - belowTop).coerceAtLeast(0)
-        val aboveHeight = (aboveBottom - margin).coerceAtLeast(0)
+        val verticalMargin = margin.coerceAtMost(bounds.height / 2)
+        val visibleTop = bounds.top + verticalMargin
+        val visibleBottom = bounds.bottom - verticalMargin
+        val belowTop = maxOf(anchor.bottom + gap, visibleTop)
+        val aboveBottom = minOf(anchor.top - gap, visibleBottom)
+        val belowHeight = (visibleBottom - belowTop).coerceAtLeast(0)
+        val aboveHeight = (aboveBottom - visibleTop).coerceAtLeast(0)
         val placeBelow = popupContentSize.height <= belowHeight || belowHeight >= aboveHeight
-        val y = if (placeBelow) belowTop else aboveBottom - popupContentSize.height
+        val desiredY = if (placeBelow) belowTop else aboveBottom - popupContentSize.height
+        val y = desiredY.coerceIn(visibleTop, (visibleBottom - popupContentSize.height).coerceAtLeast(visibleTop))
 
-        val pivotX = ((anchorBounds.center.x - x).toFloat() / popupContentSize.width.coerceAtLeast(1))
+        val pivotX = ((anchor.center.x - x).toFloat() / popupContentSize.width.coerceAtLeast(1))
             .coerceIn(0f, 1f)
         onPlacement(
-            maxOf(belowHeight, aboveHeight),
+            maxOf(1, belowHeight, aboveHeight),
             TransformOrigin(pivotX, if (placeBelow) 0f else 1f),
         )
         return IntOffset(x, y)

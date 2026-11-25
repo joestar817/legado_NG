@@ -91,4 +91,54 @@ class NgEndAnchoredDropdownPositionProviderTest {
         assertEquals(IntOffset(140, 96), position)
         assertEquals(256, heightLimit)
     }
+
+    @Test
+    fun characterDrawerMenusFollowTheirFieldsWhenTheDrawerHeightChanges() {
+        val display = IntSize(1116, 2408)
+        val genderArrow = IntRect(467, 478, 527, 610)
+        val tagArrow = IntRect(978, 478, 1038, 610)
+        val genderMenu = IntSize(164, 444)
+        val tagMenu = IntSize(164, 972)
+
+        for (hostTop in listOf(842, 833)) {
+            val gender = characterDrawerProvider(genderArrow, hostTop)
+            val tag = characterDrawerProvider(tagArrow, hostTop)
+            assertEquals(IntOffset(363, hostTop + 622), gender.calculatePosition(genderArrow, display, LayoutDirection.Ltr, genderMenu))
+            assertEquals(IntOffset(874, hostTop + 622), tag.calculatePosition(tagArrow, display, LayoutDirection.Ltr, tagMenu))
+        }
+        val promoteGender = characterDrawerProvider(genderArrow, hostTop = 1197)
+        val promoteTag = characterDrawerProvider(tagArrow, hostTop = 1197)
+        assertEquals(IntOffset(363, 1819), promoteGender.calculatePosition(genderArrow, display, LayoutDirection.Ltr, genderMenu))
+        assertEquals(IntOffset(874, 691), promoteTag.calculatePosition(tagArrow, display, LayoutDirection.Ltr, tagMenu))
+    }
+
+    @Test
+    fun characterTagMenuScrollsAboveItsArrowWhenTheKeyboardRestrictsSpace() {
+        val arrow = IntRect(978, 478, 1038, 610)
+        val provider = characterDrawerProvider(arrow, hostTop = 360, visibleBottom = 1250)
+        val display = IntSize(1116, 1178)
+
+        provider.calculatePosition(arrow, display, LayoutDirection.Ltr, IntSize(164, 1))
+        assertEquals(730, heightLimit)
+        val position = provider.calculatePosition(arrow, display, LayoutDirection.Ltr, IntSize(164, heightLimit))
+
+        assertEquals(IntOffset(874, 96), position)
+        assertEquals(arrow.top + 360 - 12, position.y + heightLimit)
+    }
+
+    private fun characterDrawerProvider(anchorInRoot: IntRect, hostTop: Int, visibleBottom: Int = 2480): NgEndAnchoredDropdownPositionProvider {
+        val host = IntOffset(0, hostTop)
+        val geometry = NgPopupWindowGeometry(
+            hostPositionInWindow = host,
+            visibleBoundsInWindow = popupVisibleFrameInWindow(IntRect(0, 72, 1116, visibleBottom), host, host),
+        )
+        return NgEndAnchoredDropdownPositionProvider(
+            paneSize = null,
+            horizontalOffset = 0,
+            gap = 12,
+            margin = 24,
+            visibleBoundsProvider = { geometry.visibleBoundsInWindow },
+            anchorInWindow = geometry.anchorInWindow(anchorInRoot),
+        ) { availableHeight, _ -> heightLimit = availableHeight }
+    }
 }

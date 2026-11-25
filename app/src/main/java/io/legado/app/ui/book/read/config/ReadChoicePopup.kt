@@ -1,7 +1,5 @@
 package io.legado.app.ui.book.read.config
 
-import android.graphics.Rect
-import android.view.View
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -44,6 +42,7 @@ import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.popupVisibleBoundsInWindow
 import io.legado.app.ui.design.theme.NgTheme
 
 internal enum class ReadChoicePopupVariant { STANDARD, ADAPTIVE, COMPACT }
@@ -221,34 +220,4 @@ internal class EndAnchoredPopupPositionProvider(
         }
         return IntOffset(x, if (constrainToWindow) y.coerceIn(minY, maxY) else y)
     }
-}
-
-/** Popup anchors are window-local, whereas the visible frame is reported in screen coordinates. */
-internal fun popupVisibleFrameInWindow(
-    screenFrame: IntRect,
-    locationOnScreen: IntOffset,
-    locationInWindow: IntOffset,
-): IntRect {
-    val originX = locationOnScreen.x - locationInWindow.x
-    val originY = locationOnScreen.y - locationInWindow.y
-    return IntRect(
-        screenFrame.left - originX, screenFrame.top - originY,
-        screenFrame.right - originX, screenFrame.bottom - originY,
-    )
-}
-
-internal fun popupVisibleBoundsInWindow(view: View): IntRect? {
-    if (!view.isAttachedToWindow) return null
-    val frame = Rect()
-    view.getWindowVisibleDisplayFrame(frame)
-    if (frame.width() <= 0 || frame.height() <= 0) return null
-    val onScreen = IntArray(2)
-    val inWindow = IntArray(2)
-    view.getLocationOnScreen(onScreen)
-    view.getLocationInWindow(inWindow)
-    return popupVisibleFrameInWindow(
-        screenFrame = IntRect(frame.left, frame.top, frame.right, frame.bottom),
-        locationOnScreen = IntOffset(onScreen[0], onScreen[1]),
-        locationInWindow = IntOffset(inWindow[0], inWindow[1]),
-    )
 }

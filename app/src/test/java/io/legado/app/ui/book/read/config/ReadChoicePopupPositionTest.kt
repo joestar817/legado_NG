@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import io.legado.app.ui.design.components.compose.popupVisibleFrameInWindow
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
