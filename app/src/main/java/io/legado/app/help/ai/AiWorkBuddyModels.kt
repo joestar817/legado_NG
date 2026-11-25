@@ -60,3 +60,8 @@ private fun parseCreditMultiplier(credits: String): String? {
     val multiplier = amount.toBigDecimal().stripTrailingZeros()
     return multiplier.setScale(maxOf(2, multiplier.scale())).toPlainString()
 }
+
+internal fun AiProviderSetting.workBuddyStoryboardOutputLimit(modelId: String): Int? {
+    if (!isWorkBuddyAccountProvider()) return null
+    return models.firstOrNull { it.id == modelId }?.modelInfo?.maxOutputTokens?.value?.takeIf { it > 0 }
+}

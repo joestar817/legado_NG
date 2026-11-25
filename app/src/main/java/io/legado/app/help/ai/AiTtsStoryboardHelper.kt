@@ -4,6 +4,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
+import io.legado.app.constant.AppLog
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookCharacter
@@ -59,6 +60,7 @@ object AiTtsStoryboardHelper {
     private const val IDENTITY_CACHE_VERSION = 2
     private const val EXPRESSIVE_CACHE_VERSION = 2
     private const val MEMORY_CACHE_TTL = 5 * 60 * 1000L
+    private const val MAX_UNIT_SPLIT_DEPTH = 2
     private object StoryboardMode {
         const val BASIC = "basic"
         const val PERFORMANCE = "performance"
@@ -740,9 +742,7 @@ object AiTtsStoryboardHelper {
         selection: AiModelSelection,
         supportsReasoning: Boolean
     ): PreparedModelResult {
-        val result = AiManager.generateText(
-            providerId = selection.providerId,
-            modelId = selection.modelId,
+        val content = selection.requestStoryboardText(
             messages = listOf(
                 AiMessage(
                     AiMessage.Role.SYSTEM,
@@ -751,15 +751,13 @@ object AiTtsStoryboardHelper {
                 ),
                 AiMessage(AiMessage.Role.USER, GSON.toJson(request.toPayload(request.units)))
             ),
-            params = AiConfig.readAloudStoryboardParams(
+            params = selection.storyboardUnitParams(
                 targetUnitCount = request.units.size,
                 supportsReasoning = supportsReasoning
             )
         )
-        check(result.content.isNotBlank()) { result.emptyContentMessage() }
-        check(result.finishReason != "length") { "AI 合并分镜输出被截断" }
         return parseAndValidateCombined(
-            raw = result.content,
+            raw = content,
             request = request
         )
     }
@@ -812,9 +810,7 @@ object AiTtsStoryboardHelper {
             lastParagraphIndex = paragraphs.last().paragraphIndex,
             contextParagraphs = paragraphs
         )
-        val result = AiManager.generateText(
-            providerId = selection.providerId,
-            modelId = selection.modelId,
+        val content = selection.requestStoryboardText(
             messages = listOf(
                 AiMessage(AiMessage.Role.SYSTEM, readAssetPrompt(PERFORMANCE_SCENES_SKILL_ASSET)),
                 AiMessage(AiMessage.Role.USER, GSON.toJson(payload))
@@ -825,9 +821,7 @@ object AiTtsStoryboardHelper {
                 largeUnitOutput = false
             )
         )
-        check(result.content.isNotBlank()) { result.emptyContentMessage() }
-        check(result.finishReason != "length") { "AI 场景边界输出被截断" }
-        return parseAndValidateScenes(result.content, paragraphs)
+        return parseAndValidateScenes(content, paragraphs)
     }
 
     private suspend fun requestModelUnits(
@@ -837,34 +831,44 @@ object AiTtsStoryboardHelper {
         supportsReasoning: Boolean,
         targetUnits: List<CandidateUnit>
     ): List<ModelUnitResult> {
-        if (targetUnits.isEmpty()) return emptyList()
-        return runCatching {
+        val assignments = requestStoryboardUnitBatches(targetUnits, onSplit = { count, error ->
+            AppLog.put(
+                "AI听书分镜（${count} 个片段）结果无效，改为两段重试\n${error.localizedMessage}",
+                error
+            )
+        }) { batch ->
             requestModelUnitsOnce(
                 request = request,
                 selection = selection,
                 systemPrompt = systemPrompt,
                 supportsReasoning = supportsReasoning,
-                targetUnits = targetUnits
+                targetUnits = batch
             )
-        }.getOrElse { error ->
-            if (error is CancellationException) throw error
-            if (targetUnits.size < 2) throw error
-            io.legado.app.constant.AppLog.put(
-                "AI听书分镜整章结果无效，改为两段重试\n${error.localizedMessage}",
-                error
-            )
-            val midpoint = (targetUnits.size + 1) / 2
-            val assignments = listOf(targetUnits.take(midpoint), targetUnits.drop(midpoint)).flatMap { chunk ->
-                requestModelUnitsOnce(
-                    request = request,
-                    selection = selection,
-                    systemPrompt = systemPrompt,
-                    supportsReasoning = supportsReasoning,
-                    targetUnits = chunk
-                )
-            }
-            applyAdjacentGenderEvidence(assignments, targetUnits)
         }
+        return applyAdjacentGenderEvidence(assignments, targetUnits)
+    }
+
+    internal suspend fun requestStoryboardUnitBatches(
+        targetUnits: List<CandidateUnit>,
+        onSplit: (Int, Throwable) -> Unit,
+        requestBatch: suspend (List<CandidateUnit>) -> List<ModelUnitResult>
+    ): List<ModelUnitResult> {
+        if (targetUnits.isEmpty()) return emptyList()
+        suspend fun generateBatch(units: List<CandidateUnit>, splitDepth: Int): List<ModelUnitResult> {
+            return try {
+                requestBatch(units)
+            } catch (error: Exception) {
+                if (error is CancellationException || units.size < 2 || splitDepth >= MAX_UNIT_SPLIT_DEPTH) {
+                    throw error
+                }
+                if (splitDepth > 0 && error !is StoryboardOutputTruncatedException) throw error
+                onSplit(units.size, error)
+                val midpoint = (units.size + 1) / 2
+                generateBatch(units.subList(0, midpoint), splitDepth + 1) +
+                    generateBatch(units.subList(midpoint, units.size), splitDepth + 1)
+            }
+        }
+        return generateBatch(targetUnits, splitDepth = 0)
     }
 
     private fun scheduleCachedEnrichment(
@@ -915,36 +919,61 @@ object AiTtsStoryboardHelper {
         targetUnits: List<CandidateUnit>
     ): List<ModelUnitResult> {
         val payload = request.toPayload(targetUnits)
-        val result = AiManager.generateText(
-            providerId = selection.providerId,
-            modelId = selection.modelId,
+        val content = selection.requestStoryboardText(
             messages = listOf(
                 AiMessage(AiMessage.Role.SYSTEM, systemPrompt),
                 AiMessage(AiMessage.Role.USER, GSON.toJson(payload))
             ),
-            params = AiConfig.readAloudStoryboardParams(
+            params = selection.storyboardUnitParams(
                 targetUnitCount = targetUnits.size,
                 supportsReasoning = supportsReasoning
             )
         )
-        check(result.content.isNotBlank()) {
-            result.emptyContentMessage()
-        }
-        check(result.finishReason != "length") {
-            "AI 输出被截断，请切换更大输出窗口的模型或减少章节候选 unit"
-        }
-        return applyAdjacentGenderEvidence(
-            assignments = parseAndValidate(
-                raw = result.content,
-                targetUnits = targetUnits,
-                capabilities = request.storyboardCapabilities,
-                allowNewCharacters = false,
-                knownCharacters = request.characters.map { it.toKnownCharacter() },
-                knownCastRoles = request.castRoles.map { it.toKnownCastRole() }
-            ),
-            targetUnits = targetUnits
+        return parseAndValidate(
+            raw = content,
+            targetUnits = targetUnits,
+            capabilities = request.storyboardCapabilities,
+            allowNewCharacters = false,
+            knownCharacters = request.characters.map { it.toKnownCharacter() },
+            knownCastRoles = request.castRoles.map { it.toKnownCastRole() }
         )
     }
+
+    private suspend fun AiModelSelection.requestStoryboardText(
+        messages: List<AiMessage>,
+        params: AiTextParams
+    ): String {
+        val result = try {
+            AiManager.generateText(
+                messages,
+                params,
+                providerId,
+                modelId
+            )
+        } catch (error: AiAssistantReplyEndException) {
+            if (error.reason == AiAssistantReplyEndReason.TRUNCATED) {
+                throw StoryboardOutputTruncatedException(error)
+            }
+            throw error
+        }
+        if (result.finishReason.equals("length", ignoreCase = true)) {
+            throw StoryboardOutputTruncatedException()
+        }
+        check(result.content.isNotBlank()) { result.emptyContentMessage() }
+        return result.content
+    }
+
+    private fun AiModelSelection.storyboardUnitParams(
+        targetUnitCount: Int,
+        supportsReasoning: Boolean
+    ): AiTextParams {
+        val params = AiConfig.readAloudStoryboardParams(targetUnitCount, supportsReasoning)
+        val outputLimit = AiProviderStore.provider(providerId)?.workBuddyStoryboardOutputLimit(modelId)
+        return outputLimit?.let { params.copy(maxTokens = it) } ?: params
+    }
+
+    internal class StoryboardOutputTruncatedException(cause: Throwable? = null) :
+        IllegalStateException("分镜输出达到模型上限", cause)
 
     private fun buildRequest(
         book: Book,

@@ -26,6 +26,27 @@ class AiWorkBuddyProviderTest {
     private val preset = AiDefaultProviders.all().single { it.isWorkBuddyAccountProvider() }
 
     @Test
+    fun storyboardOutputLimitUsesTheSelectedWorkBuddyCatalogEntry() {
+        val models = listOf(
+            AiModel("hy4flash-free", modelInfo = AiModelInfo(
+                endpoint = WORK_BUDDY_API,
+                maxOutputTokens = AiModelValue(64_000)
+            )),
+            AiModel("hy4std", modelInfo = AiModelInfo(
+                endpoint = WORK_BUDDY_API,
+                maxOutputTokens = AiModelValue(32_000)
+            )),
+            AiModel("unknown-output")
+        )
+        val provider = preset.copy(models = models)
+
+        assertEquals(64_000, provider.workBuddyStoryboardOutputLimit("hy4flash-free"))
+        assertEquals(32_000, provider.workBuddyStoryboardOutputLimit("hy4std"))
+        assertNull(provider.workBuddyStoryboardOutputLimit("unknown-output"))
+        assertNull(provider.copy(id = "custom").workBuddyStoryboardOutputLimit("hy4flash-free"))
+    }
+
+    @Test
     fun accountTextGenerationCollectsTheStreamWithoutAssistantTools() = runBlocking {
         val output = """{"units":[]}"""
         val http = mockHttp { request ->

@@ -5,12 +5,70 @@ import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookTtsCastRole
 import io.legado.app.ui.book.character.StoryboardSegment
 import io.legado.app.ui.book.character.StoryboardSegmentType
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AiTtsStoryboardHelperTest {
+
+    @Test
+    fun truncatedHalfIsSplitAgainWithoutRepeatingSuccessfulBatches() = runBlocking {
+        val units = List(7) { AiTtsStoryboardHelper.CandidateUnit(unitId = "u$it") }
+        val batchSizes = mutableListOf<Int>()
+        val failedBatchSizes = mutableListOf<Int>()
+
+        val assignments = AiTtsStoryboardHelper.requestStoryboardUnitBatches(
+            units,
+            onSplit = { count, _ -> failedBatchSizes += count }
+        ) { batch ->
+            batchSizes += batch.size
+            if (batch.size > 3) throw AiTtsStoryboardHelper.StoryboardOutputTruncatedException()
+            batch.map { AiTtsStoryboardHelper.ModelUnitResult(unitId = it.unitId) }
+        }
+
+        assertEquals(listOf(7, 4, 2, 2, 3), batchSizes)
+        assertEquals(listOf(7, 4), failedBatchSizes)
+        assertEquals(units.map { it.unitId }, assignments.map { it.unitId })
+    }
+
+    @Test
+    fun persistentlyTruncatedOutputStopsAtTheRetryLimit() {
+        val units = List(8) { AiTtsStoryboardHelper.CandidateUnit(unitId = "u$it") }
+        val batchSizes = mutableListOf<Int>()
+
+        assertThrows(AiTtsStoryboardHelper.StoryboardOutputTruncatedException::class.java) {
+            runBlocking {
+                AiTtsStoryboardHelper.requestStoryboardUnitBatches(units, onSplit = { _, _ -> }) { batch ->
+                    batchSizes += batch.size
+                    throw AiTtsStoryboardHelper.StoryboardOutputTruncatedException()
+                }
+            }
+        }
+
+        assertEquals(listOf(8, 4, 2), batchSizes)
+    }
+
+    @Test
+    fun invalidJsonKeepsTheSingleSplitRetry() {
+        val units = List(8) { AiTtsStoryboardHelper.CandidateUnit(unitId = "u$it") }
+        val batchSizes = mutableListOf<Int>()
+        val invalidJson = com.google.gson.JsonSyntaxException("fixture invalid JSON")
+
+        val error = assertThrows(com.google.gson.JsonSyntaxException::class.java) {
+            runBlocking {
+                AiTtsStoryboardHelper.requestStoryboardUnitBatches(units, onSplit = { _, _ -> }) { batch ->
+                    batchSizes += batch.size
+                    throw invalidJson
+                }
+            }
+        }
+
+        assertEquals(invalidJson, error)
+        assertEquals(listOf(8, 4), batchSizes)
+    }
 
     @Test
     fun fallbackRequestCombinesOnlyWhenAutomationAndActorGuidanceAreOff() {
