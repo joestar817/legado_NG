@@ -6,6 +6,7 @@ object AiDefaultProviders {
     internal const val CHATGPT_ID = "chatgpt_subscription"
     internal const val CODEX_ID = "codex_subscription"
     internal const val WORK_BUDDY_ID = "workbuddy"
+    internal const val AGNES_ID = "agnes"
 
     fun all(): List<AiProviderSetting> = listOf(
         AiProviderSetting(
@@ -107,6 +108,17 @@ object AiDefaultProviders {
             modelsUrl = "/models",
             balanceUrl = "/credits",
             balanceJsonPath = "data.total_credits - data.total_usage",
+            enabled = true
+        ),
+        AiProviderSetting(
+            id = AGNES_ID,
+            type = AiProviderType.OPENAI,
+            name = "Agnes AI",
+            baseUrl = "https://apihub.agnes-ai.com/v1",
+            model = "agnes-3.0-flash",
+            modelsUrl = "/models",
+            responsesApiPath = "/responses",
+            streamResponseEnabled = true,
             enabled = true
         ),
         AiProviderSetting(

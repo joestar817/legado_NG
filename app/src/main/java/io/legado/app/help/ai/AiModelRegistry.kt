@@ -18,7 +18,8 @@ data class AiModelReasoningOptions(
 object AiModelRegistry {
 
     fun shouldClearDeclaredCapabilities(modelId: String): Boolean {
-        return modelId.equals("sensenova-u1-fast", ignoreCase = true)
+        return modelId.equals("sensenova-u1-fast", ignoreCase = true) ||
+            modelId.equals("agnes-sys1-1.0", ignoreCase = true)
     }
 
     private val GPT4O = defineAiModel {
@@ -995,6 +996,21 @@ object AiModelRegistry {
         textEmbedding()
     }
 
+    private val AGNES_TEXT_MODELS = listOf(
+        "agnes-3.0-flash", "agnes-3.0-pro", "agnes-2.5-flash", "agnes-2.5-pro",
+        "agnes-2.5-pro-alpha", "agnes-2.5-pro-beta", "agnes-2.5-pro-theta",
+    ).map { id -> defineAiModel { exact(id) } }
+
+    private val AGNES_IMAGE = defineAiModel {
+        tokens("agnes", "image")
+        imageEditOutput()
+    }
+
+    private val AGNES_VIDEO = defineAiModel {
+        tokens("agnes", "video")
+        imageToVideo()
+    }
+
     private val KOLORS_IMAGE = defineAiModel {
         tokens("kolors")
         imageOutput()
@@ -1270,6 +1286,8 @@ object AiModelRegistry {
         BGE_EMBEDDING,
         BGE_RERANKER,
         KOLORS_IMAGE,
+        AGNES_IMAGE,
+        AGNES_VIDEO,
         WAN_TEXT_TO_VIDEO,
         WAN_IMAGE_TO_VIDEO,
         WAN_FIRST_LAST_FRAME_TO_VIDEO,
@@ -1290,7 +1308,7 @@ object AiModelRegistry {
         HY_IMAGE_3_5,
         GROK_VOICE_TRANSCRIBE,
         GPT_TRANSCRIBE
-    ) + OPENAI_TEXT_EMBEDDINGS
+    ) + OPENAI_TEXT_EMBEDDINGS + AGNES_TEXT_MODELS
 
     private val DEEPSEEK_REASONING_MODELS = setOf(
         DEEPSEEK_R1_MODEL,

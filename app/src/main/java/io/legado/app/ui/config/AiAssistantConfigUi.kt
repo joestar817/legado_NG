@@ -1068,6 +1068,7 @@ internal fun AiProviderSetting.iconRes(): Int {
         "xiaomi_mimo" -> R.drawable.ic_provider_mimo
         "siliconflow" -> R.drawable.ic_provider_siliconflow
         "openrouter" -> R.drawable.ic_provider_openrouter
+        AiDefaultProviders.AGNES_ID -> R.drawable.ic_provider_agnes
         "aliyun_bailian" -> R.drawable.ic_provider_aliyun
         "volcengine" -> R.drawable.ic_provider_volcengine
         "moonshot" -> R.drawable.ic_provider_moonshot
@@ -1102,6 +1103,7 @@ private fun resolveModelIconRes(modelName: String): Int? {
         Regex("qwen|qwq|qvq").containsMatchIn(modelName) -> R.drawable.ic_model_qwen
         Regex("doubao").containsMatchIn(modelName) -> R.drawable.ic_model_doubao
         Regex("openrouter").containsMatchIn(modelName) -> R.drawable.ic_provider_openrouter
+        Regex("\\bagnes\\b").containsMatchIn(modelName) -> R.drawable.ic_provider_agnes
         Regex("zhipu|智谱|glm").containsMatchIn(modelName) -> R.drawable.ic_provider_zhipu
         Regex("mistral").containsMatchIn(modelName) -> R.drawable.ic_model_mistral
         Regex("meta\\b|(?<!o)llama").containsMatchIn(modelName) -> R.drawable.ic_model_meta

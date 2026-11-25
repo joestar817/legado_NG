@@ -277,6 +277,23 @@ private val geminiSynchronousPresets = listOf(
     AiModelPreset(1_048_576, 65_536, outputModalities = listOf("text"), toolCalling = true)
 }
 
+// https://wiki.agnes-ai.com/zh-Hans/docs/agnes-30-flash and the other Agnes model guides.
+private val agnesChat = AiModelPreset(
+    efforts = emptyList(),
+    inputModalities = listOf("text", "image"),
+    outputModalities = listOf("text"),
+    reasoning = true,
+)
+private val agnes25Pro = agnesChat.copy(contextWindow = 1_000_000, maxOutputTokens = 65_536)
+private val agnesPresets = mapOf(
+    "agnes-3.0-flash" to agnesChat.copy(contextWindow = 512_000, maxOutputTokens = 65_536, toolCalling = true),
+    "agnes-2.5-flash" to agnesChat.copy(contextWindow = 512_000, maxOutputTokens = 65_500, toolCalling = true),
+    "agnes-3.0-pro" to agnesChat.copy(contextWindow = 1_000_000, maxOutputTokens = 256_000),
+    "agnes-2.5-pro" to agnes25Pro,
+    "agnes-2.5-pro-beta" to agnes25Pro,
+    "agnes-2.5-pro-theta" to agnesChat,
+)
+
 private val modelPresets = mapOf(
     "deepseek" to deepSeekOfficialPresets,
     "openai" to documentedOpenAiModelPresets(),
@@ -294,6 +311,7 @@ private val modelPresets = mapOf(
         "mimo-v2.6-flash", "mimo-v2.6-pro", "mimo-v2.6-pro-ultraspeed",
     ).associateWith { miMoV26 },
     "siliconflow" to siliconFlowPresets,
+    AiDefaultProviders.AGNES_ID to agnesPresets,
     "moonshot" to mapOf(
         "kimi-k3" to kimiK3Preset,
         "kimi-k3.1-pro" to kimiK3Preset,
