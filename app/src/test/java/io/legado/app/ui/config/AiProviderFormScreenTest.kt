@@ -3,12 +3,28 @@ package io.legado.app.ui.config
 import io.legado.app.help.ai.AiDefaultProviders
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderType
+import io.legado.app.help.ai.openAiCreditGrantsUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AiProviderFormScreenTest {
+
+    @Test
+    fun `official OpenAI shows the credit grants action and preserves custom balance config`() {
+        val openAi = AiDefaultProviders.all().first { it.id == "openai" }
+        assertTrue(openAi.toProviderFormScreenState("OpenAI").opensOpenAiCreditGrants)
+        assertEquals(
+            "https://platform.openai.com/settings/organization/billing/credit-grants",
+            openAi.openAiCreditGrantsUrl(),
+        )
+        val customBalance = openAi.copy(useCustomBalanceUrl = true, balanceUrl = "/custom-balance")
+        assertFalse(customBalance.toProviderFormScreenState("OpenAI").opensOpenAiCreditGrants)
+        assertNull(customBalance.openAiCreditGrantsUrl())
+        assertNull(openAi.copy(baseUrl = "https://example.com/v1").openAiCreditGrantsUrl())
+    }
 
     @Test
     fun `built in provider switches its displayed read only API path`() {

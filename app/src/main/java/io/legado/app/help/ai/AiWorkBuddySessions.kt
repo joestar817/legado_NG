@@ -8,7 +8,9 @@ import io.legado.app.R
 import io.legado.app.utils.GSON
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -166,6 +168,7 @@ internal class AiWorkBuddySessions(
             val account = requireAccount(id)
             if (account.expiresAt?.let { it <= nowSeconds() + 60 } == true) refresh(account) else account
         }
+        currentCoroutineContext().ensureActive()
         return try {
             request(current)
         } catch (error: AiWorkBuddyException) {
@@ -174,6 +177,7 @@ internal class AiWorkBuddySessions(
                 val latest = requireAccount(id)
                 if (latest.accessToken != current.accessToken) latest else refresh(latest)
             }
+            currentCoroutineContext().ensureActive()
             request(refreshed)
         }
     }
@@ -230,26 +234,28 @@ internal class AiWorkBuddySessions(
     }
 
     private suspend fun refresh(account: AiWorkBuddyAccount): AiWorkBuddyAccount {
-        val request = workBuddyRequest("/v2/plugin/auth/token/refresh").apply {
-            header("X-Refresh-Token", account.refreshToken)
-            account.enterpriseId?.let { header("X-Enterprise-Id", it) }
-            post(jsonBody(JsonObject()))
-        }.build()
-        val tokens = try {
-            authClient.readWorkBuddyJson(request).workBuddyData()
-        } catch (error: AiWorkBuddyException) {
-            if (error.status != 401 && error.providerCode != WORK_BUDDY_INVALID_REFRESH_CODE) throw error
-            withContext(IO + NonCancellable) { storage.write(account.copy(reauthorizationRequired = true)) }
-            throw AiWorkBuddyException(R.string.ai_workbuddy_session_expired)
+        currentCoroutineContext().ensureActive()
+        // The service may rotate the token before the response reaches a cancelled caller.
+        return withContext(IO + NonCancellable) {
+            val request = workBuddyRequest("/v2/plugin/auth/token/refresh").apply {
+                header("X-Refresh-Token", account.refreshToken)
+                account.enterpriseId?.let { header("X-Enterprise-Id", it) }
+                post(jsonBody(JsonObject()))
+            }.build()
+            val tokens = try {
+                authClient.readWorkBuddyJson(request).workBuddyData()
+            } catch (error: AiWorkBuddyException) {
+                if (error.status != 401 && error.providerCode != WORK_BUDDY_INVALID_REFRESH_CODE) throw error
+                storage.write(account.copy(reauthorizationRequired = true))
+                throw AiWorkBuddyException(R.string.ai_workbuddy_session_expired)
+            }
+            account.copy(
+                accessToken = tokens.requiredToken("accessToken"),
+                refreshToken = tokens.workBuddyHeaderValue("refreshToken") ?: account.refreshToken,
+                domain = tokens.workBuddyDomain() ?: account.domain,
+                expiresAt = tokens.expiration(nowSeconds()),
+            ).also(storage::write)
         }
-        val refreshed = account.copy(
-            accessToken = tokens.requiredToken("accessToken"),
-            refreshToken = tokens.workBuddyHeaderValue("refreshToken") ?: account.refreshToken,
-            domain = tokens.workBuddyDomain() ?: account.domain,
-            expiresAt = tokens.expiration(nowSeconds()),
-        )
-        withContext(IO + NonCancellable) { storage.write(refreshed) }
-        return refreshed
     }
 }
 

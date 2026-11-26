@@ -6,9 +6,48 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AiExtendedModelCatalogTest {
+    @Test
+    fun openAiSpecializedModelsCorrectExistingTextToolFlags() {
+        val provider = AiDefaultProviders.all().first { it.id == "openai" }
+        val dedicated = mapOf(
+            "gpt-image-1.5" to AiModelType.IMAGE,
+            "gpt-image-2.5-flare-2026-09-08" to AiModelType.IMAGE,
+            "gpt-4o-mini-transcribe-2025-12-15" to AiModelType.ASR,
+            "gpt-4o-transcribe-diarize" to AiModelType.ASR,
+            "gpt-4o-mini-tts-2025-12-15" to AiModelType.TTS,
+            "whisper-1" to AiModelType.ASR,
+            "gpt-realtime-1.5" to AiModelType.OTHER,
+            "gpt-live-1.1" to AiModelType.OTHER,
+            "omni-moderation-latest" to AiModelType.OTHER,
+        )
+        for ((id, type) in dedicated) {
+            val old = AiModel(id, abilities = listOf(AiModelAbility.TOOL))
+            assertEquals(id, type, AiModelRegistry.enrich(AiModel(id)).type)
+            val effective = provider.effectiveModelCapabilities(old)
+            assertEquals(id, type, effective.type)
+            assertFalse(id, AiModelAbility.TOOL in effective.abilities)
+            assertFalse(id, effective.isTextChatModel())
+        }
+        val researcher = AiModelRegistry.enrich(AiModel("o3-deep-research"))
+        assertFalse(AiModelAbility.TOOL in provider.effectiveModelCapabilities(researcher).abilities)
+    }
+
+    @Test
+    fun officialBailianAndArkRestoreDocumentedToolCapabilities() {
+        val providers = AiDefaultProviders.all().associateBy(AiProviderSetting::id)
+        val bailian = providers.getValue("aliyun_bailian")
+        val ling = bailian.effectiveModelCapabilities(AiModel("antdigital/Ling-3.1-flash"))
+        assertTrue(ling.isTextChatModel())
+        assertTrue(AiModelAbility.TOOL in ling.abilities)
+        val ark = providers.getValue("volcengine")
+        val doubao = AiModelRegistry.enrich(AiModel("doubao-1-5-pro-32k-250115"))
+        assertTrue(AiModelAbility.TOOL in ark.effectiveModelCapabilities(doubao).abilities)
+        assertNull(ark.copy(baseUrl = "https://gateway.example/v1").effectiveModelInfo(doubao).toolCalling)
+    }
     @Test
     fun arkCatalogReadsNestedLimitsAndCapabilities() {
         val info = readModelInfo(

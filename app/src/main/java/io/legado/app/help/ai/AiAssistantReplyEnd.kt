@@ -25,15 +25,20 @@ internal fun assistantUnfinishedReply(
     content: String,
     reasoning: String?,
 ): AiAssistantReplyEndException? {
-    val endReason = if (refused) {
-        AiAssistantReplyEndReason.REFUSED
-    } else {
-        when (finishReason?.trim()?.lowercase()) {
-            "content_filter", "refusal" -> AiAssistantReplyEndReason.REFUSED
-            "length", "max_tokens", "max_output_tokens" -> AiAssistantReplyEndReason.TRUNCATED
-            "aborted", "cancelled", "canceled", "error", "incomplete" -> AiAssistantReplyEndReason.INTERRUPTED
-            else -> if (streamEnded) return null else AiAssistantReplyEndReason.INTERRUPTED
-        }
-    }
+    val endReason = assistantReplyEndReason(finishReason, streamEnded, refused) ?: return null
     return AiAssistantReplyEndException(endReason, AiChatToolStepContent.streamingProjection(content), reasoning)
+}
+
+internal fun assistantReplyEndReason(
+    finishReason: String?,
+    streamEnded: Boolean,
+    refused: Boolean,
+): AiAssistantReplyEndReason? {
+    if (refused) return AiAssistantReplyEndReason.REFUSED
+    return when (finishReason?.trim()?.lowercase()) {
+        "content_filter", "refusal" -> AiAssistantReplyEndReason.REFUSED
+        "length", "max_tokens", "max_output_tokens" -> AiAssistantReplyEndReason.TRUNCATED
+        "aborted", "cancelled", "canceled", "error", "incomplete" -> AiAssistantReplyEndReason.INTERRUPTED
+        else -> if (streamEnded) null else AiAssistantReplyEndReason.INTERRUPTED
+    }
 }

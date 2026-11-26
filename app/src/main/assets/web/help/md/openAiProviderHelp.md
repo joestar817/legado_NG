@@ -24,3 +24,7 @@ OpenAI API 是 OpenAI 的开发平台，提供 GPT 系列模型。NG 预设使�
 2. 打开「启用 AI」，点击「测试连通性」，确认能读取模型列表。
 3. 切到下方「模型」页，下拉刷新并启用文本对话模型。
 4. 在「AI 设置 → AI助理 → 聊天模型」选择已启用的模型。
+
+### 查看 API 额度
+
+在 OpenAI 提供商配置中点击「查看额度」，登录开发平台后选择领取额度的 API 组织，查看剩余额度和到期时间。 [OpenAI 额度明细](https://platform.openai.com/settings/organization/billing/credit-grants)

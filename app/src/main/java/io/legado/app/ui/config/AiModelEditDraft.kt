@@ -64,6 +64,7 @@ internal fun modelTypeLabelRes(type: AiModelType): Int = when (type) {
     AiModelType.TTS -> R.string.ai_model_type_tts
     AiModelType.VIDEO -> R.string.ai_model_type_video
     AiModelType.OCR -> R.string.ai_model_type_ocr
+    AiModelType.OTHER -> R.string.other
 }
 
 @Composable

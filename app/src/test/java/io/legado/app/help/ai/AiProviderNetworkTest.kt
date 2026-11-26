@@ -1,17 +1,31 @@
 package io.legado.app.help.ai
 
+import android.app.Application
+import androidx.test.core.app.ApplicationProvider
 import com.sun.net.httpserver.HttpServer
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import splitties.init.injectAsAppCtx
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = Application::class)
 class AiProviderNetworkTest {
+    @Before
+    fun setUpAppContext() {
+        ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
+    }
+
     @Test
     fun `same origin redirect preserves authentication and request body`() {
         withServer { server, base ->

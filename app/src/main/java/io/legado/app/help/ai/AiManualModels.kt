@@ -38,6 +38,7 @@ private fun createManualModel(id: String, type: AiModelType, settings: AiModelSe
         AiModelType.ASR -> listOf(AiModelModality.AUDIO) to listOf(AiModelModality.TEXT)
         AiModelType.TTS -> listOf(AiModelModality.TEXT) to listOf(AiModelModality.AUDIO)
         AiModelType.OCR -> listOf(AiModelModality.TEXT, AiModelModality.IMAGE) to listOf(AiModelModality.TEXT)
+        AiModelType.OTHER -> emptyList<AiModelModality>() to emptyList()
     }
     return AiModel(
         id = id,

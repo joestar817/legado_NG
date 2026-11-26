@@ -725,6 +725,14 @@
     <string name="ai_model_test_empty_reply">No text returned</string>
     <string name="ai_model_test_invalid_response">Invalid response</string>
     <string name="ai_assistant_reply_truncated">Reply truncated</string>
+    <string name="ai_log_completed">Completed</string>
+    <string name="ai_log_truncated">Truncated</string>
+    <string name="ai_log_interrupted">Interrupted</string>
+    <string name="ai_log_refused">Refused</string>
+    <string name="ai_log_cancelled">Cancelled</string>
+    <string name="ai_log_failed">Failed</string>
+    <string name="ai_log_headers_time">Response headers · %1$d ms</string>
+    <string name="ai_log_total_time">%1$s · %2$d ms total</string>
     <string name="ai_assistant_reply_interrupted">Reply interrupted</string>
     <string name="ai_chat_web_disabled">Web search · Off</string>
     <string name="ai_chat_web_unavailable">Web search · Unavailable</string>
@@ -891,8 +899,12 @@
     <string name="ai_test_connection_summary">Verify API key by requesting the models endpoint</string>
     <string name="ai_test_success">Response: %1$s\nModel: %2$s</string>
     <string name="ai_connectivity_success">Connected. Model count is %s.</string>
+    <string name="ai_opencode_invalid_key">OpenCode rejected this API key (HTTP 401).</string>
+    <string name="ai_opencode_go_model_denied">OpenCode denied the model request (HTTP 403). Check your Go access and the model’s client and region restrictions.</string>
     <string name="ai_test_failed">Failed: %s</string>
     <string name="ai_query_balance">Balance</string>
+    <string name="ai_openai_credit_grants">View credits</string>
+    <string name="ai_openai_credit_grants_browser_unavailable">No browser is available to open OpenAI API credits.</string>
     <string name="ai_balance_result">%1$s\n%2$s</string>
     <string name="ai_balance_item">%1$s: %2$s %3$s</string>
     <string name="ai_balance_item_detail">Total %1$s %3$s · Used %2$s %3$s</string>

@@ -3,6 +3,7 @@ package io.legado.app.help.ai
 import com.google.gson.JsonParser
 import io.legado.app.ui.config.AiProviderHelpDocuments
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -63,6 +64,25 @@ class AiAgnesProviderTest {
         assertEquals(AiModelType.IMAGE, refreshed.models.single { it.id == "agnes-image-2.5-flash" }.type)
         assertEquals(AiModelType.VIDEO, refreshed.models.single { it.id == "agnes-video-2.5" }.type)
         assertTrue(refreshed.assistantModelChoice(provider.model)!!.model.abilities.contains(AiModelAbility.TOOL))
+        for (id in listOf("agnes-3.0-pro", "agnes-2.5-pro", "agnes-2.5-pro-beta", "agnes-2.5-pro-theta")) {
+            val model = requireNotNull(refreshed.assistantModelChoice(id)).model
+            assertTrue(AiModelAbility.TOOL in model.abilities)
+        }
+    }
+
+    @Test
+    fun newToolDefaultsApplyToCachedModelsAndRespectExplicitOverrides() {
+        val endpoint = provider.modelConfigurationKey()
+        val cached = AiModel("agnes-3.0-pro", modelInfo = AiModelInfo(endpoint))
+        assertTrue(AiModelAbility.TOOL in provider.effectiveModelCapabilities(cached).abilities)
+
+        val disabledByCatalog = cached.copy(modelInfo = AiModelInfo(endpoint, toolCalling = AiModelValue(false)))
+        assertFalse(AiModelAbility.TOOL in provider.effectiveModelCapabilities(disabledByCatalog).abilities)
+
+        val disabledManually = cached.copy(
+            modelSettings = AiModelSettings(endpoint, capabilityOverrides = setOf(AiModelCapabilityField.TOOL_CALLING)),
+        )
+        assertFalse(AiModelAbility.TOOL in provider.effectiveModelCapabilities(disabledManually).abilities)
     }
 
     @Test

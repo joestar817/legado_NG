@@ -23,6 +23,76 @@ import org.junit.Test
 class NetworkLogTest {
 
     @Test
+    fun recordsGenerationAfterHttpSuccessAndRetainsBothElapsedTimes() {
+        val request = Request.Builder().url("https://example.invalid/responses")
+            .tag(NetworkLog.GenerationTrace::class.java, NetworkLog.GenerationTrace())
+            .build()
+        val response = responseWithBody("fixture".toResponseBody())
+        val entry = NetworkLog.okHttpEntry(request, response, 15L, error = null, aiRequest = true)
+        try {
+            NetworkLog.addAiEntry(request, entry)
+            NetworkLog.finishGeneration(request, NetworkLog.GenerationState.TRUNCATED, "length")
+            val finished = requireNotNull(NetworkLog.find(entry.id))
+            assertEquals(200, finished.statusCode)
+            assertEquals(15L, finished.tookMs)
+            assertEquals(NetworkLog.GenerationState.TRUNCATED, finished.generation?.state)
+            assertEquals("length", finished.generation?.finishReason)
+            assertTrue(requireNotNull(finished.generation).elapsedMs >= 0L)
+        } finally {
+            NetworkLog.clear()
+        }
+    }
+
+    @Test
+    fun preservesAnEarlyCancellationWhenTheTransportEntryArrivesLater() {
+        val request = Request.Builder().url("https://example.invalid/responses")
+            .tag(NetworkLog.GenerationTrace::class.java, NetworkLog.GenerationTrace())
+            .build()
+        try {
+            NetworkLog.finishGeneration(request, NetworkLog.GenerationState.CANCELLED)
+            val entry = NetworkLog.okHttpEntry(request, null, 15L, error = null, aiRequest = true)
+            NetworkLog.addAiEntry(request, entry)
+            assertEquals(NetworkLog.GenerationState.CANCELLED, NetworkLog.find(entry.id)?.generation?.state)
+        } finally {
+            NetworkLog.clear()
+        }
+    }
+
+    @Test
+    fun boundsAndRedactsRequestPreviewsEvenWhenACredentialIsCutMidValue() {
+        val secret = "fixture-secret"
+        val body = """{"refresh_token":"$secret""" +
+            "x".repeat(NetworkLog.BODY_PREVIEW_SIZE.toInt()) + """"}"""
+        val request = Request.Builder()
+            .url("https://example.invalid/responses")
+            .header("X-Refresh-Token", "fixture-header")
+            .apply { networkLogSource("Fixture") }
+            .post(body.toRequestBody("application/json".toMediaType()))
+            .build()
+        val entry = NetworkLog.okHttpEntry(request, null, 15L, error = null, aiRequest = true)
+        assertFalse(entry.detail.contains(secret))
+        assertFalse(entry.detail.contains("fixture-header"))
+        assertTrue(entry.requestBody.orEmpty().contains("[已脱敏]"))
+        assertTrue(entry.requestBody.orEmpty().contains("truncated at"))
+    }
+
+    @Test
+    fun evictsOldLargeEntriesBeforeReachingTheEntryCountLimit() {
+        val request = Request.Builder().url("https://example.invalid/responses").build()
+        val preview = "a".repeat(NetworkLog.BODY_PREVIEW_SIZE.toInt())
+        try {
+            repeat(64) {
+                val entry = NetworkLog.okHttpEntry(request, null, 15L, error = null, aiRequest = true)
+                    .copy(requestBody = preview, responseBody = preview)
+                NetworkLog.addAiEntry(request, entry)
+            }
+            assertTrue(NetworkLog.logs.size in 1..16)
+        } finally {
+            NetworkLog.clear()
+        }
+    }
+
+    @Test
     fun aiMetadataLogDoesNotReadTheStreamOrExposeRequestData() {
         var streamReads = 0
         val request = Request.Builder()

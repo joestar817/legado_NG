@@ -719,6 +719,14 @@
     <string name="ai_model_test_empty_reply">未返回正文</string>
     <string name="ai_model_test_invalid_response">无法解析回复</string>
     <string name="ai_assistant_reply_truncated">回复已截断</string>
+    <string name="ai_log_completed">完成</string>
+    <string name="ai_log_truncated">截断</string>
+    <string name="ai_log_interrupted">中断</string>
+    <string name="ai_log_refused">拒绝</string>
+    <string name="ai_log_cancelled">取消</string>
+    <string name="ai_log_failed">失败</string>
+    <string name="ai_log_headers_time">响应头 · %1$d 毫秒</string>
+    <string name="ai_log_total_time">%1$s · 总计 %2$d 毫秒</string>
     <string name="ai_assistant_reply_interrupted">回复中断</string>
     <string name="ai_chat_web_disabled">联网搜索 · 已关闭</string>
     <string name="ai_chat_web_unavailable">联网搜索 · 当前不可用</string>
@@ -883,8 +891,12 @@
     <string name="ai_test_connection_summary">通过模型列表接口验证 API Key</string>
     <string name="ai_test_success">响应：%1$s\n模型：%2$s</string>
     <string name="ai_connectivity_success">连通正常，返回 %s 个模型。</string>
+    <string name="ai_opencode_invalid_key">OpenCode 拒绝了此 API Key（HTTP 401）。</string>
+    <string name="ai_opencode_go_model_denied">OpenCode 拒绝了模型请求（HTTP 403）。请检查 Go 权限及模型的客户端和地区限制。</string>
     <string name="ai_test_failed">失败：%s</string>
     <string name="ai_query_balance">查询余额</string>
+    <string name="ai_openai_credit_grants">查看额度</string>
+    <string name="ai_openai_credit_grants_browser_unavailable">找不到可打开 OpenAI 额度页面的浏览器。</string>
     <string name="ai_balance_result">%1$s\n%2$s</string>
     <string name="ai_balance_item">%1$s：%2$s %3$s</string>
     <string name="ai_balance_item_detail">总额 %1$s %3$s · 已用 %2$s %3$s</string>

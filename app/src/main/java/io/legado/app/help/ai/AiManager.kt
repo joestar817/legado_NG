@@ -25,7 +25,7 @@ object AiManager {
     private val openAIProvider by lazy { OpenAiCompatibleProvider() }
     private val googleProvider by lazy { GoogleAiProvider() }
     private val claudeProvider by lazy { ClaudeAiProvider() }
-    private val accountTextClient by lazy { AiChatClient() }
+    private val textClient by lazy { AiChatClient() }
     private val initialModelFetchLocks = ConcurrentHashMap<String, Mutex>()
     private val catalogRequests = mutableMapOf<String, Any>()
 
@@ -36,19 +36,21 @@ object AiManager {
         modelId: String? = null
     ): AiTextResult {
         val setting = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
-        val accountProvider = setting.usesAccountLogin()
         val requestModel = modelId ?: setting.model
         check(setting.enabled) { "AI provider is disabled" }
         check(requestModel.isNotBlank()) { "AI model is empty" }
-        if (modelId != null || accountProvider) {
-            val model = checkNotNull(setting.availableCatalogModel(requestModel)?.takeIf { it.isTextChatModel() }) {
+        val model = if (modelId != null || setting.usesAccountLogin()) {
+            checkNotNull(
+                setting.availableCatalogModel(requestModel)?.let { setting.effectiveModelCapabilities(it) }
+                    ?.takeIf { it.isTextChatModel() }
+            ) {
                 "Selected AI model is unavailable. Select a text model again."
             }
-            if (accountProvider) {
-                return accountTextClient.generateAccountText(setting, model, messages, params)
-            }
+        } else {
+            setting.models.firstOrNull { it.id == requestModel }?.let { setting.effectiveModelCapabilities(it) }
+                ?: AiModelRegistry.enrich(AiModel(requestModel))
         }
-        return providerFor(setting).generateText(setting.copy(model = requestModel), messages, params)
+        return textClient.generateText(setting, model, messages, params)
     }
 
     suspend fun listModels(providerId: String): List<AiModel> {

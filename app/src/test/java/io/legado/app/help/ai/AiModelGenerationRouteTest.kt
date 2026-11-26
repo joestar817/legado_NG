@@ -1,6 +1,7 @@
 package io.legado.app.help.ai
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import io.legado.app.help.ai.AiModelGenerationTestProtocol.CHAT_COMPLETIONS
 import io.legado.app.help.ai.AiModelGenerationTestProtocol.CLAUDE_MESSAGES
 import io.legado.app.help.ai.AiModelGenerationTestProtocol.RESPONSES
@@ -54,6 +55,59 @@ class AiModelGenerationRouteTest {
 
         val customPath = provider.copy(chatCompletionsPath = "/custom/chat/completions")
         assertEquals(AiModelGenerationRoute(CHAT_COMPLETIONS, null), customPath.resolveModelGenerationRoute(model))
+        for (id in listOf("gpt-5.5-pro", "gpt-5.3-codex", "o3-deep-research", "gpt-6.2-sol-healthcare")) {
+            val model = AiModel(id)
+            assertEquals(id, issue, provider.resolveModelGenerationRoute(model).issue)
+            assertNull(provider.copy(useResponsesApi = true).resolveModelGenerationRoute(model).issue)
+        }
+    }
+
+    @Test
+    fun `official GPT-6 tool availability follows the chosen API`() {
+        val provider = preset("openai")
+        for (id in listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6.2-astra", "gpt-6.2-sol")) {
+            val model = AiModelRegistry.enrich(AiModel(id))
+            val responses = model.withInterface(provider, AiModelInterfacePreference.RESPONSES)
+            assertFalse(id, AiModelAbility.TOOL in provider.effectiveModelCapabilities(model).abilities)
+            assertTrue(id, AiModelAbility.TOOL in provider.effectiveModelCapabilities(responses).abilities)
+            assertTrue(id, AiModelAbility.TOOL in provider.copy(useResponsesApi = true).effectiveModelCapabilities(model).abilities)
+        }
+        val terra = AiModelRegistry.enrich(AiModel("gpt-6.1-terra"))
+        val disabled = terra.copy(modelInfo = AiModelInfo(provider.modelConfigurationKey(), toolCalling = AiModelValue(false)))
+        assertFalse(AiModelAbility.TOOL in provider.copy(useResponsesApi = true).effectiveModelCapabilities(disabled).abilities)
+        assertNull(customProvider().effectiveModelInfo(terra).toolCalling)
+    }
+
+    @Test
+    fun `GPT Audio exposes its documented tool support on the standard Chat API`() {
+        val provider = preset("openai")
+        val model = AiModel("gpt-audio-1.5")
+        val chat = provider.effectiveModelCapabilities(model)
+        assertTrue(chat.isTextChatModel())
+        assertTrue(AiModelModality.AUDIO in chat.inputModalities)
+        assertTrue(AiModelAbility.TOOL in chat.abilities)
+        val responses = provider.copy(useResponsesApi = true)
+        assertFalse(AiModelAbility.TOOL in responses.effectiveModelCapabilities(model).abilities)
+        assertEquals(AiModelGenerationIssue.UNSUPPORTED_PROTOCOL, responses.resolveModelGenerationRoute(model).issue)
+        val search = AiModelRegistry.enrich(AiModel("gpt-5-search-api"))
+        assertFalse(AiModelAbility.TOOL in provider.effectiveModelCapabilities(search).abilities)
+        assertEquals(AiModelGenerationIssue.UNSUPPORTED_PROTOCOL, responses.resolveModelGenerationRoute(search).issue)
+    }
+
+    @Test
+    fun `Bailian sends tool_stream for the documented GLMs when sending tools`() {
+        val provider = preset("aliyun_bailian")
+        val client = AiChatClient()
+        val tools = listOf(JsonObject().apply { addProperty("type", "function") })
+        for (modelId in listOf("glm-5", "glm-5.1", "glm-5.2")) {
+            val model = AiModel(modelId)
+            val withTools = client.buildRequestBody(provider, model, emptyList(), tools, AiTextParams(), true)
+            assertTrue(withTools.get("tool_stream").asBoolean)
+            assertTrue(withTools.has("tools"))
+            assertFalse(client.buildRequestBody(provider, model, emptyList(), emptyList(), AiTextParams(), true).has("tool_stream"))
+        }
+        assertFalse(client.buildRequestBody(provider, AiModel("glm-5.3"), emptyList(), tools, AiTextParams(), true).has("tool_stream"))
+        assertFalse(client.buildRequestBody(customProvider(), AiModel("glm-5.2"), emptyList(), tools, AiTextParams(), true).has("tool_stream"))
     }
 
     @Test

@@ -137,7 +137,13 @@ private fun AiModelInfo.withOpenCodeCatalog(model: JsonObject): AiModelInfo {
     val thinking = capabilities?.objectOrNull("reasoning")
     val effort = thinking?.catalogStrings("effort")
     val reasoningSupported = thinking?.strictBoolean("supported") ?: true.takeIf { !effort.isNullOrEmpty() }
+    val type = model.stringOrNull("type")?.takeIf(String::isNotBlank)?.let { name ->
+        AiModelType.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: AiModelType.OTHER
+    }
     return copy(
+        catalogType = type.catalogValue(),
+        supportsTemperature = capabilities?.strictBoolean("temperature").catalogValue(),
+        supportsStructuredOutput = capabilities?.strictBoolean("structured_output").catalogValue(),
         contextWindow = limits?.positiveInt("context").catalogValue() ?: contextWindow,
         maxOutputTokens = limits?.positiveInt("output").catalogValue() ?: maxOutputTokens,
         inputModalities = modalities?.openCodeModalities("input").catalogValue() ?: inputModalities,
@@ -174,7 +180,7 @@ internal fun AiProviderSetting.effectiveModelCapabilities(
     model: AiModel,
     source: String = modelConfigurationKey(),
     vendor: String? = modelPresetProviderId(),
-): AiModel = model.withCatalogCapabilities(model.effectiveModelInfo(source, vendor, !catalogRefreshRequired))
+): AiModel = model.withCatalogCapabilities(effectiveModelInfo(model, source, vendor))
 
 internal fun AiModelValue<List<String>>.knownModalities(): Set<AiModelModality>? =
     value.mapNotNull { token -> AiModelModality.entries.firstOrNull { it.name.equals(token, ignoreCase = true) } }
@@ -184,8 +190,11 @@ internal fun AiModel.withCatalogCapabilities(info: AiModelInfo?): AiModel {
     if (info == null || AiModelRegistry.shouldClearDeclaredCapabilities(id)) return this
     val input = info.inputModalities?.knownModalities()?.toList()
     val output = info.outputModalities?.knownModalities()?.toList()
-    if (input == null && output == null && info.toolCalling == null && info.reasoning == null) return this
-    val modelType = if (safeType() == AiModelType.CHAT) {
+    val declaredType = info.catalogType?.value
+    if (input == null && output == null && info.toolCalling == null && info.reasoning == null && declaredType == null) {
+        return this
+    }
+    val modelType = declaredType ?: if (safeType() == AiModelType.CHAT) {
         when (output?.singleOrNull()) {
             AiModelModality.IMAGE -> AiModelType.IMAGE
             AiModelModality.VIDEO -> AiModelType.VIDEO
@@ -201,11 +210,19 @@ internal fun AiModel.withCatalogCapabilities(info: AiModelInfo?): AiModel {
     val detected = copy(
         type = modelType,
         inputModalities = input ?: safeInputModalities(),
-        outputModalities = output ?: safeOutputModalities(),
+        outputModalities = output ?: if (modelType == AiModelType.OTHER) emptyList() else safeOutputModalities(),
         abilities = resolved.toList(),
     )
     val settings = modelSettingsFor(info.endpoint) ?: return detected
     return detected.withCapabilityOverrides(this, settings)
+}
+
+internal fun AiProviderSetting.filterGenerationParams(model: AiModel, params: AiTextParams): AiTextParams {
+    val info = effectiveModelInfo(model)
+    return params.copy(
+        temperature = params.temperature.takeUnless { info.supportsTemperature?.value == false },
+        jsonResponse = params.jsonResponse && info.supportsStructuredOutput?.value != false,
+    )
 }
 
 internal fun AiModel.withCapabilityOverrides(saved: AiModel, settings: AiModelSettings): AiModel {

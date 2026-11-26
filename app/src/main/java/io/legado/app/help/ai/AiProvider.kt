@@ -1,15 +1,7 @@
 package io.legado.app.help.ai
 
 interface AiProvider {
-
     suspend fun listModels(setting: AiProviderSetting): List<AiModel>
-
-    suspend fun generateText(
-        setting: AiProviderSetting,
-        messages: List<AiMessage>,
-        params: AiTextParams = AiTextParams()
-    ): AiTextResult
-
 }
 
 data class AiTextParams(

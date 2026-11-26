@@ -7,8 +7,10 @@ import com.google.gson.JsonParser
 import io.legado.app.R
 import io.legado.app.help.http.NetworkLog
 import io.legado.app.ui.config.iconRes
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -22,9 +24,54 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class AiWorkBuddyProviderTest {
     private val preset = AiDefaultProviders.all().single { it.isWorkBuddyAccountProvider() }
+
+    @Test
+    fun catalogueRefreshKeepsAnExplicitToolOptOut() {
+        val configured = preset.copy(workBuddyAccountId = "fixture")
+        val endpoint = configured.modelConfigurationKey()
+        val fresh = parseWorkBuddyModels(json(CATALOG).getAsJsonObject("data"), endpoint).single()
+        assertTrue(AiModelAbility.TOOL in fresh.abilities)
+        val edited = fresh.copy(
+            abilities = emptyList(),
+            modelSettings = AiModelSettings(
+                catalogEndpoint = endpoint,
+                capabilityOverrides = setOf(AiModelCapabilityField.TOOL_CALLING),
+            ),
+        )
+        val refreshed = configured.copy(models = listOf(edited)).withFetchedModels(listOf(fresh))
+        assertFalse(AiModelAbility.TOOL in refreshed.effectiveModelCapabilities(refreshed.models.single()).abilities)
+    }
+
+    @Test
+    fun cancelledRequestPersistsRotatedCredentialsBeforeReleasingTheAccount() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val deliver = CountDownLatch(1)
+        val storage = Storage(account(expiresAt = 0))
+        val http = mockHttp { request ->
+            assertEquals("/v2/plugin/auth/token/refresh", request.url.encodedPath)
+            started.complete(Unit)
+            check(deliver.await(5, TimeUnit.SECONDS))
+            Reply(tokens(generation = 2, expiresIn = 3600))
+        }
+        val sessions = AiWorkBuddySessions(storage, { http })
+        val job = async {
+            sessions.withAccount("fixture") { error("A cancelled caller must not reach inference") }
+        }
+        try {
+            withTimeout(5_000) { started.await() }
+            job.cancel()
+        } finally {
+            deliver.countDown()
+        }
+        job.join()
+        assertEquals("access-2", storage.read()?.accessToken)
+        assertEquals("refresh-2", storage.read()?.refreshToken)
+    }
 
     @Test
     fun storyboardOutputLimitUsesTheSelectedWorkBuddyCatalogEntry() {
@@ -67,9 +114,9 @@ class AiWorkBuddyProviderTest {
         }
         val sessions = AiWorkBuddySessions(Storage(account()), { http })
         val chat = AiChatClient(workBuddy = sessions) { http }
-        val result = chat.generateAccountText(
+        val result = chat.generateText(
             setting = preset.copy(workBuddyAccountId = "fixture", streamResponseEnabled = false),
-            model = AiModel("hy4"),
+            model = AiModel("hy4", abilities = listOf(AiModelAbility.TOOL)),
             messages = listOf(
                 AiMessage(AiMessage.Role.SYSTEM, "Return only JSON."),
                 AiMessage(AiMessage.Role.USER, "Label this passage."),
@@ -94,7 +141,7 @@ class AiWorkBuddyProviderTest {
         val chat = AiChatClient(workBuddy = sessions) { http }
         val error = assertThrows(AiAssistantReplyEndException::class.java) {
             runBlocking {
-                chat.generateAccountText(
+                chat.generateText(
                     setting = preset.copy(workBuddyAccountId = "fixture"),
                     model = AiModel("hy4"),
                     messages = listOf(AiMessage(AiMessage.Role.USER, "Clean this passage.")),
@@ -103,6 +150,77 @@ class AiWorkBuddyProviderTest {
             }
         }
         assertEquals(AiAssistantReplyEndReason.INTERRUPTED, error.reason)
+    }
+
+    @Test
+    fun sendsToolDefinitionsAndResultsForAWorkBuddyModelWithToolsEnabled() = runBlocking {
+        val toolName = "mcp__legado__use_skill"
+        val tool = json("""{"type":"function","function":{"name":"$toolName","parameters":{"type":"object"}}}""")
+        val toolCall = json(
+            """{"id":"skill-call","type":"function","function":{"name":"$toolName","arguments":"{\"name\":\"bookshelf_management\"}"}}"""
+        )
+        val toolResult = message("tool", """{"ok":true}""").apply {
+            addProperty("tool_call_id", "skill-call")
+        }
+        val user = message("user", "Load the bookshelf skill.")
+        var requests = 0
+        val http = mockHttp { request ->
+            assertEquals(WORK_BUDDY_CHAT_PATH, request.url.encodedPath)
+            val body = Buffer().also { request.body!!.writeTo(it) }.readUtf8().let(::json)
+            assertEquals(listOf(tool), body.getAsJsonArray("tools")?.asList())
+            val sentMessages = body.getAsJsonArray("messages").map { it.asJsonObject }
+            if (++requests == 1) {
+                assertEquals(listOf(user), sentMessages)
+                val delta = toolCall.deepCopy().apply { addProperty("index", 0) }
+                Reply(
+                    """data: {"model":"hy4","choices":[{"delta":{"tool_calls":[$delta]},"finish_reason":"tool_calls"}]}""" +
+                        "\n\ndata: [DONE]\n\n",
+                    type = "text/event-stream",
+                )
+            } else {
+                assertEquals(3, sentMessages.size)
+                assertEquals(listOf(toolCall), sentMessages[1].getAsJsonArray("tool_calls").asList())
+                assertEquals(toolResult, sentMessages.last())
+                streamReply("Skill ", "loaded.")
+            }
+        }
+        val sessions = AiWorkBuddySessions(Storage(account()), { http })
+        val setting = preset.copy(workBuddyAccountId = "fixture")
+        val model = AiModel("hy4", abilities = listOf(AiModelAbility.TOOL))
+        with(AiChatClient(workBuddy = sessions) { http }) {
+            val toolTurn = http.completeChat(
+                setting, model, listOf(user), listOf(tool), AiTextParams(), null, assistantTurn = true,
+            )
+            assertEquals(listOf(toolCall), toolTurn.toolCalls.asList())
+            val reply = http.completeChat(
+                setting, model, listOf(user, toolTurn.message, toolResult), listOf(tool), AiTextParams(), null,
+                assistantTurn = true,
+            )
+            assertEquals("Skill loaded.", reply.content)
+        }
+        assertEquals(2, requests)
+    }
+
+    @Test
+    fun omitsToolDefinitionsForAWorkBuddyModelWithoutTheToolCapability() = runBlocking {
+        val http = mockHttp { request ->
+            val body = Buffer().also { request.body!!.writeTo(it) }.readUtf8().let(::json)
+            assertFalse(body.has("tools"))
+            streamReply("Text ", "reply.")
+        }
+        val sessions = AiWorkBuddySessions(Storage(account()), { http })
+        with(AiChatClient(workBuddy = sessions) { http }) {
+            val reply = http.completeChat(
+                setting = preset.copy(workBuddyAccountId = "fixture"),
+                model = AiModel("hy4"),
+                messages = listOf(message("user", "Hello")),
+                tools = listOf(json("""{"type":"function","function":{"name":"lookup"}}""")),
+                params = AiTextParams(),
+                conversationId = null,
+                assistantTurn = true,
+            )
+            assertEquals("Text reply.", reply.content)
+        }
     }
 
     @Test
@@ -489,7 +607,8 @@ class AiWorkBuddyProviderTest {
         assertEquals(listOf("hy4", "hy4-flash", "hy4-flash-f"), models.take(3).map { it.id })
         models.take(3).forEach { model ->
             assertTrue(model.isTextChatModel())
-            assertEquals(listOf(AiModelAbility.REASONING), model.abilities)
+            assertEquals(listOf(AiModelAbility.TOOL, AiModelAbility.REASONING), model.abilities)
+            assertEquals(true, model.modelInfo?.toolCalling?.value)
             assertEquals(R.drawable.ic_model_hunyuan, model.iconRes(preset.iconRes()))
         }
         models.drop(3).forEach { model ->

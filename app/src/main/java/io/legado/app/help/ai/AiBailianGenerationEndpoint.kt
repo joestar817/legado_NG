@@ -13,6 +13,8 @@ private val bailianWorkspaceHost = Regex(
     """llm-[a-z0-9](?:[a-z0-9-]{0,57}[a-z0-9])?\.(cn-beijing|ap-southeast-1|us-east-1|eu-central-1|ap-northeast-1|cn-hongkong)\.maas\.aliyuncs\.com""",
 )
 
+private val bailianGlmModelsRequiringToolStream = setOf("glm-5", "glm-5.1", "glm-5.2")
+
 /** Checks the request endpoint only. Catalog metadata and credentials stay scoped to the real address. */
 internal fun AiProviderSetting.isOfficialBailianGenerationEndpoint(): Boolean {
     if (type != AiProviderType.OPENAI) return false
@@ -22,3 +24,9 @@ internal fun AiProviderSetting.isOfficialBailianGenerationEndpoint(): Boolean {
         endpoint.encodedPath.removeSuffix("/") == "/compatible-mode/v1" &&
         (endpoint.host in bailianPublicHosts || bailianWorkspaceHost.matches(endpoint.host))
 }
+
+// https://help.aliyun.com/zh/model-studio/qwen-function-calling
+internal fun AiProviderSetting.requiresBailianToolStream(modelId: String): Boolean =
+    modelId in bailianGlmModelsRequiringToolStream && isOfficialBailianGenerationEndpoint() &&
+        generationUrl(AiModelGenerationTestProtocol.CHAT_COMPLETIONS)?.encodedPath?.trimEnd('/') ==
+        "/compatible-mode/v1/chat/completions"

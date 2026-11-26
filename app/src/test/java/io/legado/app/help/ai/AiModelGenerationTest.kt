@@ -1,5 +1,7 @@
 package io.legado.app.help.ai
 
+import android.app.Application
+import androidx.test.core.app.ApplicationProvider
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.sun.net.httpserver.HttpExchange
@@ -12,7 +14,12 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import splitties.init.injectAsAppCtx
 import java.io.IOException
 import java.io.OutputStream
 import java.net.InetSocketAddress
@@ -20,7 +27,14 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = Application::class)
 class AiModelGenerationTest {
+    @Before
+    fun setUpAppContext() {
+        ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
+    }
+
     @Test
     fun aTestCanUseEitherProtocolWithoutChangingTheProviderDefault() = runBlocking {
         val requests = LinkedBlockingQueue<Pair<String, JsonObject>>()

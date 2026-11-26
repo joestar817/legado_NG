@@ -9,6 +9,7 @@ import io.legado.app.help.ai.generationApiPath
 import io.legado.app.help.ai.modelGenerationTestProtocol
 import io.legado.app.help.ai.modelGenerationTestProtocols
 import io.legado.app.help.ai.normalizeAiApiPath
+import io.legado.app.help.ai.openAiCreditGrantsUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal fun AiProviderSetting.toProviderFormScreenState(
@@ -52,6 +53,7 @@ internal fun AiProviderFormScreenState.withProtocolFields(
             provider.modelGenerationTestProtocols(),
         responsesApiActive = responsesActive,
         apiPathValue = if (keepDraft) apiPathValue else displayPath,
+        opensOpenAiCreditGrants = provider.openAiCreditGrantsUrl() != null,
     )
 }
 

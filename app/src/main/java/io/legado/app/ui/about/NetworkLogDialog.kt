@@ -166,6 +166,13 @@ class NetworkLogDialog : BaseComposeDialogFragment(), CodeDialog.ExportCallback 
                     if (error != null) {
                         append("\nERROR: ").append(error.lineSequence().firstOrNull())
                     }
+                    generation?.let { result ->
+                        tookMs?.let { append('\n').append(getString(R.string.ai_log_headers_time, it)) }
+                        append('\n').append(getString(
+                            R.string.ai_log_total_time, getString(result.state.labelRes()), result.elapsedMs,
+                        ))
+                        result.finishReason?.let { append(" · ").append(it) }
+                    }
                     append("\n").append(source)
                 }
             )
@@ -410,7 +417,7 @@ private fun NetworkLogItem(
                 maxLines = 1,
             )
             NetworkStatus(item)
-            item.tookMs?.let { took ->
+            (item.generation?.elapsedMs ?: item.tookMs)?.let { took ->
                 Text(
                     text = "${took}ms",
                     modifier = Modifier.padding(start = 8.dp),
@@ -474,8 +481,9 @@ private fun NetworkLogItem(
 @Composable
 private fun NetworkStatus(item: NetworkLog.Entry) {
     val statusCode = item.statusCode
-    val error = item.error != null
-    if (statusCode == null && !error) return
+    val state = item.generation?.state
+    val error = item.error != null || (state != null && state != NetworkLog.GenerationState.COMPLETED)
+    if (statusCode == null && !error && state == null) return
     val color = if (!error && statusCode != null && statusCode in 200..399) {
         Color(0xFF34A853)
     } else {
@@ -491,7 +499,11 @@ private fun NetworkStatus(item: NetworkLog.Entry) {
                 .background(color, CircleShape),
         )
         Text(
-            text = statusCode?.toString() ?: "ERR",
+            text = when {
+                state == null -> statusCode?.toString() ?: "ERR"
+                statusCode == null -> stringResource(state.labelRes())
+                else -> "$statusCode · " + stringResource(state.labelRes())
+            },
             modifier = Modifier.padding(start = 4.dp),
             style = legacyLogTextStyle(
                 color = color,
@@ -500,6 +512,15 @@ private fun NetworkStatus(item: NetworkLog.Entry) {
             maxLines = 1,
         )
     }
+}
+
+private fun NetworkLog.GenerationState.labelRes(): Int = when (this) {
+    NetworkLog.GenerationState.COMPLETED -> R.string.ai_log_completed
+    NetworkLog.GenerationState.TRUNCATED -> R.string.ai_log_truncated
+    NetworkLog.GenerationState.INTERRUPTED -> R.string.ai_log_interrupted
+    NetworkLog.GenerationState.REFUSED -> R.string.ai_log_refused
+    NetworkLog.GenerationState.CANCELLED -> R.string.ai_log_cancelled
+    NetworkLog.GenerationState.FAILED -> R.string.ai_log_failed
 }
 
 private fun networkTypeColor(type: String): Color = when (type) {

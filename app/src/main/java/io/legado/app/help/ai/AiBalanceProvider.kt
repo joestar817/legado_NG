@@ -7,6 +7,10 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 
+internal fun AiProviderSetting.openAiCreditGrantsUrl(): String? =
+    "https://platform.openai.com/settings/organization/billing/credit-grants"
+        .takeIf { !useCustomBalanceUrl && officialModelProviderId() == "openai" }
+
 data class AiBalanceInfo(
     val name: String,
     val remaining: Double? = null,

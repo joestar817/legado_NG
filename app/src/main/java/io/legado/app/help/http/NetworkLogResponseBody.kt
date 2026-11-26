@@ -1,11 +1,34 @@
 package io.legado.app.help.http
 
+import okhttp3.RequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.asResponseBody
 import okio.Buffer
 import okio.ForwardingSource
+import okio.Sink
+import okio.Timeout
 import okio.buffer
 import java.nio.charset.Charset
+
+internal fun RequestBody.readNetworkLogPreview(): Pair<String, Boolean> {
+    val head = Buffer()
+    var truncated = false
+    val bounded = object : Sink {
+        override fun write(source: Buffer, byteCount: Long) {
+            val accepted = minOf(byteCount, NetworkLog.BODY_PREVIEW_SIZE - head.size)
+            head.write(source, accepted)
+            source.skip(byteCount - accepted)
+            truncated = truncated || accepted != byteCount
+        }
+
+        override fun flush() = Unit
+        override fun close() = Unit
+        override fun timeout() = Timeout.NONE
+    }
+    bounded.buffer().use { writeTo(it) }
+    val charset = contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+    return head.readString(charset) to truncated
+}
 
 internal fun Response.captureNetworkLogBody(onFinished: (String) -> Unit): Response {
     val responseBody = body

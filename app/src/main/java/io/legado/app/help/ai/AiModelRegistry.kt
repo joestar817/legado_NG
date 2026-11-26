@@ -1335,6 +1335,20 @@ object AiModelRegistry {
     )
 
     fun capabilities(modelId: String): AiModelCapabilities {
+        val specialized = openAiSpecializedModelPreset(modelId.substringAfterLast('/'))
+        val specializedType = specialized?.type
+        if (specialized != null && specializedType != null && specializedType != AiModelType.CHAT) {
+            return AiModelCapabilities(
+                type = specializedType,
+                inputModalities = specialized.inputModalities.orEmpty().map { AiModelModality.valueOf(it.uppercase()) },
+                outputModalities = specialized.outputModalities.orEmpty().map { AiModelModality.valueOf(it.uppercase()) },
+                abilities = when (specializedType) {
+                    AiModelType.ASR -> listOf(AiModelAbility.ASR)
+                    AiModelType.TTS -> listOf(AiModelAbility.TTS)
+                    else -> emptyList()
+                },
+            )
+        }
         val matches = if (isOcrModel(modelId)) listOf(OCR_MODEL) else resolveModels(modelId)
         val abilities = resolveAbilities(matches)
         return AiModelCapabilities(

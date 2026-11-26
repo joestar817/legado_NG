@@ -13,6 +13,7 @@ internal data class AiModelPreset(
     val reasoningBudgetRange: IntRange? = null,
     val defaultThinkingEnabled: Boolean? = null,
     val reasoning: Boolean? = null,
+    val type: AiModelType? = null,
 )
 
 /** These defaults describe the named provider's deployment, not models with a similar ID. */
@@ -160,6 +161,10 @@ private val bailianChannelPresets = buildMap {
         "qwen3.7-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-max", "qwen3.8-omni-flash",
         "qwen-max", "qwen-plus", "qwen-flash", "stepfun/step-5-preview", "xiaomi/mimo-v2.6-pro-ultraspeed",
     ) { it.copy(toolCalling = true) }
+    // https://help.aliyun.com/zh/model-studio/qwen-function-calling
+    updateModels("antdigital/ling-3.1-flash") {
+        it.copy(inputModalities = listOf("text"), outputModalities = listOf("text"), toolCalling = true)
+    }
     updateModels(
         "deepseek-r1-distill-llama-70b", "deepseek-r1-distill-qwen-1.5b",
         "qwen-flash-character", "qwen-long", "qwen-mt-flash", "qwen-mt-lite", "qwen-mt-plus", "qwen-plus-character",
@@ -284,14 +289,18 @@ private val agnesChat = AiModelPreset(
     outputModalities = listOf("text"),
     reasoning = true,
 )
-private val agnes25Pro = agnesChat.copy(contextWindow = 1_000_000, maxOutputTokens = 65_536)
+private val agnes25Pro = agnesChat.copy(
+    contextWindow = 1_000_000,
+    maxOutputTokens = 65_536,
+    toolCalling = true,
+)
 private val agnesPresets = mapOf(
     "agnes-3.0-flash" to agnesChat.copy(contextWindow = 512_000, maxOutputTokens = 65_536, toolCalling = true),
     "agnes-2.5-flash" to agnesChat.copy(contextWindow = 512_000, maxOutputTokens = 65_500, toolCalling = true),
-    "agnes-3.0-pro" to agnesChat.copy(contextWindow = 1_000_000, maxOutputTokens = 256_000),
+    "agnes-3.0-pro" to agnesChat.copy(contextWindow = 1_000_000, maxOutputTokens = 256_000, toolCalling = true),
     "agnes-2.5-pro" to agnes25Pro,
     "agnes-2.5-pro-beta" to agnes25Pro,
-    "agnes-2.5-pro-theta" to agnesChat,
+    "agnes-2.5-pro-theta" to agnesChat.copy(toolCalling = true),
 )
 
 private val modelPresets = mapOf(
@@ -307,6 +316,9 @@ private val modelPresets = mapOf(
     ).associateWith { AiModelPreset(toolCalling = true) },
     "gemini" to geminiSynchronousPresets,
     "aliyun_bailian" to bailianChannelPresets,
+    // Ark's 2025 deprecation notice migrated the legacy functioncall services to this snapshot.
+    "volcengine" to listOf("doubao-1.5-pro-32k-250115", "doubao-1-5-pro-32k-250115")
+        .associateWith { AiModelPreset(toolCalling = true) },
     "xiaomi_mimo" to listOf(
         "mimo-v2.6-flash", "mimo-v2.6-pro", "mimo-v2.6-pro-ultraspeed",
     ).associateWith { miMoV26 },
@@ -329,6 +341,7 @@ private val modelPresets = mapOf(
 
 internal fun modelPreset(officialProvider: String?, modelId: String): AiModelPreset? =
     officialProvider?.let(modelPresets::get)?.get(modelId.lowercase())
+        ?: if (officialProvider == "openai") openAiSpecializedModelPreset(modelId) else null
 
 // Share model strengths only. Capabilities such as request fields and limits belong to a channel.
 private val sharedEffortsByModel = (deepSeekModels + modelPresets.getValue("openai") +
@@ -367,6 +380,7 @@ internal fun AiModel.effectiveModelInfo(
         maxOutputTokens = catalog.maxOutputTokens ?: (limits?.maxOutputTokens ?: preset?.maxOutputTokens).catalogValue(),
         inputModalities = catalog.inputModalities ?: preset?.inputModalities.catalogValue(),
         outputModalities = catalog.outputModalities ?: preset?.outputModalities.catalogValue(),
+        catalogType = catalog.catalogType ?: preset?.type.catalogValue(),
         effortLevels = catalog.effortLevels ?: (preset?.effortLimit ?: preset?.efforts).catalogValue(),
         toolCalling = catalog.toolCalling ?: preset?.toolCalling.catalogValue(),
         reasoning = catalog.reasoning ?:
@@ -375,5 +389,13 @@ internal fun AiModel.effectiveModelInfo(
     )
 }
 
-internal fun AiProviderSetting.effectiveModelInfo(model: AiModel): AiModelInfo =
-    model.effectiveModelInfo(modelConfigurationKey(), modelPresetProviderId(), !catalogRefreshRequired)
+internal fun AiProviderSetting.effectiveModelInfo(
+    model: AiModel,
+    source: String = modelConfigurationKey(),
+    vendor: String? = modelPresetProviderId(),
+): AiModelInfo {
+    val info = model.effectiveModelInfo(source, vendor, !catalogRefreshRequired)
+    val routeTool = if (vendor == "openai") officialOpenAiToolCallingOnRoute(model) else null
+    if (routeTool == null || (routeTool && info.toolCalling != null)) return info
+    return info.copy(toolCalling = AiModelValue(routeTool))
+}

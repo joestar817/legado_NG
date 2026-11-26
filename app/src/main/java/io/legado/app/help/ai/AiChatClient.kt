@@ -20,6 +20,8 @@ import io.legado.app.help.ai.runtime.AgentHookRuntime
 import io.legado.app.help.ai.runtime.ToolApprovalStatus
 import io.legado.app.help.ai.runtime.ToolExecutionReceipt
 import io.legado.app.help.ai.runtime.ToolExecutionStatus
+import io.legado.app.help.http.NetworkLog
+import io.legado.app.help.http.NetworkLog.GenerationState
 import io.legado.app.web.mcp.McpInternalChannel
 import io.legado.app.web.mcp.McpInternalToolCatalog
 import io.legado.app.web.mcp.McpToolSideEffect
@@ -36,6 +38,7 @@ import java.io.InterruptedIOException
 
 private const val MODEL_GENERATION_TEST_TIMEOUT_SECONDS = 20
 private const val CHAT_STREAM_TAIL_TIMEOUT_NANOS = 1_000_000_000L
+private val openAiOSeries = Regex("^o[134](?:-|$)")
 
 internal class AiChatStreamResponseException(message: String) : IOException(message)
 
@@ -49,15 +52,24 @@ class AiChatClient internal constructor(
 
     constructor() : this(clientForTimeout = ::aiHttpClient)
 
-    internal suspend fun generateAccountText(
+    internal suspend fun generateText(
         setting: AiProviderSetting,
         model: AiModel,
         messages: List<AiMessage>,
         params: AiTextParams,
     ): AiTextResult {
-        require(setting.usesAccountLogin())
+        val modelInfo = setting.effectiveModelInfo(model)
+        val configuredLimit = model.modelSettingsFor(modelInfo.endpoint)?.maxOutputTokens?.takeIf { it > 0 }
+        val catalogLimit = modelInfo.maxOutputTokens?.value?.takeIf { it > 0 }
+        val limit = (params.maxTokens ?: configuredLimit)?.let { requested ->
+            minOf(requested, configuredLimit ?: requested, catalogLimit ?: requested)
+        }
+        val route = setting.resolveModelGenerationRoute(model)
+        val requestSetting = if (route.requiresStreaming && !setting.streamResponseEnabled) {
+            setting.copy(streamResponseEnabled = true)
+        } else setting
         val completion = clientForTimeout(setting.timeoutSeconds).completeChat(
-            setting = setting.copy(streamResponseEnabled = true),
+            setting = requestSetting,
             model = model,
             messages = messages.map { message ->
                 JsonObject().apply {
@@ -66,10 +78,9 @@ class AiChatClient internal constructor(
                 }
             },
             tools = emptyList(),
-            params = params,
+            params = params.copy(maxTokens = limit),
             conversationId = null,
         )
-        completion.requireAssistantEnd()
         check(completion.toolCalls.size() == 0 && completion.message.objectOrNull("function_call") == null) {
             "模型返回了工具调用，请重新选择文本模型"
         }
@@ -1432,26 +1443,28 @@ class AiChatClient internal constructor(
         webPlan: AiWebToolPlan = AiWebToolPlan.Off,
         webEvents: AiNativeWebEvents? = null,
     ): ChatCompletionSnapshot {
+        val requestParams = setting.filterGenerationParams(model, params)
         if (setting.isWorkBuddyAccountProvider()) {
             val wireMessages = messages.prepareVisionMessages(supportsImages = false)
+            val enabledTools = if (AiModelAbility.TOOL in model.abilities) tools else emptyList()
             val body = jsonBody(buildRequestBody(
-                setting, model, wireMessages, emptyList(), params, stream = true, webPlan = webPlan,
+                setting, model, wireMessages, enabledTools, requestParams, stream = true, webPlan = webPlan,
             ))
             val client = workBuddyClient(this)
-            val completion = workBuddy.withAccount(setting.workBuddyAccountId) { account ->
+            return workBuddy.withAccount(setting.workBuddyAccountId) { account ->
                 val request = workBuddyRequest(WORK_BUDDY_CHAT_PATH)
                     .header("Accept", "text/event-stream, application/json")
                     .workBuddyAuthorization(account)
                     .post(body)
                     .build()
                     .withAiTextLog(params)
-                client.executeStreamChat(
-                    request, "reasoning_content", null, onStreamUpdate, generationTest, assistantTurn,
-                    null, null, workBuddyResponse = true,
-                )
+                request.logAiGeneration {
+                    client.executeStreamChat(
+                        request, "reasoning_content", null, onStreamUpdate, generationTest, assistantTurn,
+                        null, null, workBuddyResponse = true,
+                    ).also { if (!generationTest) it.requireAssistantEnd() }
+                }
             }
-            if (assistantTurn) completion.requireAssistantEnd()
-            return completion
         }
         val sessions = setting.accountSessions()
         val subscription = sessions != null
@@ -1481,82 +1494,121 @@ class AiChatClient internal constructor(
             val providerMessages = AiChatContextManager
                 .providerMessages(wireMessages, webPlan.systemInstruction)
                 .map { it.asJsonObject }
-            val request = codec.request(providerMessages, tools, params, stream, conversationId)
+            val request = codec.request(providerMessages, tools, requestParams, stream, conversationId)
                 .withAiTextLog(params)
-            var partialContent = ""
-            var partialReasoning: String? = null
-            val client = if (subscription) chatGptHttpClient(setting.timeoutSeconds) else this
-            val reply = client.newCall(request).readCancellableStream { response ->
-                response.use {
-                    if (chatGptAccessToken != null && !it.isSuccessful) {
-                        val error = chatGptRequestError(it.code, it.chatGptJson())
-                        val resolved = sessions?.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
-                            ?: error
-                        if (!generationTest) throw resolved
-                    }
-                    it.requireChatHttpSuccess(generationTest)
-                    if (stream) {
-                        it.body.charStream().buffered().use { reader ->
-                            try {
-                                codec.readStream(reader) { content, reasoning ->
-                                    val preview = if (assistantTurn) {
-                                        AiChatToolStepContent.streamingProjection(content)
-                                    } else content
-                                    if (assistantTurn) {
-                                        partialContent = content
-                                        partialReasoning = reasoning
-                                    }
-                                    onStreamUpdate(AiChatStreamUpdate(
-                                        content = preview,
-                                        reasoning = reasoning,
-                                    ))
-                                }
-                            } catch (error: Exception) {
-                                val resolved = if (chatGptAccessToken != null && error is AiChatGptException) {
-                                    sessions?.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
-                                        ?: error
-                                } else error
-                                if (!assistantTurn) throw resolved
-                                throwInterruptedStream(resolved, partialContent, partialReasoning)
-                            }
+            return request.logAiGeneration {
+                var partialContent = ""
+                var partialReasoning: String? = null
+                val client = if (subscription) chatGptHttpClient(setting.timeoutSeconds) else this
+                val reply = client.newCall(request).readCancellableStream { response ->
+                    response.use {
+                        if (chatGptAccessToken != null && !it.isSuccessful) {
+                            val error = chatGptRequestError(it.code, it.chatGptJson())
+                            val resolved = sessions?.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
+                                ?: error
+                            if (!generationTest) throw resolved
                         }
-                    } else {
-                        val json = JsonParser.parseString(it.body.string()).asJsonObject
-                        json.requireNoAiError()
-                        codec.readJson(json)
+                        it.requireChatHttpSuccess(generationTest)
+                        if (stream) {
+                            it.body.charStream().buffered().use { reader ->
+                                try {
+                                    codec.readStream(reader) { content, reasoning ->
+                                        val preview = if (assistantTurn) {
+                                            AiChatToolStepContent.streamingProjection(content)
+                                        } else content
+                                        if (assistantTurn) {
+                                            partialContent = content
+                                            partialReasoning = reasoning
+                                        }
+                                        onStreamUpdate(AiChatStreamUpdate(
+                                            content = preview,
+                                            reasoning = reasoning,
+                                        ))
+                                    }
+                                } catch (error: Exception) {
+                                    val resolved = if (chatGptAccessToken != null && error is AiChatGptException) {
+                                        sessions?.resolveRequestError(setting.chatGptAccountId, chatGptAccessToken, error)
+                                            ?: error
+                                    } else error
+                                    if (!assistantTurn) throw resolved
+                                    throwInterruptedStream(resolved, partialContent, partialReasoning)
+                                }
+                            }
+                        } else {
+                            val json = JsonParser.parseString(it.body.string()).asJsonObject
+                            json.requireNoAiError()
+                            codec.readJson(json)
+                        }
                     }
                 }
+                val completion = ChatCompletionSnapshot(
+                    reply.message, reply.content, reply.reasoning, reply.model,
+                    reply.finishReason, reply.usage, reply.toolCalls,
+                )
+                if (!generationTest) {
+                    completion.requireAssistantEnd(partialContent, partialReasoning)
+                    reply.requireCompleted()
+                }
+                completion
             }
-            val completion = ChatCompletionSnapshot(
-                reply.message, reply.content, reply.reasoning, reply.model,
-                reply.finishReason, reply.usage, reply.toolCalls,
-            )
-            if (assistantTurn) completion.requireAssistantEnd(partialContent, partialReasoning)
-            if (!generationTest) reply.requireCompleted()
-            return completion
         }
         if (apiPath == null) throw AiEndpointException("Chat Completions API endpoint is not configured")
         val deepSeekHistory = deepSeekRoute?.let { AiNativeChatHistory(setting, model.id, it.endpoint) }
         val request = Request.Builder()
             .url(buildAiApiEndpoint(setting.baseUrl, apiPath))
-            .addHeader("Authorization", "Bearer ${setting.apiKeyForRequest()}")
+            .apply {
+                val key = setting.apiKeyForRequest()
+                if (key.isNotBlank()) addHeader("Authorization", "Bearer $key")
+            }
             .addOpenCodeProviderHeaders(setting, conversationId)
             .addHeader("Content-Type", "application/json")
             .post(jsonBody(
-                buildRequestBody(setting, model, wireMessages, tools, params, stream, webPlan, deepSeekHistory),
+                buildRequestBody(setting, model, wireMessages, tools, requestParams, stream, webPlan, deepSeekHistory),
             ))
             .build()
             .withAiTextLog(params)
         val reasoningKey = setting.reasoningOptions(model.id).reasoningOutputField.ifBlank { "reasoning_content" }
         val openRouterHistory = setting.openRouterChatHistory(model.id)
-        val completion = if (stream) {
-            executeStreamChat(request, reasoningKey, openRouterHistory, onStreamUpdate, generationTest,
-                assistantTurn, deepSeekHistory, webEvents)
-        } else {
-            executeJsonChat(request, reasoningKey, openRouterHistory, generationTest, deepSeekHistory, webEvents)
+        return request.logAiGeneration {
+            val completion = if (stream) {
+                executeStreamChat(request, reasoningKey, openRouterHistory, onStreamUpdate, generationTest,
+                    assistantTurn, deepSeekHistory, webEvents)
+            } else {
+                executeJsonChat(
+                    request, reasoningKey, openRouterHistory, generationTest, deepSeekHistory, webEvents,
+                    allowDeltaContent = !assistantTurn && !generationTest,
+                )
+            }
+            if (!generationTest) completion.requireAssistantEnd()
+            completion
         }
-        if (assistantTurn) completion.requireAssistantEnd()
-        return completion
+    }
+
+    private suspend fun Request.logAiGeneration(read: suspend () -> ChatCompletionSnapshot): ChatCompletionSnapshot {
+        return try {
+            read().also { result ->
+                val reason = assistantReplyEndReason(
+                    result.finishReason, result.streamEnded, result.message.hasChatGenerationRefusal(),
+                )
+                NetworkLog.finishGeneration(this, reason.toGenerationState(), result.finishReason)
+            }
+        } catch (error: Exception) {
+            val state = when (error) {
+                is CancellationException -> GenerationState.CANCELLED
+                is AiAssistantReplyEndException -> error.reason.toGenerationState()
+                is AiChatIncompleteStreamException -> GenerationState.INTERRUPTED
+                else -> GenerationState.FAILED
+            }
+            NetworkLog.finishGeneration(this, state)
+            throw error
+        }
+    }
+
+    private fun AiAssistantReplyEndReason?.toGenerationState(): GenerationState = when (this) {
+        AiAssistantReplyEndReason.TRUNCATED -> GenerationState.TRUNCATED
+        AiAssistantReplyEndReason.REFUSED -> GenerationState.REFUSED
+        AiAssistantReplyEndReason.INTERRUPTED -> GenerationState.INTERRUPTED
+        null -> GenerationState.COMPLETED
     }
 
     private fun Response.requireChatHttpSuccess(generationTest: Boolean) {
@@ -1582,6 +1634,9 @@ class AiChatClient internal constructor(
         }
         val openRouterHistory = setting.openRouterChatHistory(model.id)
         val nativeTools = (webPlan as? AiWebToolPlan.Native)?.definitions.orEmpty()
+        val officialOSeries = openAiOSeries.containsMatchIn(model.id) && setting.isOfficialOpenAiGenerationPath(
+            AiModelGenerationTestProtocol.CHAT_COMPLETIONS, "/v1/chat/completions",
+        )
         return JsonObject().apply {
             addProperty("model", model.id)
             add(
@@ -1602,8 +1657,8 @@ class AiChatClient internal constructor(
                     }
                 }
             )
-            params.temperature?.let { addProperty("temperature", it) }
-            params.maxTokens?.let { addProperty("max_tokens", it) }
+            if (!officialOSeries) params.temperature?.let { addProperty("temperature", it) }
+            params.maxTokens?.let { addProperty(if (officialOSeries) "max_completion_tokens" else "max_tokens", it) }
             addProperty("stream", stream)
             if (stream && setting.supportsStreamUsage) {
                 add("stream_options", JsonObject().apply {
@@ -1612,10 +1667,13 @@ class AiChatClient internal constructor(
             }
             addReasoningParams(params, reasoningOptions)
             if (tools.isNotEmpty() || nativeTools.isNotEmpty()) {
+                if (setting.requiresBailianToolStream(model.id)) addProperty("tool_stream", true)
                 add("tools", JsonArray().apply {
                     tools.forEach { add(it.deepCopy()) }
                     nativeTools.forEach { add(it.deepCopy()) }
                 })
+            } else if (params.jsonResponse && !setting.isWorkBuddyAccountProvider()) {
+                add("response_format", JsonObject().apply { addProperty("type", "json_object") })
             }
         }
     }
@@ -1627,6 +1685,7 @@ class AiChatClient internal constructor(
         generationTest: Boolean,
         deepSeekHistory: AiNativeChatHistory?,
         webEvents: AiNativeWebEvents?,
+        allowDeltaContent: Boolean,
     ): ChatCompletionSnapshot {
         val responseBody = if (generationTest) {
             newCall(request).readCancellableStream { response ->
@@ -1647,8 +1706,10 @@ class AiChatClient internal constructor(
             ?.takeIf { it.isJsonObject }
             ?.asJsonObject
             ?: error("OpenAI response missing choices")
-        val message = choice.objectOrNull("message")
-            ?: error("OpenAI response missing message")
+        val deltaContent = if (allowDeltaContent) choice.objectOrNull("delta")?.get("content").contentText()
+        else ""
+        val message = choice.objectOrNull("message") ?: if (deltaContent.isNotBlank()) JsonObject()
+        else error("OpenAI response missing message")
         if (generationTest) {
             check(message.stringOrNull("role") in setOf(null, "assistant")) {
                 "OpenAI response did not contain an assistant message"
@@ -1671,7 +1732,7 @@ class AiChatClient internal constructor(
         return ChatCompletionSnapshot(
             message = message,
             content = if (generationTest) message.get("content").chatGenerationVisibleText()
-            else message.get("content").contentText(),
+            else message.get("content").contentText().ifBlank { deltaContent },
             reasoning = reasoning,
             model = json.stringOrNull("model"),
             finishReason = choice.stringOrNull("finish_reason"),

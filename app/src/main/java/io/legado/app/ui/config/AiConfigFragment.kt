@@ -80,6 +80,7 @@ import io.legado.app.help.ai.isWorkBuddyAccountProvider
 import io.legado.app.help.ai.modelConfigurationKey
 import io.legado.app.help.ai.modelPresetProviderId
 import io.legado.app.help.ai.modelSettingsFor
+import io.legado.app.help.ai.openAiCreditGrantsUrl
 import io.legado.app.help.ai.referenceContextWindow
 import io.legado.app.help.ai.usesAccountLogin
 import io.legado.app.help.ai.withCatalogCapabilities
@@ -3074,6 +3075,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun queryBalance() {
         val provider = saveCurrentProvider() ?: return
+        provider.openAiCreditGrantsUrl()?.let { url ->
+            try {
+                openChatGptBrowser(url)
+            } catch (_: AiChatGptException) {
+                toastOnUi(R.string.ai_openai_credit_grants_browser_unavailable)
+            }
+            return
+        }
         if (provider.apiKey.isBlank()) {
             showAiClassicDialog(
                 title = getString(R.string.ai_query_balance),
@@ -3203,11 +3212,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         val models = provider?.run {
             val modelSource = modelConfigurationKey()
             val presetProvider = modelPresetProviderId()
-            val catalogCurrent = !catalogRefreshRequired
             val selectedIds = effectiveAvailableModelIds().toSet()
             val providerIconRes = iconRes()
             displayModels().sortSelectedModelsFirst(selectedIds).map { model ->
-                val catalogInfo = model.effectiveModelInfo(modelSource, presetProvider, catalogCurrent)
+                val catalogInfo = effectiveModelInfo(model, modelSource, presetProvider)
                 val effective = model.withCatalogCapabilities(catalogInfo)
                 AiProviderModelItemUiModel(
                     id = model.safeId(),
@@ -3282,6 +3290,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiModelType.ASR -> listOf(AiModelModality.AUDIO)
             AiModelType.TTS -> listOf(AiModelModality.TEXT)
             AiModelType.OCR -> listOf(AiModelModality.TEXT, AiModelModality.IMAGE)
+            AiModelType.OTHER -> emptyList()
         }
     }
 
@@ -3307,6 +3316,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiModelType.ASR,
             AiModelType.OCR -> listOf(AiModelModality.TEXT)
             AiModelType.TTS -> listOf(AiModelModality.AUDIO)
+            AiModelType.OTHER -> emptyList()
         }
     }
 
@@ -3323,6 +3333,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiModelType.IMAGE,
             AiModelType.EMBEDDING,
             AiModelType.OCR,
+            AiModelType.OTHER,
             AiModelType.VIDEO -> emptyList()
             AiModelType.ASR -> listOf(AiModelAbility.ASR)
             AiModelType.TTS -> listOf(AiModelAbility.TTS)

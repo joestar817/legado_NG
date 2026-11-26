@@ -4,6 +4,9 @@ import com.google.gson.JsonObject
 import io.legado.app.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -105,27 +108,32 @@ internal object AiCodexSessions : AiOpenAiAccountSessions {
                 val refreshBuffer = if (tokens.refreshToken == null) 0 else 30
                 if (tokens.expiresAt > now + refreshBuffer) return@withLock tokens.accessToken
                 val refreshToken = tokens.refreshToken ?: reauthorize()
-                val response = try {
-                    requestTokens(jsonBody(JsonObject().apply {
-                        addProperty("client_id", CODEX_CLIENT_ID)
-                        addProperty("grant_type", "refresh_token")
-                        addProperty("refresh_token", refreshToken)
-                    }))
-                } catch (error: AiChatGptException) {
-                    if (error.messageRes == R.string.ai_chatgpt_reauthorize_required) {
-                        store.save(account.copy(reauthorizationRequired = true))
+                currentCoroutineContext().ensureActive()
+                val refreshed = withContext(NonCancellable) {
+                    val response = try {
+                        requestTokens(jsonBody(JsonObject().apply {
+                            addProperty("client_id", CODEX_CLIENT_ID)
+                            addProperty("grant_type", "refresh_token")
+                            addProperty("refresh_token", refreshToken)
+                        }))
+                    } catch (error: AiChatGptException) {
+                        if (error.messageRes == R.string.ai_chatgpt_reauthorize_required) {
+                            store.save(account.copy(reauthorizationRequired = true))
+                        }
+                        throw error
                     }
-                    throw error
+                    val renewed = readCodexTokens(response, refreshToken)
+                    if (codexWorkspace(renewed.accessToken) != account.codexWorkspaceId ||
+                        codexAccessClaims(renewed.accessToken)?.stringOrNull("sub") !=
+                        codexAccessClaims(tokens.accessToken)?.stringOrNull("sub")
+                    ) {
+                        store.save(account.copy(reauthorizationRequired = true))
+                        reauthorize()
+                    }
+                    store.save(account.copy(tokens = renewed))
+                    renewed
                 }
-                val refreshed = readCodexTokens(response, refreshToken)
-                if (codexWorkspace(refreshed.accessToken) != account.codexWorkspaceId ||
-                    codexAccessClaims(refreshed.accessToken)?.stringOrNull("sub") !=
-                    codexAccessClaims(tokens.accessToken)?.stringOrNull("sub")
-                ) {
-                    store.save(account.copy(reauthorizationRequired = true))
-                    reauthorize()
-                }
-                store.save(account.copy(tokens = refreshed))
+                currentCoroutineContext().ensureActive()
                 requireSelection(setting, forInference)
                 refreshed.accessToken
             }

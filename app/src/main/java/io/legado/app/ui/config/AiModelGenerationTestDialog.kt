@@ -49,6 +49,7 @@ import io.legado.app.help.ai.AiModelGenerationTestFailure
 import io.legado.app.help.ai.AiModelGenerationTestProtocol
 import io.legado.app.help.ai.AiModelGenerationTestResult
 import io.legado.app.help.ai.AiProviderSetting
+import io.legado.app.help.ai.isOfficialOpenCodeGo
 import io.legado.app.help.ai.modelGenerationTestProtocols
 import io.legado.app.help.ai.resolveModelGenerationRoute
 import io.legado.app.help.ai.usesAccountLogin
@@ -178,7 +179,7 @@ internal fun AiModelGenerationTestDialog(
                             label = stringResource(R.string.ai_model_test_result),
                             topAligned = true,
                         ) {
-                            GenerationTestResult(running, result, issue)
+                            GenerationTestResult(running, result, issue, provider.isOfficialOpenCodeGo())
                         }
                     }
                     Row(
@@ -313,6 +314,7 @@ private fun GenerationTestResult(
     running: Boolean,
     result: AiModelGenerationTestResult?,
     issue: AiModelGenerationIssue?,
+    officialOpenCodeGo: Boolean,
 ) {
     when {
         running -> LinearProgressIndicator(
@@ -329,7 +331,7 @@ private fun GenerationTestResult(
             )
         }
         result is AiModelGenerationTestResult.Failure -> {
-            GenerationTestText(result.message(), Color(NgTheme.colors.error))
+            GenerationTestText(result.message(officialOpenCodeGo), Color(NgTheme.colors.error))
             if (result.reply.isNotBlank()) {
                 GenerationTestText(stringResource(R.string.ai_model_test_partial_reply, result.reply))
             }
@@ -353,13 +355,17 @@ internal fun AiModelGenerationTestProtocol.displayName(): String = when (this) {
 }
 
 @Composable
-private fun AiModelGenerationTestResult.Failure.message(): String = when (reason) {
+private fun AiModelGenerationTestResult.Failure.message(officialOpenCodeGo: Boolean): String = when (reason) {
     AiModelGenerationTestFailure.MISSING_API_KEY -> stringResource(R.string.ai_api_key_required)
     AiModelGenerationTestFailure.INVALID_ENDPOINT -> stringResource(R.string.ai_model_test_invalid_endpoint)
     AiModelGenerationTestFailure.UNSUPPORTED_PROTOCOL -> stringResource(R.string.ai_model_interface_unsupported)
     AiModelGenerationTestFailure.STREAMING_REQUIRED -> stringResource(R.string.ai_model_streaming_required)
     AiModelGenerationTestFailure.HTTP -> httpStatus?.let { status ->
-        stringResource(R.string.ai_model_test_http_error, status)
+        when {
+            officialOpenCodeGo && status == 401 -> stringResource(R.string.ai_opencode_invalid_key)
+            officialOpenCodeGo && status == 403 -> stringResource(R.string.ai_opencode_go_model_denied)
+            else -> stringResource(R.string.ai_model_test_http_error, status)
+        }
     } ?: stringResource(R.string.ai_model_test_invalid_response)
     AiModelGenerationTestFailure.NETWORK -> stringResource(R.string.ai_model_test_network_error)
     AiModelGenerationTestFailure.TIMEOUT -> stringResource(R.string.ai_model_test_timeout)

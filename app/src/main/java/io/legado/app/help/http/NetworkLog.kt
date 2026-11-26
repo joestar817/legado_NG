@@ -13,11 +13,13 @@ object NetworkLog {
 
     const val MAX_LOG_SIZE = 500
     const val BODY_PREVIEW_SIZE = 512L * 1024L
+    private const val MAX_RETAINED_TEXT_BYTES = 16L * 1024L * 1024L
     private const val DEFAULT_SOURCE = "全局"
     private const val REDACTED = "[已脱敏]"
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT)
     private val nextId = AtomicLong(0)
     private val items = arrayListOf<Entry>()
+    private var retainedTextBytes = 0L
     private val sensitiveHeaderNames = setOf(
         "authorization",
         "proxy-authorization",
@@ -28,6 +30,7 @@ object NetworkLog {
         "x-goog-api-key",
         "x-auth-token",
         "x-access-token",
+        "x-refresh-token",
         "x-user-id",
         "x-enterprise-id",
         "chatgpt-account-id",
@@ -45,7 +48,7 @@ object NetworkLog {
         setOf(RegexOption.IGNORE_CASE)
     )
     private val quotedCredentialPattern = Regex(
-        "(\"(?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|auth|authorization|[_-]?(?:csrf|xsrf)[_-]?token|token|secret|password|passwd|pwd|session(?:id)?|cookie|set[_-]?cookie)\"\\s*:\\s*\")[^\"]*(\")",
+        "(\"(?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|auth|authorization|[_-]?(?:csrf|xsrf)[_-]?token|token|secret|password|passwd|pwd|session(?:id)?|cookie|set[_-]?cookie)\"\\s*:\\s*\")(?:\\\\.|[^\"\\\\])*+(\"|\\\\?\\z)",
         setOf(RegexOption.IGNORE_CASE)
     )
     private val formCredentialPattern = Regex(
@@ -75,6 +78,7 @@ object NetworkLog {
     @Synchronized
     fun clear() {
         items.clear()
+        retainedTextBytes = 0L
     }
 
     fun recordOkHttp(
@@ -95,7 +99,7 @@ object NetworkLog {
     ): Response? {
         if (!isEnabled) return response
         val entry = okHttpEntry(request, response, tookMs, error, aiRequest = true)
-        add(entry)
+        addAiEntry(request, entry)
         if (response == null || request.networkLogSource() == null) return response
         val mediaType = response.body.contentType()
         if (mediaType != null && mediaType.type != "text" &&
@@ -175,16 +179,58 @@ object NetworkLog {
     @Synchronized
     private fun add(entry: Entry) {
         items.add(0, entry)
-        while (items.size > MAX_LOG_SIZE) {
-            items.removeLastOrNull()
+        retainedTextBytes += entry.detailBytes()
+        trim()
+    }
+
+    private fun trim() {
+        while (items.size > MAX_LOG_SIZE || retainedTextBytes > MAX_RETAINED_TEXT_BYTES) {
+            retainedTextBytes -= items.removeAt(items.lastIndex).detailBytes()
         }
     }
 
     @Synchronized
     private fun updateResponseBody(id: Long, body: String) {
         val index = items.indexOfFirst { it.id == id }
-        if (index >= 0) items[index] = items[index].copy(responseBody = body)
+        if (index >= 0) {
+            retainedTextBytes -= items[index].detailBytes()
+            items[index] = items[index].copy(responseBody = body)
+            retainedTextBytes += items[index].detailBytes()
+            trim()
+        }
     }
+
+    @Synchronized
+    internal fun addAiEntry(request: Request, entry: Entry) {
+        val trace = request.tag(GenerationTrace::class.java)
+        trace?.entryId = entry.id
+        add(entry.copy(generation = trace?.result))
+    }
+
+    @Synchronized
+    internal fun finishGeneration(request: Request, state: GenerationState, finishReason: String? = null) {
+        val trace = request.tag(GenerationTrace::class.java) ?: return
+        val result = GenerationResult(
+            state,
+            (System.nanoTime() - trace.startedAtNanos) / 1_000_000,
+            finishReason?.takeIf(generationReasonPattern::matches),
+        )
+        trace.result = result
+        val index = items.indexOfFirst { it.id == trace.entryId }
+        if (index >= 0) items[index] = items[index].copy(generation = result)
+    }
+
+    internal class GenerationTrace {
+        val startedAtNanos = System.nanoTime()
+        var entryId: Long? = null
+        var result: GenerationResult? = null
+    }
+
+    enum class GenerationState { COMPLETED, TRUNCATED, INTERRUPTED, REFUSED, CANCELLED, FAILED }
+
+    data class GenerationResult(val state: GenerationState, val elapsedMs: Long, val finishReason: String?)
+
+    private val generationReasonPattern = Regex("[a-zA-Z0-9_.-]{1,64}")
 
     internal fun displaySource(source: String?): String {
         return source?.takeIf { it.isNotBlank() } ?: DEFAULT_SOURCE
@@ -290,11 +336,11 @@ object NetworkLog {
         val body = request.body ?: return null
         if (body.isOneShot() || body.isDuplex()) return null
         return runCatching {
-            val buffer = okio.Buffer()
-            body.writeTo(buffer)
-            buffer.readUtf8().redactedForNetworkLog().limitPreview()
+            val (head, truncated) = body.readNetworkLogPreview()
+            val text = head.redactedForNetworkLog().limitPreview()
+            if (truncated) "$text\n[truncated at $BODY_PREVIEW_SIZE bytes]" else text
         }.getOrElse {
-            "[request body unavailable: ${it.localizedMessage}]"
+            "[request body unavailable: ${it.javaClass.simpleName}]"
         }
     }
 
@@ -335,7 +381,8 @@ object NetworkLog {
         val requestBody: String?,
         val responseHeaders: String?,
         val responseBody: String?,
-        val error: String?
+        val error: String?,
+        val generation: GenerationResult? = null,
     ) {
         val summary: String
             get() = buildString {
@@ -365,4 +412,9 @@ object NetworkLog {
             append(value)
         }
     }
+
+    private fun Entry.detailBytes(): Long = 2L * (
+        requestHeaders.orEmpty().length + requestBody.orEmpty().length +
+            responseHeaders.orEmpty().length + responseBody.orEmpty().length + error.orEmpty().length
+        )
 }

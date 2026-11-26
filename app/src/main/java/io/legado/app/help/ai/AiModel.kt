@@ -55,7 +55,10 @@ enum class AiModelType {
     TTS,
 
     @SerializedName("ocr")
-    OCR
+    OCR,
+
+    @SerializedName("other")
+    OTHER
 }
 
 enum class AiModelModality {

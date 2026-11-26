@@ -34,6 +34,9 @@ data class AiModelInfo(
     @SerializedName("defaultReasoningEnabled") val defaultReasoningEnabled: AiModelValue<Boolean>? = null,
     @SerializedName("supportsAdaptiveThinking") val supportsAdaptiveThinking: AiModelValue<Boolean>? = null,
     @SerializedName("creditMultiplier") val creditMultiplier: String? = null,
+    @SerializedName("catalogType") val catalogType: AiModelValue<AiModelType>? = null,
+    @SerializedName("supportsTemperature") val supportsTemperature: AiModelValue<Boolean>? = null,
+    @SerializedName("supportsStructuredOutput") val supportsStructuredOutput: AiModelValue<Boolean>? = null,
 ) {
     internal val creditMultiplierLabel: String?
         get() = creditMultiplier?.let { "$it×" }
@@ -51,6 +54,9 @@ data class AiModelInfo(
             maxOutputTokens = maxOutputTokens.orPrevious(sameEndpoint?.maxOutputTokens),
             inputModalities = inputModalities.orPrevious(sameEndpoint?.inputModalities),
             outputModalities = outputModalities.orPrevious(sameEndpoint?.outputModalities),
+            catalogType = catalogType.orPrevious(sameEndpoint?.catalogType),
+            supportsTemperature = supportsTemperature.orPrevious(sameEndpoint?.supportsTemperature),
+            supportsStructuredOutput = supportsStructuredOutput.orPrevious(sameEndpoint?.supportsStructuredOutput),
             effortLevels = levels,
             defaultEffort = default?.takeIf { levels?.value?.contains(it.value) != false },
             anthropicSystemPromptUpdate =

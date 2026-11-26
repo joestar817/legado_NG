@@ -5,12 +5,15 @@ import okhttp3.Request
 import java.security.MessageDigest
 import java.util.UUID
 
+internal fun AiProviderSetting.isOfficialOpenCodeGo(): Boolean =
+    officialModelProviderId() == AiDefaultProviders.OPENCODE_ID
+
 /** Apply OpenCode's session routing only to the built-in provider. */
 internal fun Request.Builder.addOpenCodeProviderHeaders(
     setting: AiProviderSetting,
     conversationId: String? = null
 ): Request.Builder {
-    if (!setting.builtIn || setting.id != AiDefaultProviders.OPENCODE_ID) return this
+    if (!setting.isOfficialOpenCodeGo()) return this
 
     // Standalone requests do not have an existing conversation.
     val sessionId = conversationId ?: UUID.randomUUID().toString()

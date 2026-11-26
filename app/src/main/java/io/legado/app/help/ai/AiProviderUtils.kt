@@ -4,14 +4,14 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import io.legado.app.help.http.NetworkLog
+import io.legado.app.help.http.NetworkLogInterceptor
 import io.legado.app.help.http.await
+import io.legado.app.help.http.networkLogSource
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import io.legado.app.help.http.NetworkLogInterceptor
-import io.legado.app.help.http.networkLogSource
 import okhttp3.Call
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -71,8 +71,10 @@ internal fun aiHttpClient(timeoutSeconds: Int): OkHttpClient {
 }
 
 internal fun Request.withAiTextLog(params: AiTextParams): Request {
-    val source = params.networkLogSource ?: return this
-    return newBuilder().apply { networkLogSource(source) }.build()
+    return newBuilder()
+        .tag(NetworkLog.GenerationTrace::class.java, NetworkLog.GenerationTrace())
+        .apply { params.networkLogSource?.let { networkLogSource(it) } }
+        .build()
 }
 
 internal suspend fun <T> Call.readCancellableStream(read: suspend (Response) -> T): T =
@@ -196,21 +198,20 @@ internal suspend fun OkHttpClient.readModelCatalogPages(
 }
 
 internal suspend fun OkHttpClient.executeJsonWithUrl(request: Request): Pair<JsonObject, HttpUrl> {
-    return withContext(IO) {
-        val response = newCall(request).await()
-        val body = response.body.string()
-        if (!response.isSuccessful) {
-            throw IllegalStateException("HTTP ${response.code}: ${body.take(500)}")
+    return newCall(request).readCancellableStream { response ->
+        response.use {
+            val body = it.body.string()
+            if (!it.isSuccessful) {
+                throw IllegalStateException("HTTP ${it.code}: ${body.take(500)}")
+            }
+            JsonParser.parseString(body).asJsonObject to it.request.url
         }
-        JsonParser.parseString(body).asJsonObject to response.request.url
     }
 }
 
 internal suspend fun OkHttpClient.executeJsonOrThrow(request: Request): Pair<Response, String> {
-    return withContext(IO) {
-        val response = newCall(request).await()
-        val body = response.body.string()
-        response to body
+    return newCall(request).readCancellableStream { response ->
+        response.use { it to it.body.string() }
     }
 }
 

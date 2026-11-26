@@ -1,6 +1,5 @@
 package io.legado.app.help.ai
 
-import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.CancellationException
@@ -49,77 +48,6 @@ class OpenAiCompatibleProvider : AiProvider {
             }
         }
         throw lastError ?: IllegalStateException("No model endpoint candidates")
-    }
-
-    override suspend fun generateText(
-        setting: AiProviderSetting,
-        messages: List<AiMessage>,
-        params: AiTextParams
-    ): AiTextResult {
-        val reasoningOptions = setting.reasoningOptions(setting.model)
-        val requestBody = JsonObject().apply {
-            addProperty("model", setting.model)
-            add("messages", JsonArray().apply {
-                messages.forEach { message ->
-                    add(JsonObject().apply {
-                        addProperty("role", message.role.apiValue)
-                        addProperty("content", message.content)
-                    })
-                }
-            })
-            params.temperature?.let { addProperty("temperature", it) }
-            params.maxTokens?.let { addProperty("max_tokens", it) }
-            if (params.jsonResponse) {
-                add("response_format", JsonObject().apply {
-                    addProperty("type", "json_object")
-                })
-            }
-            addReasoningParams(params, reasoningOptions)
-            addProperty("stream", false)
-        }
-
-        val client = aiHttpClient(setting.timeoutSeconds)
-        val apiKey = setting.apiKeyForRequest()
-        val request = Request.Builder()
-            .url(buildAiApiEndpoint(setting.baseUrl, setting.chatCompletionsPath))
-            .apply {
-                if (apiKey.isNotBlank()) {
-                    addHeader("Authorization", "Bearer $apiKey")
-                }
-            }
-            .addOpenCodeProviderHeaders(setting)
-            .addHeader("Content-Type", "application/json")
-            .post(jsonBody(requestBody))
-            .build()
-            .withAiTextLog(params)
-
-        val (response, body) = client.executeJsonOrThrow(request)
-        if (!response.isSuccessful) {
-            error("HTTP ${response.code}: ${body.take(500)}")
-        }
-        val json = JsonParser.parseString(body).asJsonObject
-        val choice = json.arrayOrNull("choices")
-            ?.firstOrNull()
-            ?.takeIf { it.isJsonObject }
-            ?.asJsonObject
-            ?: error("OpenAI response missing choices")
-        val message = choice.objectOrNull("message")
-        val content = message?.get("content").contentText()
-            .ifBlank { choice.objectOrNull("delta")?.get("content").contentText() }
-        val reasoningKey = reasoningOptions.reasoningOutputField.ifBlank { "reasoning_content" }
-        val reasoning = message?.stringOrNull(reasoningKey)
-            ?: message?.stringOrNull("reasoning")
-        val usage = json.objectOrNull("usage")
-        return AiTextResult(
-            content = content,
-            reasoning = reasoning,
-            model = json.stringOrNull("model"),
-            finishReason = choice.stringOrNull("finish_reason"),
-            promptTokens = usage?.intOrNull("prompt_tokens"),
-            completionTokens = usage?.intOrNull("completion_tokens"),
-            totalTokens = usage?.intOrNull("total_tokens"),
-            rawPreview = body.take(1000)
-        )
     }
 
     internal fun parseModels(

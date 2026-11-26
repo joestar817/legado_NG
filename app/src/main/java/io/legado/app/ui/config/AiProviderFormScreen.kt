@@ -57,7 +57,8 @@ data class AiProviderFormScreenState(
     val useResponsesApi: Boolean? = null,
     val responsesApiAvailable: Boolean = false,
     val responsesApiActive: Boolean = false,
-    val apiPathValue: String = chatPath
+    val apiPathValue: String = chatPath,
+    val opensOpenAiCreditGrants: Boolean = false,
 )
 
 enum class AiProviderFormField {
@@ -370,7 +371,9 @@ fun AiProviderFormScreen(
                     appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
                 )
                 NgFormActionButton(
-                    text = stringResource(R.string.ai_query_balance),
+                    text = stringResource(
+                        if (state.opensOpenAiCreditGrants) R.string.ai_openai_credit_grants else R.string.ai_query_balance
+                    ),
                     onClick = {
                         focusManager.clearFocus()
                         onAction(AiProviderFormScreenAction.QueryBalanceRequested)

@@ -40,12 +40,15 @@ internal fun AiProviderSetting.resolveModelGenerationRoute(
     val protocol = protocolOverride ?: model.interfaceProtocol(this) ?: defaultProtocol
     val officialOpenAiResponsesOnly = model.id in openAiResponsesOnlyModels &&
         isOfficialOpenAiGenerationPath(CHAT_COMPLETIONS, "/v1/chat/completions")
+    val officialOpenAiModelNeedsChat = protocol == RESPONSES && isOpenAiChatCompletionsOnlyModel(model.id) &&
+        isOfficialOpenAiGenerationPath(RESPONSES, "/v1/responses")
 
     val requiresStreaming = protocol == CHAT_COMPLETIONS && model.id in bailianStreamingOnlyModels &&
         isOfficialBailianGenerationEndpoint() &&
         generationUrl(protocol)?.encodedPath?.trimEnd('/') == "/compatible-mode/v1/chat/completions"
     val issue = when {
-        generationApiPath(protocol) == null || (officialOpenAiResponsesOnly && protocol == CHAT_COMPLETIONS) ->
+        generationApiPath(protocol) == null || officialOpenAiModelNeedsChat ||
+            (officialOpenAiResponsesOnly && protocol == CHAT_COMPLETIONS) ->
             AiModelGenerationIssue.UNSUPPORTED_PROTOCOL
         requiresStreaming && !stream -> AiModelGenerationIssue.STREAMING_REQUIRED
         else -> null
@@ -62,7 +65,7 @@ private fun AiModel.interfaceProtocol(provider: AiProviderSetting): AiModelGener
     }
 }
 
-private fun AiProviderSetting.isOfficialOpenAiGenerationPath(
+internal fun AiProviderSetting.isOfficialOpenAiGenerationPath(
     protocol: AiModelGenerationTestProtocol,
     expectedPath: String,
 ): Boolean {
@@ -78,10 +81,16 @@ internal fun AiProviderSetting.generationUrl(protocol: AiModelGenerationTestProt
 
 // OpenAI documents these Pro models as Responses-only in their individual model pages.
 private val openAiResponsesOnlyModels = setOf(
+    "codex-mini-latest", "gpt-5-codex", "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini",
+    "gpt-5.2-codex", "gpt-5.3-codex",
+    "o1-pro", "o1-pro-2025-03-19",
     "o3-pro", "o3-pro-2025-06-10",
+    "o3-deep-research", "o3-deep-research-2025-06-26", "o4-mini-deep-research", "o4-mini-deep-research-2025-06-26",
     "gpt-5-pro", "gpt-5-pro-2025-10-06",
     "gpt-5.2-pro", "gpt-5.2-pro-2025-12-11",
     "gpt-5.4-pro", "gpt-5.4-pro-2026-03-05",
+    "gpt-5.5-pro", "gpt-5.5-pro-2026-04-23",
+    "gpt-6-astra-healthcare", "gpt-6.1-sol-healthcare", "gpt-6.2-astra-healthcare", "gpt-6.2-sol-healthcare",
 )
 
 // Bailian documents these Qwen3 open models and QwQ/QVQ families as streaming-only for Chat.

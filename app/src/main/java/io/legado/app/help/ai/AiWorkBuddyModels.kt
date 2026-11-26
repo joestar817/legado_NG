@@ -36,7 +36,10 @@ internal fun parseWorkBuddyModels(data: JsonObject, modelSource: String): List<A
             ownedBy = vendor.orEmpty(),
             inputModalities = text,
             outputModalities = text,
-            abilities = if (reasoning) listOf(AiModelAbility.REASONING) else emptyList(),
+            abilities = buildList {
+                add(AiModelAbility.TOOL)
+                if (reasoning) add(AiModelAbility.REASONING)
+            },
             modelInfo = AiModelInfo(
                 endpoint = modelSource,
                 name = AiModelValue(name),
@@ -45,7 +48,7 @@ internal fun parseWorkBuddyModels(data: JsonObject, modelSource: String): List<A
                 maxOutputTokens = output?.let { AiModelValue(it) },
                 inputModalities = AiModelValue(listOf("text")),
                 outputModalities = AiModelValue(listOf("text")),
-                toolCalling = AiModelValue(false),
+                toolCalling = AiModelValue(true),
                 reasoning = AiModelValue(reasoning),
                 creditMultiplier = item.workBuddyText("credits")?.let(::parseCreditMultiplier),
             ),

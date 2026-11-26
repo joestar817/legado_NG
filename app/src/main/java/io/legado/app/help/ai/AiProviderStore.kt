@@ -593,6 +593,7 @@ object AiProviderStore {
             "asr", "speech_to_text", "stt" -> AiModelType.ASR
             "tts", "text_to_speech", "voice" -> AiModelType.TTS
             "ocr" -> AiModelType.OCR
+            "other" -> AiModelType.OTHER
             else -> AiModelType.CHAT
         }
     }

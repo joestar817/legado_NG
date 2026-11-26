@@ -21,7 +21,7 @@ internal enum class AiProviderModelFilter(private val type: AiModelType? = null)
     ASR(AiModelType.ASR),
     TTS(AiModelType.TTS),
     OCR(AiModelType.OCR),
-    OTHER;
+    OTHER(AiModelType.OTHER);
 
     @get:StringRes
     val labelRes: Int
@@ -41,7 +41,8 @@ internal enum class AiProviderModelFilter(private val type: AiModelType? = null)
             OTHER -> R.drawable.ic_ai_model_other
         }
 
-    fun matches(modelType: AiModelType?): Boolean = this == ALL || type == modelType
+    fun matches(modelType: AiModelType?): Boolean =
+        this == ALL || type == modelType || (this == OTHER && modelType == null)
 
     fun orAllFor(models: List<AiProviderModelItemUiModel>): AiProviderModelFilter =
         if (models.any { matches(it.type) }) this else ALL

@@ -216,7 +216,8 @@ class AiChatStreamCancellationTest {
         val onUpdate: (AiChatStreamUpdate) -> Unit = { updates += it.content }
         try {
             executeStreamChat.invoke(
-                chat, client, request, "reasoning_content", openRouterHistory, onUpdate, false, true, null, null, continuation,
+                chat, client, request, "reasoning_content", openRouterHistory, onUpdate, false, true, null, null,
+                false, continuation,
             )
         } catch (error: InvocationTargetException) {
             throw error.targetException
@@ -227,6 +228,6 @@ class AiChatStreamCancellationTest {
         "executeStreamChat", OkHttpClient::class.java, Request::class.java, String::class.java,
         AiNativeChatHistory::class.java, Function1::class.java, Boolean::class.javaPrimitiveType,
         Boolean::class.javaPrimitiveType, AiNativeChatHistory::class.java, AiNativeWebEvents::class.java,
-        Continuation::class.java
+        Boolean::class.javaPrimitiveType, Continuation::class.java,
     ).apply { isAccessible = true }
 }

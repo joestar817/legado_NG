@@ -41,6 +41,40 @@ import java.util.concurrent.atomic.AtomicReference
 @Config(sdk = [35], application = Application::class)
 class AiProviderWorkflowTest {
     @Test
+    fun purificationRejectsATruncatedPrefixBeforeProducingAReplacement() = runBlocking {
+        ApplicationProvider.getApplicationContext<Application>().injectAsAppCtx()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/chat/completions") { exchange ->
+            exchange.requestBody.use { it.readBytes() }
+            val reply = """{"choices":[{"message":{"role":"assistant","content":"甲走进街角。"},"finish_reason":"length"}]}"""
+                .toByteArray(Charsets.UTF_8)
+            exchange.responseHeaders.set("Content-Type", "application/json")
+            exchange.sendResponseHeaders(200, reply.size.toLong())
+            exchange.responseBody.use { it.write(reply) }
+        }
+        server.start()
+        try {
+            val text = AiModel("fixture", inputModalities = listOf(AiModelModality.TEXT),
+                outputModalities = listOf(AiModelModality.TEXT))
+            val provider = AiProviderSetting(
+                id = "custom_purify_fixture",
+                name = "Fixture",
+                type = AiProviderType.OPENAI,
+                baseUrl = "http://127.0.0.1:${server.address.port}",
+                apiKey = "fixture",
+                builtIn = false,
+                enabled = true,
+            ).withFetchedModels(listOf(text))
+            AiProviderStore.saveProviders(listOf(provider))
+            AiConfig.savePurifyModel(provider.id, text.id)
+            val error = runCatching { AiPurifyHelper.purify("甲走进街角。乙仍在门外等候。") }.exceptionOrNull()
+            assertEquals(AiAssistantReplyEndReason.TRUNCATED, (error as? AiAssistantReplyEndException)?.reason)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun bookSearchWithoutAUsableRouteStopsBeforeCallingTheModel() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Application>()
         context.injectAsAppCtx()
