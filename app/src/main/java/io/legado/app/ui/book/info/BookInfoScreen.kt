@@ -114,7 +114,6 @@ import io.legado.app.ui.book.character.BookCharacterPortraits
 import io.legado.app.ui.book.character.BookCharacterSilhouetteStyle
 import io.legado.app.ui.book.character.forRole
 import io.legado.app.ui.book.search.SearchResultCard
-import io.legado.app.ui.config.rememberHasAssistantModelSelection
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgActionBarButton
@@ -244,7 +243,6 @@ internal enum class BookInfoMenuAction(val itemId: Int) {
     ChangeGroup(0x7315),
     ViewToc(0x7316),
     CacheBook(0x7317),
-    CharacterAi(0x7318),
     ;
 
     companion object {
@@ -547,8 +545,6 @@ private fun BookInfoMoreMenu(
     onEvent: (BookInfoUiEvent) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val showCharacterAi = BookInfoSection.CHARACTERS !in layout.hidden &&
-        rememberHasAssistantModelSelection()
     Box {
         BookInfoToolbarIcon(
             iconRes = R.drawable.ic_more_vert,
@@ -561,7 +557,6 @@ private fun BookInfoMoreMenu(
             items = bookInfoMenuItems(
                 state = state,
                 metadataVisible = BookInfoSection.METADATA !in layout.hidden,
-                showCharacterAi = showCharacterAi,
             ),
             variant = NgExpandableActionMenuVariant.DROPDOWN,
             widthVariant = NgExpandableActionMenuWidthVariant.GROUPED_LABELS,
@@ -582,7 +577,6 @@ private fun BookInfoMoreMenu(
 internal fun bookInfoMenuItems(
     state: BookInfoUiState,
     metadataVisible: Boolean = true,
-    showCharacterAi: Boolean = false,
 ): List<NgExpandableActionMenuItem> {
     val book = state.book
     return buildList {
@@ -600,13 +594,8 @@ internal fun bookInfoMenuItems(
                 dividerBefore = true,
             ),
         )
-        if (book != null) {
-            if (showCharacterAi && state.charactersVisible) {
-                add(BookInfoMenuAction.CharacterAi.item(R.string.book_info_character_ai, R.drawable.ic_ai))
-            }
-            if (!metadataVisible) {
-                add(bookInfoMetadataMenu(state, book))
-            }
+        if (book != null && !metadataVisible) {
+            add(bookInfoMetadataMenu(state, book))
         }
         add(
             NgExpandableActionMenuItem(

@@ -584,6 +584,10 @@ class AiChatSessionRuntimeTest {
             return session
         }
 
+        fun pendingTasksFor(workKey: String) = coordinator.tasks.value.filter {
+            it.workKey == workKey && !it.state.isTerminal
+        }
+
         try {
             coordinator.attachWindow()
             val first = createWaitingSession("first-range", "book-a")
@@ -591,14 +595,14 @@ class AiChatSessionRuntimeTest {
             val other = createWaitingSession("other-range", "book-b")
             coordinator.detachWindow()
 
-            val matches = coordinator.tasks.value.characterCardTasks("book-a")
+            val matches = pendingTasksFor("book-a")
             assertEquals(listOf(second.id, first.id), matches.map { it.sessionId })
-            assertEquals(listOf(other.id), coordinator.tasks.value.characterCardTasks("book-b").map { it.sessionId })
+            assertEquals(listOf(other.id), pendingTasksFor("book-b").map { it.sessionId })
             assertTrue(matches.all { it.actionTitle == "Choose scan range" && it.state.needsAction })
             assertNull(coordinator.tasks.value.petWorkActivity())
             assertFalse(coordinator.takePetCompletion())
             first.markInteractionResolved(first.messages.single().id, "scan_range", "First 100 chapters")
-            assertEquals(listOf(second.id), coordinator.tasks.value.characterCardTasks("book-a").map { it.sessionId })
+            assertEquals(listOf(second.id), pendingTasksFor("book-a").map { it.sessionId })
         } finally {
             scope.cancel()
         }

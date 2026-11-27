@@ -138,6 +138,7 @@ class ReadContentSettingsDialog : BaseComposeDialogFragment() {
                                         refreshUi()
                                     },
                                     onParagraphIcons = { showParagraphIcons = true },
+                                    onAiPurifySettings = { readActivity?.openAiPurifySettings() },
                                 )
                             }
                         }
@@ -183,6 +184,7 @@ internal fun ReadContentSettingsScreen(
     onRemoveSameTitleChanged: (Boolean) -> Unit,
     onReSegmentChanged: (Boolean) -> Unit,
     onParagraphIcons: () -> Unit,
+    onAiPurifySettings: () -> Unit,
 ) {
     val contentColor = Color(NgTheme.colors.onSurface)
     val maxHeight = LocalConfiguration.current.screenHeightDp.dp
@@ -288,6 +290,13 @@ internal fun ReadContentSettingsScreen(
                         }
                         Icon(painterResource(R.drawable.ic_arrow_right), null, Modifier.size(20.dp),
                             Color(NgTheme.colors.onSurfaceVariant))
+                    }
+                    NgFormGroupDivider()
+                    Box(Modifier.padding(horizontal = 14.dp)) {
+                        ActionSettingRow(
+                            title = stringResource(R.string.ai_purify_settings),
+                            onClick = onAiPurifySettings,
+                        )
                     }
                 }
             }

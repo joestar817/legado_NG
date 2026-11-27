@@ -88,7 +88,6 @@ import io.legado.app.ui.book.character.automaticCharacterSilhouetteStyle
 import io.legado.app.ui.book.character.putAutomaticCharacterSilhouetteStyle
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.changesource.ChangeChapterSourceDialog
-import io.legado.app.ui.book.info.BookAiAssistantLauncher
 import io.legado.app.ui.book.info.BookInfoActivity
 import io.legado.app.ui.book.read.aloud.ReadAloudLauncher
 import io.legado.app.ui.book.read.aloud.ReadAloudMiniPlayer
@@ -1195,12 +1194,13 @@ class ReadBookActivity : BaseReadBookActivity(),
             toastOnUi("请只选择一个角色名字")
             return
         }
-        BookAiAssistantLauncher.openCharacterCardFromSelection(
-            context = this,
-            book = book,
-            selectedName = name,
-            chapterIndex = ReadBook.durChapterIndex,
-            chapterTitle = ReadBook.curTextChapter?.title ?: book.durChapterTitle,
+        val target = binding.readView.getContentEditTarget(activeTextHighlight)
+        showAiCharacterCardSelection(
+            book = book.copy(),
+            name = name,
+            chapterIndex = target?.chapterIndex ?: ReadBook.durChapterIndex,
+            chapterTitle = target?.chapterTitle ?: ReadBook.curTextChapter?.title ?: book.durChapterTitle,
+            onSaved = ::refreshReadingHighlightStyles,
         )
     }
 
@@ -1533,7 +1533,23 @@ class ReadBookActivity : BaseReadBookActivity(),
         showAiPurifyChapterRangeDialog()
     }
 
-    override fun onOpenAiPurifySettings() {
+    override fun onClickAiCharacterCards() {
+        val book = ReadBook.book?.takeIf { it.menuCapabilities.textContent }
+        val chapter = ReadBook.curTextChapter?.takeIf { it.chapter.index == ReadBook.durChapterIndex }
+        if (book == null || chapter == null || chapter.sourceParagraphs.isEmpty()) {
+            toastOnUi(R.string.ai_character_card_candidates_no_text)
+            return
+        }
+        showAiCharacterCardCandidates(
+            book = book.copy(),
+            chapterIndex = chapter.chapter.index,
+            chapterTitle = chapter.title,
+            paragraphs = chapter.sourceParagraphs,
+            onSaved = ::refreshReadingHighlightStyles,
+        )
+    }
+
+    internal fun openAiPurifySettings() {
         startActivity(Intent(this, ConfigActivity::class.java).apply {
             putExtra("configTag", ConfigTag.AI_CONFIG)
             putExtra(AiConfigFragment.EXTRA_INITIAL_PAGE, AiConfigFragment.PAGE_PURIFY)

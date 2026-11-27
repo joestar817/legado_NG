@@ -65,10 +65,6 @@ internal fun List<AiChatTask>.petWorkActivity(): String? =
     firstNotNullOfOrNull { task -> task.workActivity.takeIf { task.state.isRunning } }
         ?: PetActivities.WORK.takeIf { any { it.state.isRunning } }
 
-internal fun List<AiChatTask>.characterCardTasks(workKey: String) = filter {
-    it.workKey == workKey && !it.state.isTerminal
-}
-
 internal fun AiBookSourceLookup.chatTaskOutcome(): AiChatTaskState? = when (status) {
     AiBookSourceStatus.COMPLETE -> AiChatTaskState.COMPLETED
     AiBookSourceStatus.INCOMPLETE -> if (hits.isEmpty()) AiChatTaskState.FAILED else AiChatTaskState.COMPLETED

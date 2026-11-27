@@ -159,8 +159,7 @@ class BookInfoSettingsTest {
             BookInfoMenuAction.CacheBook,
         )
         assertTrue(settings.none { it.itemId in ids })
-        val expectedIds = (BookInfoMenuAction.entries.toSet() - settings - metadataActions -
-            BookInfoMenuAction.CharacterAi).map { it.itemId }.toSet()
+        val expectedIds = (BookInfoMenuAction.entries.toSet() - settings - metadataActions).map { it.itemId }.toSet()
         assertEquals(expectedIds, ids)
         assertEquals(1, leafIds(bookInfoMenuItems(online)).count { it == BookInfoMenuAction.Settings.itemId })
         assertFalse(
@@ -169,17 +168,12 @@ class BookInfoSettingsTest {
     }
 
     @Test
-    fun characterAiMenuRequiresTheCharacterSectionAndAnAssistantModel() {
+    fun overflowOmitsRetiredCharacterAiMenuAction() {
         val state = onlineState().copy(charactersVisible = true)
-        val actionId = BookInfoMenuAction.CharacterAi.itemId
+        val retiredActionId = 0x7318
 
-        assertFalse(bookInfoMenuItems(state).any { it.itemId == actionId })
-        assertFalse(
-            bookInfoMenuItems(state.copy(charactersVisible = false), showCharacterAi = true)
-                .any { it.itemId == actionId },
-        )
-        val item = bookInfoMenuItems(state, showCharacterAi = true).single { it.itemId == actionId }
-        assertEquals(R.string.book_info_character_ai, item.titleRes)
+        assertNull(BookInfoMenuAction.fromItemId(retiredActionId))
+        assertFalse(bookInfoMenuItems(state).any { it.itemId == retiredActionId })
     }
 
     @Test

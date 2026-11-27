@@ -22,6 +22,10 @@ import io.legado.app.ui.design.theme.NgTheme
 
 private val NgThemeSheetActionContainerColor = Color(0x88FFFFF9)
 
+@Composable
+internal fun ngThemeSheetActionContainerColor(): Color =
+    ngDrawerThemedActionContainerColor(NgThemeSheetActionContainerColor)
+
 /**
  * 主题设置抽屉的紧凑圆形操作按钮。
  *
@@ -37,7 +41,7 @@ internal fun NgThemeSheetActionButton(
     containerColor: Color? = null,
     content: @Composable () -> Unit
 ) {
-    val resolvedContainerColor = containerColor ?: ngDrawerThemedActionContainerColor(NgThemeSheetActionContainerColor)
+    val resolvedContainerColor = containerColor ?: ngThemeSheetActionContainerColor()
     Box(
         modifier = modifier
             .size(touchSize)

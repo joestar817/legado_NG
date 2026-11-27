@@ -27,7 +27,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.RequestOptions
-import com.google.gson.JsonObject
 import io.legado.app.R
 import io.legado.app.ui.design.theme.NgInterfaceFontMarkwonPlugin
 import io.legado.app.base.ComposeActivityBinding
@@ -49,8 +48,6 @@ import io.legado.app.help.GlideImageGetter
 import io.legado.app.help.TextViewTagHandler
 import io.legado.app.help.source.webCacheObject
 import io.legado.app.help.http.BookSourceCookieStore
-import io.legado.app.help.ai.AgentModeEntryContext
-import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.book.addType
 import io.legado.app.help.book.getRemoteUrl
 import io.legado.app.help.book.isAudio
@@ -101,11 +98,6 @@ import io.legado.app.ui.book.search.SearchActivity
 import io.legado.app.ui.association.OnLineImportActivity
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.book.toc.TocActivityResult
-import io.legado.app.ui.config.AiChatActivity
-import io.legado.app.ui.config.CHARACTER_CARD_ENTRY_CONTEXT
-import io.legado.app.ui.config.aiChatSessions
-import io.legado.app.ui.config.characterCardTasks
-import io.legado.app.ui.config.showAiChatTaskPicker
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.SelectDirectoryContract
 import io.legado.app.ui.login.SourceLoginActivity
@@ -445,7 +437,6 @@ class BookInfoActivity :
             BookInfoMenuAction.ChangeGroup -> handleUiEvent(BookInfoUiEvent.ChangeGroup)
             BookInfoMenuAction.ViewToc -> handleUiEvent(BookInfoUiEvent.OpenToc)
             BookInfoMenuAction.CacheBook -> handleUiEvent(BookInfoUiEvent.CacheBook)
-            BookInfoMenuAction.CharacterAi -> viewModel.getBook()?.let(::openCharacterCardAiAssistant)
             BookInfoMenuAction.CanUpdate -> toggleCanUpdate()
             BookInfoMenuAction.SplitLongChapter -> toggleSplitLongChapter()
             BookInfoMenuAction.DeleteAlert -> {
@@ -905,68 +896,6 @@ class BookInfoActivity :
             putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, book.author)
             putExtra(BookCharacterActivity.EXTRA_BOOK_URL, book.bookUrl)
             putAutomaticCharacterSilhouetteStyle(book.automaticCharacterSilhouetteStyle())
-        }
-    }
-
-    private fun openCharacterCardAiAssistant(book: Book) {
-        if (!book.menuCapabilities.textContent) return
-        val workKey = BookCharacterProfile.workKey(book.name, book.author)
-        val payload = JsonObject().apply {
-            addProperty("work_key", workKey)
-            addProperty("book_name", book.name)
-            addProperty("book_author", book.getRealAuthor())
-            addProperty("book_url", book.bookUrl)
-            addProperty("origin_name", book.originName)
-            book.kind?.takeIf { it.isNotBlank() }?.let { addProperty("category", it) }
-            book.wordCount?.takeIf { it.isNotBlank() }?.let { addProperty("word_count", it) }
-            addProperty("total_chapters", book.totalChapterNum)
-            book.durChapterTitle?.takeIf { it.isNotBlank() }?.let {
-                addProperty("current_chapter_index", book.durChapterIndex + 1)
-                addProperty("current_chapter_title", it)
-            }
-            book.latestChapterTitle?.takeIf { it.isNotBlank() }?.let {
-                addProperty("latest_chapter_title", it)
-            }
-            book.getDisplayIntro()
-                .orEmpty()
-                .toPlainBookIntro()
-                .limitAiContextText(1800)
-                .takeIf { it.isNotBlank() }
-                ?.let { addProperty("book_intro", it) }
-        }
-        val entryContext = AgentModeEntryContext(
-            contextId = CHARACTER_CARD_ENTRY_CONTEXT,
-            payload = payload
-        )
-        fun openSession(sessionId: String?) {
-            startActivity<AiChatActivity> {
-                putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_DETAIL)
-                putStringArrayListExtra(
-                    AiChatActivity.EXTRA_LOADED_SKILL_IDS,
-                    arrayListOf(AiSkillRegistry.SKILL_CHARACTER_CARD_GENERATE)
-                )
-                putExtra(AiChatActivity.EXTRA_MODE_ENTRY_CONTEXT, entryContext.toJson())
-                putExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, true)
-                if (sessionId != null) putExtra(AiChatActivity.EXTRA_TASK_SESSION_ID, sessionId)
-            }
-        }
-        val tasks = aiChatSessions.tasks.value.characterCardTasks(workKey)
-        if (tasks.size > 1) showAiChatTaskPicker(tasks, onOpenTask = ::openSession)
-        else openSession(tasks.singleOrNull()?.sessionId)
-    }
-
-    private fun String.toPlainBookIntro(): String {
-        return replace(Regex("""<use(html|web)>|</use(html|web)>|<md>|</md>"""), "")
-            .replace(Regex("""<[^>]+>"""), "")
-            .replace(Regex("""[ \t\r\n]+"""), " ")
-            .trim()
-    }
-
-    private fun String.limitAiContextText(maxLength: Int): String {
-        return if (length <= maxLength) {
-            this
-        } else {
-            take(maxLength).trimEnd() + "..."
         }
     }
 

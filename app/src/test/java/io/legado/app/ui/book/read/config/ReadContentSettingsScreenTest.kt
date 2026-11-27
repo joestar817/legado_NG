@@ -18,6 +18,7 @@ import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgLegacyThemeInput
 import io.legado.app.ui.design.theme.NgThemeResolver
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,6 +52,7 @@ class ReadContentSettingsScreenTest {
                 ),
                 onChineseConverterChanged = {}, onReplaceChanged = {}, onOpenReplaceRules = {},
                 onRemoveSameTitleChanged = {}, onReSegmentChanged = {}, onParagraphIcons = {},
+                onAiPurifySettings = {},
             )
         }
         composeRule.assertDrawerTextStyle(context.getString(R.string.content), 17)
@@ -65,6 +67,7 @@ class ReadContentSettingsScreenTest {
         }
         composeRule.assertDrawerTextStyle(context.getString(R.string.read_content_replace_rules), 15)
         composeRule.assertDrawerTextStyle(context.getString(R.string.paragraph_icon_title), 15)
+        composeRule.assertDrawerTextStyle(context.getString(R.string.ai_purify_settings), 15)
     }
 
     @Test
@@ -101,6 +104,7 @@ class ReadContentSettingsScreenTest {
                     state = state.copy(reSegment = it)
                 },
                 onParagraphIcons = { events += "paragraphIcons" to "open" },
+                onAiPurifySettings = { events += "aiPurifySettings" to "open" },
             )
         }
 
@@ -119,14 +123,19 @@ class ReadContentSettingsScreenTest {
             .performScrollTo().performClick()
         composeRule.onNodeWithText(context.getString(R.string.re_segment))
             .performScrollTo().performClick()
-        composeRule.onNodeWithText(context.getString(R.string.paragraph_icon_title))
-            .performScrollTo().performClick()
+        val paragraphIcons = composeRule.onNodeWithText(context.getString(R.string.paragraph_icon_title))
+        val aiPurifySettings = composeRule.onNodeWithText(context.getString(R.string.ai_purify_settings))
+        paragraphIcons.performScrollTo().performClick()
+        aiPurifySettings.performScrollTo().performClick()
+        assertTrue(paragraphIcons.fetchSemanticsNode().boundsInRoot.top <
+            aiPurifySettings.fetchSemanticsNode().boundsInRoot.top)
 
         composeRule.runOnIdle {
             assertEquals(
                 listOf(
                     "conversion" to 2, "replace" to false, "rules" to "open",
                     "title" to true, "segment" to true, "paragraphIcons" to "open",
+                    "aiPurifySettings" to "open",
                 ),
                 events,
             )

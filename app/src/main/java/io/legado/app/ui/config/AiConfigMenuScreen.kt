@@ -27,6 +27,7 @@ internal data class AiConfigMenuScreenState(
     val chatEntryStyle: AiChatEntryStyle = AiChatEntryStyle.NONE,
     val installedPets: List<PetChoice> = emptyList(),
     val purifySummary: String = "",
+    val characterCardSummary: String = "",
     val assistantSummary: String = "",
     val readAloudSummary: String = ""
 )
@@ -84,6 +85,12 @@ internal fun AiConfigMenuScreen(
                 summary = state.purifySummary,
                 iconRes = R.drawable.ic_ai_purify,
                 onClick = { onOpenPage(AiConfigFragment.PAGE_PURIFY) }
+            )
+            AiConfigMenuEntry(
+                title = stringResource(R.string.ai_character_card),
+                summary = state.characterCardSummary,
+                iconRes = R.drawable.ic_read_menu_characters,
+                onClick = { onOpenPage(AiConfigFragment.PAGE_CHARACTER_CARD) }
             )
             AiConfigMenuEntry(
                 title = stringResource(R.string.ai_assistant),

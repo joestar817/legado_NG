@@ -29,6 +29,8 @@ object AiConfig {
     const val DEFAULT_PURIFY_CHAPTER_RETRY_COUNT = 3
     const val MIN_PURIFY_CHAPTER_RETRY_COUNT = 0
     const val MAX_PURIFY_CHAPTER_RETRY_COUNT = 10
+    internal const val DEFAULT_CHARACTER_CARD_CONCURRENCY_LIMIT = 2
+    internal val CHARACTER_CARD_CONCURRENCY_RANGE = 1..5
     const val DEFAULT_READ_ALOUD_STORYBOARD_PRELOAD_COUNT = 3
     const val MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT = 0
     const val MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT = 5
@@ -104,6 +106,55 @@ object AiConfig {
         set(value) {
             appCtx.putPrefString(PreferKey.aiPurifyReasoningLevel, value.prefValue)
         }
+
+    internal val characterCardProviderId: String
+        get() = appCtx.getPrefString(PreferKey.aiCharacterCardProviderId).orEmpty()
+
+    internal val characterCardModelId: String
+        get() = appCtx.getPrefString(PreferKey.aiCharacterCardModelId).orEmpty()
+
+    internal var characterCardReasoningLevel: AiReasoningLevel
+        get() = AiReasoningLevel.from(appCtx.getPrefString(PreferKey.aiCharacterCardReasoningLevel))
+        set(value) {
+            appCtx.putPrefString(PreferKey.aiCharacterCardReasoningLevel, value.prefValue)
+        }
+
+    internal var characterCardConcurrencyLimit: Int
+        get() = appCtx.getPrefInt(
+            PreferKey.aiCharacterCardConcurrencyLimit,
+            DEFAULT_CHARACTER_CARD_CONCURRENCY_LIMIT,
+        ).coerceIn(CHARACTER_CARD_CONCURRENCY_RANGE)
+        set(value) {
+            appCtx.putPrefInt(
+                PreferKey.aiCharacterCardConcurrencyLimit,
+                value.coerceIn(CHARACTER_CARD_CONCURRENCY_RANGE),
+            )
+        }
+
+    internal fun selectedCharacterCardModel(
+        providers: List<AiProviderSetting> = AiProviderStore.providers(),
+    ): AiCharacterCardModel? {
+        val provider = providers.firstOrNull { it.id == characterCardProviderId } ?: return null
+        val model = provider.characterCardModel(characterCardModelId) ?: return null
+        return AiCharacterCardModel(provider, model)
+    }
+
+    internal fun saveCharacterCardModel(providerId: String, modelId: String): Boolean {
+        if (AiProviderStore.provider(providerId)?.characterCardModel(modelId) == null) return false
+        appCtx.defaultSharedPreferences.edit {
+            putString(PreferKey.aiCharacterCardProviderId, providerId)
+            putString(PreferKey.aiCharacterCardModelId, modelId)
+        }
+        return true
+    }
+
+    internal fun clearCharacterCardModel() {
+        appCtx.defaultSharedPreferences.edit {
+            remove(PreferKey.aiCharacterCardProviderId)
+            remove(PreferKey.aiCharacterCardModelId)
+            remove(PreferKey.aiCharacterCardReasoningLevel)
+        }
+    }
 
     var readAloudStoryboardProviderId: String
         get() = appCtx.getPrefString(PreferKey.aiReadAloudStoryboardProviderId).orEmpty()

@@ -27,6 +27,22 @@ internal object CharacterCardSelection {
             }
     }
 
+    fun generatedSaveConflict(
+        name: String,
+        aliases: List<String>,
+        existing: BookCharacter?,
+        characters: List<BookCharacter>,
+    ): BookCharacter? {
+        val otherCards = characters.filterNot { it.id == existing?.id }
+        if (existing == null || comparisonKey(name) != comparisonKey(existing.name)) {
+            match(name, otherCards)?.let { return it }
+        }
+        val previousAliases = existing?.aliases().orEmpty().mapTo(hashSetOf(), ::comparisonKey)
+        return aliases.firstNotNullOfOrNull { alias ->
+            if (comparisonKey(alias) in previousAliases) null else match(alias, otherCards)
+        }
+    }
+
     fun normalizeSelectedName(text: String): String? {
         val name = unwrappedName(text)
         if (name.isBlank() || name.length > 24 || name.contains('\n')) return null

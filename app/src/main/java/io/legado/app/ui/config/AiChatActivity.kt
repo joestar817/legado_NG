@@ -2732,7 +2732,7 @@ private fun AiChatRoute(onBack: () -> Unit, onOpenWebSettings: () -> Unit) {
             title = "加载技能",
             emptyText = "暂无可在聊天中加载的技能",
             centeredHeader = true,
-            availableAttachments = buildAgentSkillInputAttachments(),
+            availableAttachments = buildSkillPickerAttachments(),
             loadedAttachmentIds = inputAttachments.map { it.id }.toSet(),
             onAdd = { attachment ->
                 requestSkillAttachment(attachment)
@@ -4492,7 +4492,7 @@ internal fun aiChatSearchMarkdown(context: Context): Markwon = Markwon.builder(c
     .usePlugin(TablePlugin.create(context))
     .build()
 
-private fun AiChatInteractionRender.displayContent(original: String): String =
+internal fun AiChatInteractionRender.displayContent(original: String): String =
     if (interactions.isNotEmpty()) content else content.ifBlank { original }
 
 private fun ChatSearchSource.searchableParts(markdown: Markwon): List<Pair<AiChatSearchPart, String>> {
@@ -6223,6 +6223,20 @@ private data class MarkdownTableParseResult(
     val table: MarkdownTable,
     val nextIndex: Int
 )
+
+internal fun characterCardPreviewRow(content: String): List<String>? {
+    val table = splitMarkdownBlocks(content).filterIsInstance<ChatMarkdownBlock.Table>()
+        .singleOrNull { it.table.headers.firstOrNull()?.trim('*', '`') in setOf("角色名称", "角色名", "姓名") }
+        ?.table ?: return null
+    val headers = table.headers.map { it.trim('*', '`', ' ') }
+    val columns = listOf(
+        setOf("角色名称", "角色名", "姓名"), setOf("性别"), setOf("角色定位", "标签"),
+        setOf("别称", "别名"), setOf("人物介绍", "简介"), setOf("生图提示词", "立绘提示词"),
+    ).map { names -> headers.indexOfFirst { it in names } }
+    val row = table.rows.singleOrNull()?.takeIf { it.size == headers.size } ?: return null
+    if (columns.any { it < 0 }) return null
+    return columns.map(row::get)
+}
 
 private fun parseMarkdownTable(lines: List<String>, startIndex: Int): MarkdownTableParseResult? {
     if (startIndex + 1 >= lines.size) return null
@@ -9329,8 +9343,10 @@ private fun buildContextInputAttachments(contextSources: List<String>): List<AiC
     return emptyList()
 }
 
-private fun buildAgentSkillInputAttachments(): List<AiChatInputAttachment> {
-    return AiSkillRegistry.agentSkills().map(::toSkillInputAttachment)
+private fun buildSkillPickerAttachments(): List<AiChatInputAttachment> {
+    return AiSkillRegistry.agentSkills()
+        .filterNot { it.id == AiSkillRegistry.SKILL_CHARACTER_CARD_GENERATE }
+        .map(::toSkillInputAttachment)
 }
 
 internal fun resolveEntryAgentMode(entrySource: String?): AgentModeDefinition {
@@ -9341,7 +9357,7 @@ internal fun resolveEntryAgentMode(entrySource: String?): AgentModeDefinition {
     }
 }
 
-private fun buildModeSkillInputAttachments(
+internal fun buildModeSkillInputAttachments(
     mode: AgentModeDefinition,
     requestedSkillIds: List<String>,
     pinnedMessages: List<JsonObject> = emptyList()
@@ -9466,7 +9482,7 @@ internal fun isPinnedSkillTrustedBuiltIn(
         pinnedRuntimeRevision == currentRuntimeRevision
 }
 
-private fun buildIntentContextInputAttachments(rawAttachments: List<String>): List<AiChatInputAttachment> {
+internal fun buildIntentContextInputAttachments(rawAttachments: List<String>): List<AiChatInputAttachment> {
     return rawAttachments.mapNotNull { raw ->
         runCatching {
             val json = GSON.fromJson(raw, JsonObject::class.java)
@@ -9504,6 +9520,18 @@ private fun toSkillInputAttachment(skill: io.legado.app.help.ai.AiSkillDefinitio
         trustedBuiltIn = skill.builtIn && !skill.userModified
     )
 }
+
+internal fun AiChatInputAttachment.activeSkillSnapshot() = AiActiveSkillSnapshot(
+    skillId = id.removePrefix("skill."),
+    title = title,
+    prompt = prompt,
+    revision = skillRevision,
+    runtimeRevision = skillRuntimeRevision,
+    contentHash = skillContentHash,
+    runtime = skillRuntime,
+    description = subtitle,
+    availableSkills = availableSkills,
+)
 
 private fun io.legado.app.help.ai.AiSkillDefinition.toAvailableSkillSnapshot(): AiAvailableSkillSnapshot {
     return AiAvailableSkillSnapshot(

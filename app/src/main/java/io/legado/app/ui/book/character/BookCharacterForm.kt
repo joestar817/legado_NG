@@ -2,9 +2,13 @@ package io.legado.app.ui.book.character
 
 import android.content.Context
 import android.net.Uri
+import io.legado.app.R
 import io.legado.app.data.appDb
+import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookCharacter
+import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookTtsCastRole
+import io.legado.app.ui.book.read.CharacterCardSelection
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonObject
 
@@ -69,6 +73,7 @@ object BookCharacterEditor {
         current: BookCharacter?,
         castRole: BookTtsCastRole?,
         value: BookCharacterFormValue,
+        generatedFor: Book? = null,
     ): Long {
         val portraitChanged = value.portraitUri != current?.portraitUri
         val imported = value.portraitUri?.takeIf { portraitChanged }?.let {
@@ -80,9 +85,30 @@ object BookCharacterEditor {
         val (savedId, previousPortrait) = try {
             appDb.runInTransaction<Pair<Long, String?>> {
                 val stored = current?.let {
-                    checkNotNull(dao.getCharacter(it.id)).also { check(it.workKey == workKey) }
+                    val character = dao.getCharacter(it.id)
+                    if (generatedFor != null && character != it) {
+                        error(context.getString(R.string.ai_character_card_existing_changed))
+                    }
+                    checkNotNull(character).also { check(it.workKey == workKey) }
                 }
-                val item = (stored?.copy() ?: BookCharacter(workKey = workKey, createdAt = now)).apply {
+                if (generatedFor != null) {
+                    check(BookCharacterProfile.workKey(generatedFor.name, generatedFor.author) == workKey)
+                    val conflict = CharacterCardSelection.generatedSaveConflict(
+                        name = value.name,
+                        aliases = mergedAliases,
+                        existing = stored,
+                        characters = dao.getCharacters(workKey),
+                    )
+                    check(conflict == null) {
+                        context.getString(R.string.ai_character_card_name_conflict, conflict?.name)
+                    }
+                    dao.getOrCreateProfile(generatedFor.name, generatedFor.author, generatedFor.bookUrl)
+                }
+                val item = (stored?.copy() ?: BookCharacter(
+                    workKey = workKey,
+                    createdAt = now,
+                    source = if (generatedFor == null) BookCharacter.Source.MANUAL else BookCharacter.Source.AI,
+                )).apply {
                     name = value.name
                     gender = value.gender
                     roleTag = value.roleTag

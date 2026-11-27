@@ -71,7 +71,6 @@
     <string name="character_count_format">全部 %1$d</string>
     <string name="book_info_characters_empty">还没有角色卡</string>
     <string name="book_info_character_position">第 %1$d 个角色，共 %2$d 个</string>
-    <string name="book_info_character_ai">AI 生成角色卡</string>
     <string name="book_character_empty">还没有角色卡，点击右上角菜单添加。</string>
     <string name="book_other_works">其它作品</string>
     <string name="book_info_play">播放</string>
@@ -485,7 +484,7 @@
     <string name="ai_chat_fab">聊天悬浮按钮</string>
     <string name="ai_chat_fab_summary_off">已关闭，首页不显示入口</string>
     <string name="ai_chat_fab_summary_on">已开启，首页显示入口</string>
-    <string name="ai_chat_entry_menu">AI 入口(宠物)</string>
+    <string name="ai_chat_entry_menu">AI入口(宠物)</string>
     <string name="ai_chat_entry_enabled">显示入口</string>
     <string name="pet_import_package">导入宠物</string>
     <string name="pet_get_pets">获取宠物</string>
@@ -503,7 +502,6 @@
     <string name="ai_purify_paragraph_section">段落净化</string>
     <string name="ai_purify_chapter_section">章节净化</string>
     <string name="ai_purify_model_setting">净化模型</string>
-    <string name="ai_model_function_summary">模型：%1$s · 思考：%2$s</string>
     <string name="ai_purify_model_not_selected">未选择</string>
     <string name="ai_purify_model_unavailable">已选择的模型不可用</string>
     <string name="ai_purify_model_selected_summary">%1$s（%2$s）</string>

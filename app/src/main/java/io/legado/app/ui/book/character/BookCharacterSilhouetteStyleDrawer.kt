@@ -1,5 +1,6 @@
 package io.legado.app.ui.book.character
 
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -47,12 +50,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.data.entities.BookCharacter
+import io.legado.app.ui.config.NgThemeSheetActionButton
+import io.legado.app.ui.config.ngThemeSheetActionContainerColor
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormPanel
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
+import io.legado.app.ui.design.components.compose.NgLongDrawerHeaderVariant
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.components.compose.ngDrawerPrimaryContentColor
 import io.legado.app.ui.design.theme.NgTheme
@@ -80,43 +86,154 @@ internal fun BookCharacterSilhouetteStyleDrawer(
     }
 }
 
+internal enum class BookCharacterDrawerVariant { STANDARD, READER_AI, READER_AI_REVIEW }
+
 @Composable
 internal fun BookCharacterDrawer(
     title: String,
-    confirmText: String,
-    onSave: () -> Unit,
+    confirmText: String? = null,
+    onSave: (() -> Unit)? = null,
     saveEnabled: Boolean = true,
+    onClose: (() -> Unit)? = null,
+    onBack: (() -> Unit)? = null,
+    onRetry: (() -> Unit)? = null,
+    saving: Boolean = false,
+    variant: BookCharacterDrawerVariant = BookCharacterDrawerVariant.STANDARD,
+    navigationAccented: Boolean = false,
+    maxHeightFraction: Float = 0.91f,
+    headerTrailingContent: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.91f).dp
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+    val maxHeight = screenHeight * maxHeightFraction
+    val review = variant == BookCharacterDrawerVariant.READER_AI_REVIEW
+    val minHeight = if (review) minOf(screenHeight * 0.38f, 330.dp, maxHeight) else 0.dp
     val focusManager = LocalFocusManager.current
     NgBottomDrawerSurface(
-        modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight),
+        modifier = Modifier.fillMaxWidth().heightIn(min = minHeight, max = maxHeight),
         contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
     ) {
         Column(
             Modifier.fillMaxWidth().navigationBarsPadding().imePadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            NgLongDrawerHeader(title = title, centerTitle = true)
+            if (variant != BookCharacterDrawerVariant.STANDARD) {
+                NgLongDrawerHeader(
+                    title = title,
+                    centerTitle = true,
+                    titleFontWeight = FontWeight.Normal,
+                    variant = if (review) {
+                        NgLongDrawerHeaderVariant.ROUND_ACTIONS_TRAILING_GROUP
+                    } else {
+                        NgLongDrawerHeaderVariant.ROUND_ACTIONS
+                    },
+                    centeredTrailingContent = headerTrailingContent,
+                    navigationContent = {
+                        val navigate = onBack ?: onClose
+                        if (navigate != null) {
+                            ReaderCharacterDrawerAction(
+                                icon = if (onBack != null) R.drawable.ic_chevron_left_20 else R.drawable.ic_baseline_close,
+                                label = stringResource(if (onBack != null) R.string.back else R.string.cancel),
+                                onClick = navigate,
+                                enabled = !saving,
+                                accented = navigationAccented,
+                            )
+                        }
+                    },
+                    actionContent = {
+                        when {
+                            onSave != null -> ReaderCharacterDrawerAction(
+                                icon = R.drawable.ic_check,
+                                label = confirmText ?: stringResource(R.string.save),
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    onSave()
+                                },
+                                enabled = saveEnabled,
+                                accented = true,
+                                loading = saving,
+                            )
+                            onRetry != null -> ReaderCharacterDrawerAction(
+                                icon = R.drawable.ic_refresh_black_24dp,
+                                label = stringResource(R.string.ai_character_card_regenerate),
+                                onClick = onRetry,
+                                accented = true,
+                            )
+                            else -> Unit
+                        }
+                    },
+                )
+            } else {
+                NgLongDrawerHeader(
+                    title = title,
+                    centerTitle = true,
+                    navigationIconRes = R.drawable.ic_chevron_left_20.takeIf { onBack != null },
+                    navigationContentDescription = stringResource(R.string.back),
+                    onNavigationClick = onBack,
+                    actionIconRes = R.drawable.ic_clear.takeIf { onClose != null },
+                    actionContentDescription = stringResource(R.string.close),
+                    onActionClick = onClose,
+                )
+            }
             Column(
                 modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 content = content,
             )
-            NgFormActionButton(
-                text = confirmText,
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                enabled = saveEnabled,
-                variant = NgButtonVariant.PRIMARY,
-                buttonHeight = 44.dp,
-                textSize = 15.sp,
-                textLineHeight = 19.sp,
-                onClick = {
-                    focusManager.clearFocus()
-                    onSave()
-                },
+            if (variant == BookCharacterDrawerVariant.STANDARD && confirmText != null && onSave != null) {
+                NgFormActionButton(
+                    text = confirmText,
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    enabled = saveEnabled,
+                    variant = NgButtonVariant.PRIMARY,
+                    buttonHeight = 44.dp,
+                    textSize = 15.sp,
+                    textLineHeight = 19.sp,
+                    onClick = {
+                        focusManager.clearFocus()
+                        onSave()
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun readerCharacterHeaderActionContainerColor(): Color =
+    if (NgTheme.snapshot.isDark) ngDrawerContentCardColor() else ngThemeSheetActionContainerColor()
+
+@Composable
+internal fun readerCharacterHeaderAccentColor(): Color {
+    val theme = NgTheme.snapshot
+    return Color(if (theme.isDark) theme.colors.secondary else theme.colors.primary)
+}
+
+@Composable
+private fun ReaderCharacterDrawerAction(
+    @DrawableRes icon: Int,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    accented: Boolean = false,
+    loading: Boolean = false,
+) {
+    val color = if (accented) readerCharacterHeaderAccentColor() else Color(NgTheme.colors.onSurface)
+    NgThemeSheetActionButton(
+        onClick = onClick,
+        contentDescription = label,
+        enabled = enabled,
+        containerColor = readerCharacterHeaderActionContainerColor(),
+    ) {
+        if (loading) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = color, strokeWidth = 2.dp)
+        } else {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = color.copy(alpha = if (enabled) 1f else 0.45f),
             )
         }
     }
@@ -236,7 +353,7 @@ private fun BookCharacterSilhouetteTile(
                             imageVector = Icons.Rounded.Check,
                             contentDescription = null,
                             modifier = Modifier.size(13.dp),
-                            tint = ngDrawerPrimaryContentColor(),
+                            tint = if (NgTheme.snapshot.isDark) Color(colors.onPrimary) else ngDrawerPrimaryContentColor(),
                         )
                     }
                 }

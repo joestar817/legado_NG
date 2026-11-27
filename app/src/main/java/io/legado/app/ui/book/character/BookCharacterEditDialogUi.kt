@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgFormActionButton
+import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgFormExpandableRow
 import io.legado.app.ui.design.components.compose.NgFormGroupDivider
 import io.legado.app.ui.design.components.compose.NgFormInlineTextRow
@@ -64,12 +67,18 @@ internal fun BookCharacterEditDialogContent(
     showPortraitOptions: Boolean,
     automaticSilhouetteStyle: BookCharacterSilhouetteStyle,
     onConfirm: (BookCharacterFormValue, BookCharacterSilhouetteStyle?) -> Unit,
+    onClose: (() -> Unit)? = null,
+    onEditsChanged: ((Boolean) -> Unit)? = null,
+    drawerVariant: BookCharacterDrawerVariant = BookCharacterDrawerVariant.STANDARD,
+    extraContent: (@Composable () -> Unit)? = null,
+    onBack: (() -> Unit)? = null,
+    initialSilhouetteStyle: BookCharacterSilhouetteStyle? = null,
 ) {
     val context = LocalContext.current
+    val continuous = drawerVariant == BookCharacterDrawerVariant.READER_AI
+    val initialAliases = remember(initialValue.aliases) { initialValue.aliases.joinToString(", ") }
     var name by rememberSaveable { mutableStateOf(initialValue.name) }
-    var aliases by rememberSaveable {
-        mutableStateOf(initialValue.aliases.joinToString(", "))
-    }
+    var aliases by rememberSaveable { mutableStateOf(initialAliases) }
     var gender by rememberSaveable { mutableStateOf(initialValue.gender) }
     var roleTag by rememberSaveable { mutableStateOf(initialValue.roleTag) }
     var intro by rememberSaveable { mutableStateOf(initialValue.intro.orEmpty()) }
@@ -87,8 +96,15 @@ internal fun BookCharacterEditDialogContent(
     }
 
     val styleDraft = if (showPortraitOptions) {
-        rememberSaveable { mutableStateOf<String?>(null) }
+        rememberSaveable { mutableStateOf(initialSilhouetteStyle?.key) }
     } else null
+    if (onEditsChanged != null) {
+        val edited = name != initialValue.name || aliases != initialAliases || gender != initialValue.gender ||
+            roleTag != initialValue.roleTag || intro != initialValue.intro.orEmpty() ||
+            imagePrompt != initialValue.imagePrompt.orEmpty() || portraitUri != initialValue.portraitUri ||
+            styleDraft?.value != initialSilhouetteStyle?.key
+        SideEffect { onEditsChanged(edited) }
+    }
 
     fun submit() {
         onConfirm(
@@ -105,11 +121,76 @@ internal fun BookCharacterEditDialogContent(
         )
     }
 
+    val appearanceRows: @Composable ColumnScope.() -> Unit = {
+        if (styleDraft != null) {
+            val storedStyle = rememberBookCharacterSilhouetteStyle()
+            val selectedStyle = styleDraft.value?.let(BookCharacterSilhouetteStyle::fromKey) ?: storedStyle
+            var styleExpanded by rememberSaveable { mutableStateOf(false) }
+            val focusManager = LocalFocusManager.current
+            val selectPortrait = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {
+                if (it != null) portraitUri = it.toString()
+            }
+            CharacterAppearanceSection(continuous) {
+                CharacterPortraitRows(
+                    uri = portraitUri,
+                    silhouette = selectedStyle.resolve(automaticSilhouetteStyle).forRole(
+                        roleTag, hasPortrait = !portraitUri.isNullOrBlank(),
+                    ),
+                    imagePrompt = imagePrompt,
+                    enabled = !saving,
+                    inlineActions = continuous,
+                    onPromptChange = { imagePrompt = it },
+                    onSelect = {
+                        focusManager.clearFocus()
+                        selectPortrait.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    onClear = { portraitUri = null },
+                )
+            }
+            CharacterAppearanceSection(continuous) {
+                NgFormExpandableRow(
+                    title = stringResource(R.string.character_silhouette_style),
+                    value = stringResource(selectedStyle.labelRes),
+                    expanded = styleExpanded,
+                    onExpandedChange = {
+                        focusManager.clearFocus()
+                        styleExpanded = it
+                    },
+                    enabled = !saving,
+                ) {
+                    NgFormGroupDivider(
+                        modifier = Modifier.padding(bottom = 6.dp),
+                        horizontalPadding = 0.dp,
+                    )
+                    BookCharacterSilhouetteOptions(
+                        selected = selectedStyle,
+                        enabled = !saving,
+                        onSelect = { styleDraft.value = it.takeUnless { it == storedStyle }?.key },
+                    )
+                }
+            }
+        } else {
+            CharacterAppearanceSection(continuous) {
+                CharacterImagePromptRow(
+                    imagePrompt = imagePrompt,
+                    enabled = !saving,
+                    onPromptChange = { imagePrompt = it },
+                    titleRes = R.string.character_image_prompt,
+                )
+            }
+        }
+    }
+
     BookCharacterDrawer(
         title = title,
         confirmText = confirmText,
-        saveEnabled = !saving,
+        saveEnabled = !saving && (!continuous || name.isNotBlank()),
         onSave = ::submit,
+        onClose = onClose.takeUnless { saving && !continuous },
+        onBack = onBack,
+        saving = saving,
+        variant = drawerVariant,
+        navigationAccented = continuous,
     ) {
         NgFormPanel {
             NgFormInlineTextRow(
@@ -205,125 +286,115 @@ internal fun BookCharacterEditDialogContent(
                 maxLines = 5,
                 variant = NgFormMultilineFieldVariant.PANEL,
             )
-        }
-        if (styleDraft != null) {
-            val storedStyle = rememberBookCharacterSilhouetteStyle()
-            val selectedStyle = styleDraft.value?.let(BookCharacterSilhouetteStyle::fromKey) ?: storedStyle
-            var styleExpanded by rememberSaveable { mutableStateOf(false) }
-            val focusManager = LocalFocusManager.current
-            val selectPortrait = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {
-                if (it != null) portraitUri = it.toString()
-            }
-            CharacterPortraitPanel(
-                uri = portraitUri,
-                silhouette = selectedStyle.resolve(automaticSilhouetteStyle).forRole(
-                    roleTag, hasPortrait = !portraitUri.isNullOrBlank(),
-                ),
-                imagePrompt = imagePrompt,
-                enabled = !saving,
-                onPromptChange = { imagePrompt = it },
-                onSelect = {
-                    focusManager.clearFocus()
-                    selectPortrait.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                },
-                onClear = { portraitUri = null },
-            )
-            NgFormPanel {
-                NgFormExpandableRow(
-                    title = stringResource(R.string.character_silhouette_style),
-                    value = stringResource(selectedStyle.labelRes),
-                    expanded = styleExpanded,
-                    onExpandedChange = {
-                        focusManager.clearFocus()
-                        styleExpanded = it
-                    },
-                    enabled = !saving,
-                ) {
-                    NgFormGroupDivider(
-                        modifier = Modifier.padding(bottom = 6.dp),
-                        horizontalPadding = 0.dp,
-                    )
-                    BookCharacterSilhouetteOptions(
-                        selected = selectedStyle,
-                        enabled = !saving,
-                        onSelect = { styleDraft.value = it.takeUnless { it == storedStyle }?.key },
-                    )
+            if (continuous) {
+                appearanceRows()
+                if (extraContent != null) {
+                    NgFormGroupDivider(horizontalPadding = 14.dp)
+                    extraContent()
                 }
             }
-        } else {
-            NgFormPanel {
-                CharacterImagePromptRow(
-                    imagePrompt = imagePrompt,
-                    enabled = !saving,
-                    onPromptChange = { imagePrompt = it },
-                    titleRes = R.string.character_image_prompt,
-                )
-            }
+        }
+        if (!continuous) {
+            appearanceRows()
+            extraContent?.invoke()
         }
     }
 }
 
 @Composable
-private fun CharacterPortraitPanel(
+private fun ColumnScope.CharacterAppearanceSection(
+    continuous: Boolean,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    if (continuous) {
+        NgFormGroupDivider(horizontalPadding = 14.dp)
+        content()
+    } else {
+        NgFormPanel(content = content)
+    }
+}
+
+@Composable
+private fun CharacterPortraitRows(
     uri: String?,
     silhouette: BookCharacterSilhouette,
     imagePrompt: String,
     enabled: Boolean,
+    inlineActions: Boolean,
     onPromptChange: (String) -> Unit,
     onSelect: () -> Unit,
     onClear: () -> Unit,
 ) {
     val hasPortrait = !uri.isNullOrBlank()
     val portrait = remember(uri) { BookCharacterPortraits.localUri(uri) }
-    NgFormPanel {
-        val label = stringResource(R.string.character_portrait)
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 62.dp)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BookCharacterPortraitImage(
-                portrait = portrait,
-                silhouette = silhouette,
-                contentDescription = null,
-                modifier = Modifier.size(width = 32.dp, height = 42.dp)
-                    .clip(RoundedCornerShape(NgTheme.shapes.smallDp.dp)),
-            )
-            Column(Modifier.weight(1f)) {
-                Text(text = label, color = Color(NgTheme.colors.onSurface), fontSize = 14.sp)
-                if (portrait == null) {
-                    Text(
-                        text = stringResource(R.string.character_uses_silhouette),
-                        color = Color(NgTheme.colors.onSurfaceVariant),
-                        fontSize = 11.sp,
-                    )
-                }
-            }
-            NgFormActionButton(
-                text = stringResource(if (hasPortrait) R.string.character_portrait_replace else R.string.import_str),
-                onClick = onSelect,
-                enabled = enabled,
-                variant = NgButtonVariant.TONAL,
-                minimumWidth = 52.dp,
-            )
-            if (hasPortrait) {
-                NgFormActionButton(
-                    text = stringResource(R.string.character_portrait_clear),
-                    onClick = onClear,
-                    enabled = enabled,
-                    variant = NgButtonVariant.OUTLINE,
-                    minimumWidth = 52.dp,
+    val actionAppearance = if (inlineActions) NgFormActionButtonAppearance.TEXT
+        else NgFormActionButtonAppearance.DEFAULT
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 62.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BookCharacterPortraitImage(
+            portrait = portrait,
+            silhouette = silhouette,
+            contentDescription = null,
+            modifier = Modifier
+                .size(
+                    width = if (inlineActions) 36.dp else 32.dp,
+                    height = if (inlineActions) 48.dp else 42.dp,
+                )
+                .clip(RoundedCornerShape(NgTheme.shapes.smallDp.dp)),
+        )
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.character_portrait), color = Color(NgTheme.colors.onSurface), fontSize = 14.sp)
+            if (portrait == null || inlineActions) {
+                Text(
+                    text = stringResource(
+                        if (portrait == null) R.string.character_uses_silhouette
+                        else R.string.ai_character_card_portrait_imported,
+                    ),
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                    fontSize = 11.sp,
                 )
             }
         }
-        NgFormGroupDivider(horizontalPadding = 14.dp)
-        CharacterImagePromptRow(
-            imagePrompt = imagePrompt,
+        NgFormActionButton(
+            text = stringResource(if (hasPortrait) R.string.character_portrait_replace else R.string.import_str),
+            onClick = onSelect,
             enabled = enabled,
-            onPromptChange = onPromptChange,
+            variant = NgButtonVariant.TONAL,
+            appearance = actionAppearance,
+            minimumWidth = 52.dp,
+            buttonHeight = if (inlineActions) 44.dp else 36.dp,
+            leadingIcon = if (inlineActions) {
+                {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_bookshelf_manage_cover),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            } else null,
         )
+        if (hasPortrait) {
+            NgFormActionButton(
+                text = stringResource(R.string.character_portrait_clear),
+                onClick = onClear,
+                enabled = enabled,
+                variant = NgButtonVariant.OUTLINE,
+                appearance = actionAppearance,
+                minimumWidth = 52.dp,
+                buttonHeight = if (inlineActions) 44.dp else 36.dp,
+            )
+        }
     }
+    NgFormGroupDivider(horizontalPadding = 14.dp)
+    CharacterImagePromptRow(
+        imagePrompt = imagePrompt,
+        enabled = enabled,
+        onPromptChange = onPromptChange,
+    )
 }
 
 @Composable

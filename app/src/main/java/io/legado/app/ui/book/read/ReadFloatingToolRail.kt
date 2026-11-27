@@ -43,6 +43,7 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -58,8 +59,8 @@ import io.legado.app.R
 import io.legado.app.help.config.ReadThemeMode
 import io.legado.app.help.config.ReadFloatingTool
 import io.legado.app.ui.design.components.compose.NgGlassSurface
-import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.components.compose.popupVisibleBoundsInWindow
 import io.legado.app.ui.design.theme.NgTheme
@@ -109,7 +110,7 @@ internal fun ReadFloatingToolRail(
     onReplace: () -> Unit,
     onThemeModeSelected: (ReadThemeMode) -> Unit,
     onAiPurify: () -> Unit,
-    onAiSettings: () -> Unit,
+    onAiCharacterCards: () -> Unit,
     onReadAloud: () -> Unit,
     onAutoPage: () -> Unit,
     onPageAnimSelected: (Int) -> Unit,
@@ -143,7 +144,7 @@ internal fun ReadFloatingToolRail(
                 )
                 ReadFloatingToolExpansion.AI -> AiPanel(
                     onAiPurify = onAiPurify,
-                    onAiSettings = onAiSettings,
+                    onAiCharacterCards = onAiCharacterCards,
                 )
                 ReadFloatingToolExpansion.PAGE_ANIM -> ChoicePanel(
                     labels = listOf(
@@ -185,9 +186,9 @@ private fun ToolRail(
         modifier = Modifier.width(44.dp),
         shape = RoundedCornerShape(12.dp),
         style = readFloatingGlassStyle(),
-        contentPadding = PaddingValues(vertical = FloatingToolRailVerticalPadding)
         role = NgMaterialRole.NAVIGATION,
         liquidCornerRadius = 12.dp,
+        contentPadding = PaddingValues(vertical = FloatingToolRailVerticalPadding)
     ) {
       Column(Modifier.heightIn(max = LocalConfiguration.current.screenHeightDp.dp * FloatingToolMaxScreenFraction)
           .verticalScroll(rememberScrollState())) {
@@ -631,24 +632,40 @@ private fun BrightnessPanel(
 @Composable
 private fun AiPanel(
     onAiPurify: () -> Unit,
-    onAiSettings: () -> Unit,
+    onAiCharacterCards: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val purify = stringResource(R.string.ai_purify_chapter)
+    val characterCards = stringResource(R.string.ai_character_card_generate_action)
+    val labelStyle = MaterialTheme.typography.bodyMedium.copy(
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Normal,
+    )
+    val measurer = rememberTextMeasurer()
+    val width = with(LocalDensity.current) {
+        val labelWidth = maxOf(
+            measurer.measure(purify, labelStyle, maxLines = 1).size.width,
+            measurer.measure(characterCards, labelStyle, maxLines = 1).size.width,
+        )
+        (labelWidth.toDp() + 52.dp).coerceAtLeast(140.dp)
+    }
     NgGlassSurface(
-        modifier = modifier.width(144.dp),
+        modifier = modifier.width(width),
         shape = RoundedCornerShape(12.dp),
         style = readFloatingGlassStyle(),
         contentPadding = PaddingValues(vertical = 4.dp)
     ) {
         AiActionRow(
             iconRes = R.drawable.ic_ai_purify,
-            labelRes = R.string.ai_purify_chapter,
+            label = purify,
+            width = width,
             onClick = onAiPurify
         )
         AiActionRow(
-            iconRes = R.drawable.ic_settings,
-            labelRes = R.string.ai_purify_settings,
-            onClick = onAiSettings
+            iconRes = R.drawable.ic_read_menu_characters,
+            label = characterCards,
+            width = width,
+            onClick = onAiCharacterCards
         )
     }
 }
@@ -656,12 +673,13 @@ private fun AiPanel(
 @Composable
 private fun AiActionRow(
     @DrawableRes iconRes: Int,
-    @StringRes labelRes: Int,
+    label: String,
+    width: Dp,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
-            .width(144.dp)
+            .width(width)
             .height(44.dp)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp),
@@ -675,11 +693,11 @@ private fun AiActionRow(
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = stringResource(labelRes),
+            text = label,
             color = Color(NgTheme.colors.onSurface),
             style = MaterialTheme.typography.bodyMedium.copy(
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Normal
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

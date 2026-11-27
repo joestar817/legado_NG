@@ -29,12 +29,10 @@ class CharacterCardSkillPolicyTest(unittest.TestCase):
         self.assertIn("同一次助手工具调用批次中一次性发出", self.skill)
         self.assertIn("只进行一次写操作确认", self.skill)
 
-    def test_apply_state_is_persisted_after_the_business_batch(self):
-        self.assertIn("agent_memory_batch_upsert", self.skill)
-        self.assertIn("source_receipt_ids", self.skill)
-        self.assertIn("batch 顶层", self.skill)
-        self.assertNotIn("记忆更新成功后才继续下一个角色", self.skill)
-        self.assertNotIn("每个结果后立即更新预览记忆", self.skill)
+    def test_apply_uses_the_visible_preview_and_actual_tool_results(self):
+        self.assertIn("以最近一轮的可见表格为准", self.skill)
+        self.assertIn("检查 `ok=true` 和返回的 `character.id`", self.skill)
+        self.assertIn("没有真实结果不得说“已写入”", self.skill)
 
     def test_targeted_mode_is_explicit(self):
         self.assertIn("指定角色模式（targeted）", self.skill)
@@ -63,6 +61,24 @@ class CharacterCardSkillPolicyTest(unittest.TestCase):
         self.assertIn("命中章节前后各补 1 章", self.skill)
         self.assertIn("不读未命中章节", self.skill)
 
+    def test_reader_selection_can_finish_after_reading_current_chapter(self):
+        targeted = self.skill.split("### 8.1 指定角色", 1)[1].split("### 8.2 发现模式", 1)[0]
+        self.assertIn("context_id=text_selection_character_card", targeted)
+        reader = targeted.split("#### 8.1.1 阅读器选名", 1)[1]
+        self.assertIn("`current_chapter_index`", reader)
+        self.assertIn("直接决定成卡或补读", reader)
+        self.assertIn("高频命中、阶段代表和扫描末尾可用来找候选，有具体待核实的事实才读", reader)
+        self.assertIn("chapter_index_ranges", reader)
+        self.assertIn("chapter_columns", reader)
+
+    def test_reader_selection_checks_portrait_evidence_before_finishing(self):
+        reader = self.skill.split("#### 8.1.1 阅读器选名", 1)[1].split("### 8.2 发现模式", 1)[0]
+        self.assertIn("小传和立绘都达到下列要求", reader)
+        self.assertIn("已有目标人物的外貌或装束细节时，直接提炼", reader)
+        self.assertIn("补读一个未读的短窗口（最多两章）", reader)
+        self.assertIn("和其他缺项同批安排，仅为立绘补读一次", reader)
+        self.assertIn("这些也都无从确认时才写“未提及”", reader)
+
     def test_high_frequency_characters_use_deterministic_sparse_sampling(self):
         self.assertIn("高频主角的稀疏采样", self.skill)
         self.assertIn("matched_chapters / max(1, scanned_chapters) >= 0.4", self.skill)
@@ -79,11 +95,17 @@ class CharacterCardSkillPolicyTest(unittest.TestCase):
         self.assertIn("没有展示过预览表格时，不得声称", self.skill)
         self.assertIn("用户只选择扫描范围或扫描强度，不构成应用确认", self.skill)
 
-    def test_memory_disabled_falls_back_to_chat_only(self):
-        self.assertIn("### 4.1 开关与降级", self.skill)
-        self.assertIn("agent_memory_status_get", self.skill)
-        self.assertIn("不要调用任何 `agent_memory_*` 工具", self.skill)
-        self.assertIn("不支持中断续扫或重启恢复", self.skill)
+    def test_generation_uses_the_current_session_without_agent_memory(self):
+        for legacy_rule in (
+            "ai.memory",
+            "core.memory_flush",
+            "agent_memory_",
+            "source_receipt_ids",
+            "从上次继续",
+        ):
+            with self.subTest(legacy_rule=legacy_rule):
+                self.assertNotIn(legacy_rule, self.skill)
+        self.assertIn("直接基于本轮已读章节整理待审核表格", self.skill)
 
     def test_apply_confirm_block_is_concrete(self):
         self.assertIn("character_card_apply_confirm", self.skill)
@@ -100,8 +122,7 @@ class CharacterCardSkillPolicyTest(unittest.TestCase):
         self.assertIn("`deep`：最多 60 章", self.skill)
 
     def test_partial_failure_is_not_marked_confirmed(self):
-        self.assertIn("preview 状态设为 `partial`", self.skill)
-        self.assertIn("不要把部分失败写成 `confirmed`", self.skill)
+        self.assertIn("仅在全部写入成功后报告整批已应用", self.skill)
         self.assertIn("只重试 `failed` 的角色", self.skill)
 
     def test_chapter_number_conversion_is_explicit(self):
@@ -128,11 +149,9 @@ class CharacterCardSkillPolicyTest(unittest.TestCase):
         self.assertIn("不输出应用按钮", self.skill)
         self.assertIn("不写库", self.skill)
 
-    def test_receipts_and_partial_windows_are_traceable(self):
-        self.assertIn("_agent_result.receipt_id", self.skill)
-        self.assertIn("partial_windows", self.skill)
-        self.assertIn("sampled_chapters", self.skill)
-        self.assertIn("覆盖缺口", self.skill)
+    def test_preview_reports_actual_reading_coverage(self):
+        self.assertIn("完整读到的窗口才计入完整覆盖", self.skill)
+        self.assertIn("在预览中说明实际查阅范围和覆盖缺口", self.skill)
 
     def test_rollback_and_output_contract(self):
         self.assertIn("### 5.4 误写回滚", self.skill)

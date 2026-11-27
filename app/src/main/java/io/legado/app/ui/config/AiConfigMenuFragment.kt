@@ -17,7 +17,6 @@ import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiModel
 import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderStore
-import io.legado.app.help.ai.AiReasoningLevel
 import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.ui.design.theme.NgAppTheme
 import kotlinx.coroutines.Dispatchers
@@ -90,21 +89,10 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
             skillSummary = screenState.skillSummary,
             chatEntryStyle = AiConfig.chatEntryStyle,
             installedPets = PetPluginStore.installedChoices(),
-            purifySummary = getString(
-                R.string.ai_model_function_summary,
-                purifyModelSummary(providers),
-                purifyReasoningSummary(providers)
-            ),
-            assistantSummary = getString(
-                R.string.ai_model_function_summary,
-                assistantModelSummary(providers),
-                assistantReasoningSummary(providers)
-            ),
-            readAloudSummary = getString(
-                R.string.ai_model_function_summary,
-                readAloudModelSummary(providers),
-                readAloudReasoningSummary(providers)
-            )
+            purifySummary = purifyModelSummary(providers),
+            characterCardSummary = requireContext().characterCardModelSettingsState(providers).modelSummary,
+            assistantSummary = assistantModelSummary(providers),
+            readAloudSummary = readAloudModelSummary(providers),
         )
         refreshSkillSummary()
     }
@@ -135,16 +123,6 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
         }
     }
 
-    private fun purifyReasoningSummary(providers: List<AiProviderSetting>): String {
-        val selected = selectedPurifyModel(providers)
-        return when {
-            selected == null -> getString(R.string.ai_purify_reasoning_select_model_first)
-            !selected.model.supportsReasoning() ->
-                getString(R.string.ai_purify_reasoning_unsupported)
-            else -> AiConfig.purifyReasoningLevel.displayName()
-        }
-    }
-
     private fun assistantModelSummary(providers: List<AiProviderSetting>): String {
         val selected = selectedAssistantModel(providers)
         return when {
@@ -155,17 +133,6 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
         }
     }
 
-    private fun assistantReasoningSummary(providers: List<AiProviderSetting>): String {
-        val selected = selectedAssistantModel(providers)
-        val picker = selected?.let { AiAssistantConfigUi.AssistantModelOption(it.provider, it.model).reasoningPicker() }
-        return when {
-            picker == null -> getString(R.string.ai_assistant_reasoning_select_model_first)
-            !picker.available ->
-                getString(R.string.ai_assistant_reasoning_unsupported)
-            else -> picker.selectedLabel(requireContext())
-        }
-    }
-
     private fun readAloudModelSummary(providers: List<AiProviderSetting>): String {
         val selected = selectedReadAloudModel(providers)
         return when {
@@ -173,16 +140,6 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
                 getString(R.string.ai_read_aloud_storyboard_model_not_selected)
             selected == null -> getString(R.string.ai_read_aloud_storyboard_model_unavailable)
             else -> selected.modelSummary()
-        }
-    }
-
-    private fun readAloudReasoningSummary(providers: List<AiProviderSetting>): String {
-        val selected = selectedReadAloudModel(providers)
-        return when {
-            selected == null -> getString(R.string.ai_read_aloud_reasoning_select_model_first)
-            !selected.model.supportsReasoning() ->
-                getString(R.string.ai_read_aloud_reasoning_unsupported)
-            else -> AiConfig.readAloudStoryboardReasoningLevel.displayName()
         }
     }
 
@@ -243,16 +200,4 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
         )
     }
 
-    private fun AiReasoningLevel.displayName(): String {
-        return getString(
-            when (this) {
-                AiReasoningLevel.OFF -> R.string.ai_reasoning_level_off
-                AiReasoningLevel.AUTO -> R.string.ai_reasoning_level_auto
-                AiReasoningLevel.LOW -> R.string.ai_reasoning_level_low
-                AiReasoningLevel.MEDIUM -> R.string.ai_reasoning_level_medium
-                AiReasoningLevel.HIGH -> R.string.ai_reasoning_level_high
-                AiReasoningLevel.ULTRA -> R.string.ai_reasoning_level_ultra
-            }
-        )
-    }
 }

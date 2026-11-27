@@ -73,7 +73,6 @@
     <string name="character_count_format">All %1$d</string>
     <string name="book_info_characters_empty">No characters yet.</string>
     <string name="book_info_character_position">Character %1$d of %2$d</string>
-    <string name="book_info_character_ai">Generate character cards</string>
     <string name="book_character_empty">No characters yet. Add one from the top-right menu.</string>
     <string name="book_other_works">Other works</string>
     <string name="book_info_play">Play</string>
@@ -509,7 +508,6 @@
     <string name="ai_purify_paragraph_section">Paragraph clean</string>
     <string name="ai_purify_chapter_section">Chapter clean</string>
     <string name="ai_purify_model_setting">Clean model</string>
-    <string name="ai_model_function_summary">Model: %1$s · Reasoning: %2$s</string>
     <string name="ai_purify_model_not_selected">Not selected</string>
     <string name="ai_purify_model_unavailable">Selected model is unavailable</string>
     <string name="ai_purify_model_selected_summary">%1$s (%2$s)</string>

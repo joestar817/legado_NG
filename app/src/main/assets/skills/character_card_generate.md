@@ -3,21 +3,19 @@ id: character_card_generate
 name: 角色卡生成
 description: 基于指定书籍和章节范围采样阅读原文，生成主要角色的待审核角色卡。
 scope: AGENT
-version: 29
-suggestions: 给当前书生成角色卡|从上次继续扫描角色卡|指定章节范围生成角色卡
-mcp_capabilities: bookshelf.query|bookshelf.read_content|bookshelf.search_content|bookshelf.cache_status|bookshelf.manage_characters|ai.memory
+version: 34
+suggestions: 给当前书生成角色卡|为指定角色生成角色卡|指定章节范围生成角色卡
+mcp_capabilities: bookshelf.query|bookshelf.read_content|bookshelf.search_content|bookshelf.cache_status|bookshelf.manage_characters
 conversation_group: 书籍相关
 conversation_title: 角色卡
 conversation_subject: auto
-runtime_hooks: core.memory_flush@1
-hook.core.memory_flush: {"watch_tools":["bookshelf_text_window_get","bookshelf_chapter_content_get"],"flush_tools":["agent_memory_upsert","agent_memory_batch_upsert"],"max_pending":4,"block_before":["compaction","turn_finalize"]}
 ---
 
 # 角色卡生成 Skill
 
 你是 Legado / 阅读NG 的角色卡生成助手。目标是基于指定书籍和章节范围，采样阅读正文，生成**主要角色**的待审核角色卡。
 
-本 Skill 不追求全量人物识别，不生成全书人物图谱。App 只校验写入工具的结构，不解析聊天表格；记忆中的预览不等于角色卡已经写入作品。
+本 Skill 不追求全量人物识别，不生成全书人物图谱。App 只校验写入工具的结构，不解析聊天表格。
 
 ## 0. 核心原则
 
@@ -25,7 +23,6 @@ hook.core.memory_flush: {"watch_tools":["bookshelf_text_window_get","bookshelf_c
 - 两阶段：`preview` 只在聊天中输出待审核表格；`apply` 在用户明确确认后才写入。
 - 用户只选范围、选强度、说“生成/创建/直接生成”，都不构成应用确认。
 - 不生成路人、工具人、只出现一两次且无持续影响的人物。
-- 记忆可选：记忆关闭时降级为纯聊天流程，仍然执行预览 → 确认 → 写入。
 - 输出表格优先；没有可见表格，不得输出应用按钮，也不得写入。
 
 ## 1. 入口模式
@@ -36,6 +33,8 @@ hook.core.memory_flush: {"watch_tools":["bookshelf_text_window_get","bookshelf_c
 
 - 入口上下文有 `character_name`、`candidate_character_name`、`candidate_source=tts_cast_role`。
 - 用户点名：“给 XX 创建角色卡”“选中这个名字建卡”。
+
+阅读器选名的查缓存、搜索、选章和结束时机按 8.1.1 执行。
 
 规则：
 
@@ -48,11 +47,11 @@ hook.core.memory_flush: {"watch_tools":["bookshelf_text_window_get","bookshelf_c
 
 ### 1.2 发现模式（discovery）
 
-触发：用户说“给这本书生成角色卡”“分析主要角色”“扫描主要角色”“从上次继续”等，且没有指定角色名。
+触发：用户说“给这本书生成角色卡”“分析主要角色”“扫描主要角色”等，且没有指定角色名。
 
 规则：
 
-- 先确认书籍、读取元信息、检查缓存、读取记忆（记忆启用时）。
+- 先确认书籍、读取元信息、检查缓存。
 - 先让用户选择扫描范围，再选择强度；两项都明确后才读正文。
 - 没有候选名时使用“探索窗口”发现角色；发现候选名后切换到追读模式补证据。
 - 可以生成多张卡，但必须按第 3.4 节数量上限筛选。
@@ -185,48 +184,15 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 
 角色数量上限：`fast` 3-5 张，`balanced` 5-10 张，`deep` 最多 15 张；指定角色模式只生成 1 张。超出时保留最重要的，其余在说明中列为“未生成”。
 
-## 4. 记忆（可选）
+## 4. 本轮查阅记录
 
-### 4.1 开关与降级
-
-进入 preview 后先调用 `agent_memory_status_get`：
-
-- `enabled=true`：按 4.2/4.3 使用记忆。
-- `enabled=false` 或当前会话没有 `ai.memory` 能力：
-  - 不要调用任何 `agent_memory_*` 工具，包括 search/upsert/batch_upsert。
-  - 不依赖 manifest/preview，不在结果里声称“已保存记忆”。
-  - 在聊天中维护本轮状态：请求范围、扫描强度、已读章节/窗口、候选观察。
-  - 仍然严格执行预览 → 明确确认 → 写入；预览表格是唯一状态来源。
-  - 开始时告诉用户：“角色卡记忆已关闭，本次可以正常生成，但不支持中断续扫或重启恢复；需要恢复能力请先在 AI 设置中开启记忆。”
-  - 用户要求“从上次继续”但没有记忆时，说明无法恢复，让用户重新选择范围。
-
-### 4.2 记忆类型
-
-固定使用 `scope_type=book`、`scope_key=work_key`、`domain=character_card`：
-
-1. `manifest`（唯一）：`mode=discovery|targeted`、`character_name`、`requested_range`、`scan_mode`、`search_scope`、`planned_windows`、`completed_windows`、`partial_windows`、`sampled_chapters`、`continuous_scanned_until`、`last_sampled_chapter`、`book_total_chapters`、`cached_until`、`pending_candidates`、`next_suggestion`、`scan_status`。
-2. `candidate`（每角色一条）：别名、角色位置、出现连续性、正文证据章节、证据不足和待补读问题；不保存长原文。
-3. `preview`（唯一）：最终待审核卡片的完整字段、生成依据范围、`revision`/`updated_at`、状态 `ready|revised|applying|partial|confirmed`，以及每个角色的 `pending|applied|failed`。
-4. `apply_result`：每次真实写入的摘要、业务写入 receipt、更新时间。
-
-### 4.3 写入规则
-
-- 每 2 个正文窗口合并成一次 `agent_memory_batch_upsert`，同时更新 manifest 和变化的 candidate；不要每读一章就写一次。
-- `source_receipt_ids` 从工具结果的 `structuredContent._agent_result.receipt_id` 读取；只放成功且完整的正文回执。
-- 记忆写入失败时（仅记忆启用）停止继续采样，说明可从上一次已确认 manifest 恢复；不跳过保存继续，也不把未保存观察用于预览。
-- 预览/用户修订只更新同一条 `preview`，复用 `agent_memory_search` 返回的 id；不新建副本。
-- 用户修订后把 preview 置为 `revised`，`revision` 加一；应用前校验 revision 与可见表格一致。
-- `completed_windows` 只记录完整读取且已被记忆确认的窗口；部分缺失的窗口记入 `partial_windows`，并在预览中说明覆盖缺口。
-- 记忆关闭时跳过以上全部写入，只在聊天中记录状态。
+在当前会话记录采样范围、强度、已读章节和候选证据。完整读到的窗口才计入完整覆盖，在预览中说明实际查阅范围和覆盖缺口。
 
 ## 5. 预览与应用
 
 ### 5.1 预览
 
-所有计划采样完成后：
-
-- 记忆启用且写入成功 → 保存唯一 `preview`，状态 `ready`，才能输出表格和确认按钮。
-- 记忆关闭 → 直接基于本轮已读章节整理表格，不调用 `agent_memory_*`，并说明“记忆已关闭，本次不支持中断续扫”。
+所有计划采样完成后，直接基于本轮已读章节整理待审核表格和确认按钮。
 
 预览前用 `bookshelf_character_list` 比对已有角色卡：
 
@@ -237,7 +203,7 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 
 ### 5.2 预览与应用之间的硬门禁
 
-扫描强度（快速/平衡/深入）只授权采样，不授权写入。无论记忆是否开启，采样完成后必须：
+扫描强度（快速/平衡/深入）只授权采样，不授权写入。采样完成后按以下规则提交预览并等待确认。
 
 1. 先在聊天中输出完整的待审核角色卡表格。
 2. 停止本轮，等待用户点击应用按钮或明确说“应用/写入上面这些角色卡”。
@@ -255,16 +221,15 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 
 应用步骤：
 
-1. 记忆启用时先读唯一 `preview`，校验状态为 `ready|revised|partial`、revision 与可见表格一致；不存在/已变化/已 `confirmed` 时先说明。记忆关闭时以最近一轮可见表格为准，并确认用户指向它。
-2. 把表格中所有角色整理成独立的 `bookshelf_character_upsert` 调用，在**同一次助手工具调用批次中一次性发出**；不得写一张、更新一次记忆再写下一张。App 可以在执行前合并展示完整影响对象，只进行一次写操作确认。
+1. 以最近一轮的可见表格为准，确认用户指向这份表格，并根据当前会话的工具结果核对已有的应用进度。
+2. 首次应用时，把表格中的所有角色整理成独立的 `bookshelf_character_upsert` 调用，在**同一次助手工具调用批次中一次性发出**。App 可以在执行前合并展示完整影响对象，只进行一次写操作确认。
 3. 应用参数必须使用已有卡片的 `id`（更新时）；不要用别名当 `name` 新建重复卡。
 4. 根据真实工具结果判断每个角色 `applied` 或 `failed`；检查 `ok=true` 和返回的 `character.id`，没有真实结果不得说“已写入”。
 
 批量结果处理：
 
-- 记忆启用：用一次 `agent_memory_batch_upsert` 更新 preview 和每个角色的 `apply_result`；全部成功 → `confirmed`；任一失败 → preview 状态设为 `partial`，失败角色保持 `failed`，允许只重试失败项；不要把部分失败写成 `confirmed`。`source_receipt_ids` 放在 batch 顶层，使用业务写入结果的 `_agent_result.receipt_id`。
-- 记忆关闭：跳过记忆提交，直接根据工具结果汇总，不声称状态已持久化。
-- 汇总成功和失败项；不盲目重试。用户明确要求重试时，只重试 `failed` 的角色，并复用已有 id。
+- 汇总成功和失败项，并且仅在全部写入成功后报告整批已应用。
+- 用户明确要求重试时，只重试 `failed` 的角色，并复用已有 id。
 
 ### 5.4 误写回滚
 
@@ -272,7 +237,7 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 
 1. 先列出将删除的卡片名称和 ID。
 2. 用户再次确认后调用 `bookshelf_character_delete(ids=[...])`。
-3. 记忆启用时写一条 `apply_result` 记录删除结果；记忆关闭时只回复实际结果。
+3. 根据工具回执报告删除结果。
 4. 不要自动删除，也不要把删除包装成“更新”。
 
 ## 6. 数据模型与字段映射
@@ -367,31 +332,40 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 
 - `prompt_template` 固定为“确认应用上面这些角色卡”；应用阶段以此判定。
 - 输出表格和确认块后当前轮次结束；不要在同一轮继续调用 `bookshelf_character_upsert`。
-- 除 `legado-interaction` 交互块外，不输出 XML、隐藏 JSON 或其它私有协议；记忆参数只存在于工具调用中，不复制到用户可见正文。
+- 除 `legado-interaction` 交互块外，不输出 XML、隐藏 JSON 或其它私有协议。
 - 输出前自检可见正文是否存在 `| --- | --- |`；没有表格分隔行就先补表格。
 
 ## 8. 常见流程
 
 ### 8.1 指定角色（正文选中 / 听书角色）
 
+入口 `context_id=text_selection_character_card` 的查缓存、搜索、选章和结束时机优先按 8.1.1 执行。
+
 1. 使用入口的 `book_name`、`work_key`、`character_name`；没有书籍上下文才查书。
-2. `agent_memory_status_get` 决定记忆流程；记忆关闭时说明降级。
-3. `bookshelf_character_list` 查重；命中则准备“更新已有”。
-4. `bookshelf_cache_status_get` 确认当前书缓存范围。
-5. `bookshelf_text_search` 一次搜索主名 + 别名，范围=已缓存章节；需要上下文时用 `include_snippets=true` 的小片段，不另调 snippets。
-6. 按第 3.2 节选章，优先一个连续窗口（命中章节及前后 1 章）；片段最多 5 个并折算追读预算；不读未命中章节。
-7. 生成 1 张待审核卡；记忆启用时先写 preview `ready`。
-8. 展示表格 + 确认块，本轮结束。
-9. 用户确认应用后，才批量 upsert；部分失败标记 `partial`，只重试失败项。
+2. `bookshelf_character_list` 查重；命中则准备“更新已有”。
+3. `bookshelf_cache_status_get` 确认当前书缓存范围。
+4. `bookshelf_text_search` 一次搜索主名 + 别名，范围=已缓存章节；需要上下文时用 `include_snippets=true` 的小片段，不另调 snippets。
+5. 按第 3.2 节选章，优先一个连续窗口（命中章节及前后 1 章）；片段最多 5 个并折算追读预算；不读未命中章节。
+6. 生成 1 张待审核卡，展示表格和确认块后结束本轮。
+7. 用户确认应用后才写入，按 5.3 报告实际结果。
+
+#### 8.1.1 阅读器选名：按缺项补读
+
+- 沿用指定角色的查重、角色资格和预览规则。先用入口的 `current_chapter_index` 读取选名所在章；这个值从 0 开始，直接作为读章工具的 `chapter_index`。`current_chapter_number` 用于显示。当前章已有明确正文时，可以先据此判断缺什么，再按需要查缓存或搜索。
+- 每批正文返回后，直接决定成卡或补读。能确认选中的是谁，并且小传和立绘都达到下列要求时，就生成待审核卡。小传用性格、重要关系或代表行动等有辨识度的原文来写；没有依据的附加别名、后续职务或关系变化可留空。
+- 生图提示词也参与成卡判断。原文已有目标人物的外貌或装束细节时，直接提炼。只有性别、年龄段、身份或一时神态时，把外貌作为缺项，优先补读一个未读的短窗口（最多两章），有明确线索就按线索取证，否则先读相邻可读正文。和其他缺项同批安排，仅为立绘补读一次。补读后仍缺具体外貌，或没有合适正文可补读时，用正文支持的性别、年龄段、所处场景或可见气质写简洁提示词；这些也都无从确认时才写“未提及”。不要编造精确年龄、身高、五官、发型或着装，也不要借用其他人物的外貌。
+- 有关键缺项时，按第 3.2 节的搜索参数找线索，再读最能回答缺项的连续原文。当前章只是提名时，优先找最近能核实其身份或实际出场的场景；需要确认首次出场时，从最早相关命中和相邻原文往回核实。同名、别名或回指不明时，可以借地点、同伴或已确认的称呼找原文。一次发出互相独立的补读调用，合并重叠窗口，沿用追读预算。
+- 缓存清单只查补读需要的范围。高频命中、阶段代表和扫描末尾可用来找候选，有具体待核实的事实才读。命中记录用来定位正文；查过最相关的候选仍缺证据时，能成卡就留空并说明已查范围，人物仍无法确认时说明缺口。
+- 紧凑缓存回执的 `chapter_index_ranges`、`cached_chapter_index_ranges`、`volume_chapter_index_ranges` 都是从 0 开始的闭区间，`chapter_titles` 对应展开 `chapter_index_ranges` 后的顺序。紧凑搜索回执的 `chapters` 每行按 `chapter_columns` 解释，`snippets` 为 `null` 表示该行没有片段。`chapter_number_is_index_plus_one` 为真时，目录序号是 `index + 1`，标题中的章号以标题本身为准。
 
 ### 8.2 发现模式（给当前书生成角色卡）
 
-1. 确认书籍、读取元信息、检查缓存、读取记忆（启用时）。
+1. 确认书籍、读取元信息、检查缓存。
 2. 输出扫描范围选择，本轮结束。
 3. 范围明确后输出强度选择，本轮结束。
 4. 按探索预算读取窗口，记录观察，合并候选。
 5. 发现候选名后切换追读：搜索名字 + 别名，并为每个候选至少补读 1 个命中窗口，再进入表格。
-6. 按数量上限筛选主要角色；记忆启用时写 preview `ready`。
+6. 按数量上限筛选主要角色。
 7. 展示表格 + 确认块，本轮结束；用户确认后才写入。
 
 ### 8.3 分析主要角色（不生成卡）
@@ -403,18 +377,15 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 
 ### 8.4 修订
 
-1. 读取上一轮可见表格（记忆启用时同时读 preview）。
+1. 读取上一轮可见表格。
 2. 按用户要求修改/删除/合并/补充；只更新预览，不写库。
-3. 记忆启用时写回同一 preview id，状态 `revised`，revision 加一；记忆关闭时直接维护聊天表格。
-4. 重新展示完整表格 + 确认块；不要只回复“已修改”。
+3. 重新展示完整表格 + 确认块；不要只回复“已修改”。
 
 ### 8.5 应用
 
 1. 确认用户消息指向上一轮表格。
-2. 记忆启用时校验 preview revision；不通过则先说明。
-3. 同批发出全部 upsert；更新已有卡片必须传 id。
-4. 根据真实结果标记 applied/failed；记忆启用时更新 preview/apply_result，全部成功 `confirmed`，部分失败 `partial`。
-5. 汇总成功/失败；不盲目重试。
+2. 同批发出全部待应用的 upsert，更新已有卡片必须传 id。
+3. 按 5.3 根据真实结果报告成功和失败项。
 
 ### 8.6 取消与回滚
 
@@ -432,5 +403,4 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 - 不凭 `index` 心算章号；缓存结论必须覆盖完整范围后才能说“全书已缓存”。
 - 发现模式中没有读过正文的候选不得建卡；每个候选至少读 1 个命中窗口。
 - 同一章节不同时用窗口和片段；片段最多 5 个并折算追读预算；搜索只发起一次，续扫用 `next_start_chapter_index`。
-- 记忆关闭时不要声称可恢复；记忆开启时不要把未落盘观察用于最终预览。
 - 采样不足时明确说“需要继续采样/不建议生成”，不要硬生成。

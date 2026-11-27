@@ -2,7 +2,10 @@ package io.legado.app.ui.book.read.config
 
 import android.content.Context
 import android.graphics.Color as AndroidColor
+import android.view.Gravity
+import android.view.ViewGroup
 import android.view.Window
+import android.view.WindowManager
 import androidx.activity.ComponentDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,6 +59,7 @@ internal fun showReadComposeDialog(
     cancelOnTouchOutside: Boolean = true,
     onDismiss: () -> Unit = {},
     themeSnapshot: NgThemeSnapshot = ReadDrawerStyle.themeSnapshot(context),
+    bottomAligned: Boolean = false,
     content: @Composable (dismiss: () -> Unit) -> Unit,
 ): ComponentDialog {
     val dialog = ComponentDialog(context)
@@ -78,6 +82,14 @@ internal fun showReadComposeDialog(
     )
     dialog.show()
     dialog.applyNgWindow(marginDp = marginDp, dimAmount = dimAmount)
+    if (bottomAligned) {
+        dialog.window?.apply {
+            setGravity(Gravity.BOTTOM)
+            decorView.setPadding(0, 0, 0, 0)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+    }
     return dialog
 }
 

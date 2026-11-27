@@ -258,6 +258,8 @@ class ReadMenu @JvmOverloads constructor(
         tvContent.setTextColor(textColor)
         ivFloating.setColorFilter(textColor, PorterDuff.Mode.SRC_IN)
         tvFloating.setTextColor(textColor)
+        ivReadCharacters.setColorFilter(textColor, PorterDuff.Mode.SRC_IN)
+        tvReadCharacters.setTextColor(textColor)
         if (AppConfig.showReadTitleBarAddition) {
             titleBarAddition.visible()
         } else {
@@ -402,9 +404,9 @@ class ReadMenu @JvmOverloads constructor(
                         floatingToolExpansion = null
                         runMenuOut { callBack.onClickAiPurifyChapter() }
                     },
-                    onAiSettings = {
+                    onAiCharacterCards = {
                         floatingToolExpansion = null
-                        runMenuOut { callBack.onOpenAiPurifySettings() }
+                        runMenuOut { callBack.onClickAiCharacterCards() }
                     },
                     onReadAloud = {
                         floatingToolExpansion = null
@@ -1003,7 +1005,7 @@ class ReadMenu @JvmOverloads constructor(
         fun onMenuShow()
         fun onMenuHide()
         fun onClickAiPurifyChapter()
-        fun onOpenAiPurifySettings()
+        fun onClickAiCharacterCards()
     }
 
 }

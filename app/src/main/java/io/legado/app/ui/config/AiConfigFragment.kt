@@ -71,6 +71,7 @@ import io.legado.app.help.ai.assistantContextWindowOptions
 import io.legado.app.help.ai.assistantModelChoice
 import io.legado.app.help.ai.capAssistantContextWindow
 import io.legado.app.help.ai.catalogFetchRequired
+import io.legado.app.help.ai.characterCardModel
 import io.legado.app.help.ai.effectiveModelCapabilities
 import io.legado.app.help.ai.effectiveModelInfo
 import io.legado.app.help.ai.hasRequestCredentials
@@ -128,6 +129,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         const val PAGE_SEARCH_SERVICES = "searchServices"
         const val PAGE_PROMPTS = "prompts"
         const val PAGE_PURIFY = "purify"
+        const val PAGE_CHARACTER_CARD = "characterCard"
         const val PAGE_READ_ALOUD = "readAloud"
         const val PAGE_ASSISTANT = "assistant"
         private const val ARG_INITIAL_PAGE = "initialPage"
@@ -151,6 +153,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         PROMPTS,
         PROMPT_DETAIL,
         PURIFY_MODEL_SETTINGS,
+        CHARACTER_CARD_MODEL_SETTINGS,
         READ_ALOUD_MODEL_SETTINGS,
         ASSISTANT_MODEL_SETTINGS,
         PURIFY_SETTINGS
@@ -222,6 +225,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var purifyModelSettingsScreenState by mutableStateOf(
         AiPurifyModelSettingsScreenState()
     )
+    private var characterCardSettingsState by mutableStateOf(AiCharacterCardModelSettingsState())
     private var readAloudModelSettingsScreenState by mutableStateOf(
         AiReadAloudModelSettingsScreenState()
     )
@@ -287,6 +291,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             PAGE_PROVIDERS -> Page.PROVIDERS
             PAGE_PROMPTS -> Page.PROMPTS
             PAGE_PURIFY -> Page.PURIFY_MODEL_SETTINGS
+            PAGE_CHARACTER_CARD -> Page.CHARACTER_CARD_MODEL_SETTINGS
             PAGE_READ_ALOUD -> Page.READ_ALOUD_MODEL_SETTINGS
             PAGE_ASSISTANT -> Page.ASSISTANT_MODEL_SETTINGS
             else -> Page.MAIN
@@ -295,6 +300,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             Page.PROVIDERS -> showProviderList()
             Page.PROMPTS -> showPromptList()
             Page.PURIFY_MODEL_SETTINGS -> showPurifyModelSettings()
+            Page.CHARACTER_CARD_MODEL_SETTINGS -> showCharacterCardModelSettings()
             Page.READ_ALOUD_MODEL_SETTINGS -> showReadAloudModelSettings()
             Page.ASSISTANT_MODEL_SETTINGS -> showAssistantModelSettings()
             else -> showMain()
@@ -372,6 +378,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             binding.composeAssistantModelSettings.isVisible -> Page.ASSISTANT_MODEL_SETTINGS
             binding.composeReadAloudModelSettings.isVisible -> Page.READ_ALOUD_MODEL_SETTINGS
             binding.composePurifyModelSettings.isVisible -> Page.PURIFY_MODEL_SETTINGS
+            binding.composeCharacterCardModelSettings.isVisible -> Page.CHARACTER_CARD_MODEL_SETTINGS
             binding.composePurifySettings.isVisible -> Page.PURIFY_SETTINGS
             binding.composeProviders.isVisible -> Page.PROVIDERS
             else -> Page.MAIN
@@ -385,6 +392,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             Page.PROVIDERS -> showMain()
             Page.PROMPTS -> showMain()
             Page.PURIFY_MODEL_SETTINGS -> showMain()
+            Page.CHARACTER_CARD_MODEL_SETTINGS -> showMain()
             Page.READ_ALOUD_MODEL_SETTINGS -> showMain()
             Page.ASSISTANT_MODEL_SETTINGS -> showMain()
             Page.PURIFY_SETTINGS -> showPurifyModelSettings()
@@ -395,6 +403,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     internal fun usesFloatingSettingsTitleBar(): Boolean = when (currentPage) {
         Page.MAIN,
         Page.PURIFY_MODEL_SETTINGS,
+        Page.CHARACTER_CARD_MODEL_SETTINGS,
         Page.READ_ALOUD_MODEL_SETTINGS,
         Page.ASSISTANT_MODEL_SETTINGS,
         Page.PURIFY_SETTINGS -> true
@@ -550,6 +559,16 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         refreshModelSettings()
     }
 
+    private fun showCharacterCardModelSettings() {
+        currentPage = Page.CHARACTER_CARD_MODEL_SETTINGS
+        setFeatureComposePage(Page.CHARACTER_CARD_MODEL_SETTINGS)
+        currentProviderId = null
+        currentSkill = null
+        currentPrompt = null
+        setPageTitle(R.string.ai_character_card)
+        refreshModelSettings()
+    }
+
     private fun showAssistantModelSettings() {
         currentPage = Page.ASSISTANT_MODEL_SETTINGS
         setFeatureComposePage(Page.ASSISTANT_MODEL_SETTINGS)
@@ -577,6 +596,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.composeSkillList.isVisible = page == Page.PROMPTS
         binding.composeSkillDetail.isVisible = page == Page.PROMPT_DETAIL
         binding.composePurifyModelSettings.isVisible = page == Page.PURIFY_MODEL_SETTINGS
+        binding.composeCharacterCardModelSettings.isVisible = page == Page.CHARACTER_CARD_MODEL_SETTINGS
         binding.composeReadAloudModelSettings.isVisible = page == Page.READ_ALOUD_MODEL_SETTINGS
         binding.composeAssistantModelSettings.isVisible = page == Page.ASSISTANT_MODEL_SETTINGS
         binding.composePurifySettings.isVisible = page == Page.PURIFY_SETTINGS
@@ -592,6 +612,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             Page.PROMPTS -> refreshPrompts()
             Page.PROMPT_DETAIL -> refreshPromptDetail()
             Page.PURIFY_MODEL_SETTINGS -> refreshModelSettings()
+            Page.CHARACTER_CARD_MODEL_SETTINGS -> refreshModelSettings()
             Page.READ_ALOUD_MODEL_SETTINGS -> refreshModelSettings()
             Page.ASSISTANT_MODEL_SETTINGS -> refreshModelSettings()
             Page.PURIFY_SETTINGS -> refreshPurifySettings()
@@ -665,21 +686,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             skillSummary = aiMenuScreenState.skillSummary,
             chatEntryStyle = AiConfig.chatEntryStyle,
             installedPets = PetPluginStore.installedChoices(),
-            purifySummary = getString(
-                R.string.ai_model_function_summary,
-                purifyModelSummaryText(providers),
-                purifyReasoningSummaryText(providers),
-            ),
-            assistantSummary = getString(
-                R.string.ai_model_function_summary,
-                assistantModelSummaryText(providers),
-                assistantReasoningSummaryText(providers),
-            ),
-            readAloudSummary = getString(
-                R.string.ai_model_function_summary,
-                readAloudStoryboardModelSummaryText(providers),
-                readAloudStoryboardReasoningSummaryText(providers),
-            ),
+            purifySummary = purifyModelSummaryText(providers),
+            characterCardSummary = requireContext().characterCardModelSettingsState(providers).modelSummary,
+            assistantSummary = assistantModelSummaryText(providers),
+            readAloudSummary = readAloudStoryboardModelSummaryText(providers),
         )
     }
 
@@ -1089,6 +1099,26 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun initFeatureSettingsCompose() {
+        binding.composeCharacterCardModelSettings.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                NgAppTheme {
+                    AiCharacterCardModelSettingsScreen(
+                        state = characterCardSettingsState,
+                        onSelectModel = { showComposeModelSelectionSheet(AiModelSelectionTarget.CHARACTER_CARD) },
+                        onSelectReasoning = ::showCharacterCardReasoningDialog,
+                        onConcurrencyLimitChange = { value ->
+                            characterCardSettingsState =
+                                characterCardSettingsState.copy(concurrencyLimit = value)
+                        },
+                        onConcurrencyLimitChangeFinished = {
+                            AiConfig.characterCardConcurrencyLimit =
+                                characterCardSettingsState.concurrencyLimit
+                        },
+                    )
+                }
+            }
+        }
         binding.composePurifyModelSettings.apply {
             setViewCompositionStrategy(
                 ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
@@ -1249,6 +1279,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             PAGE_SEARCH_SERVICES -> (activity as? ConfigActivity)?.openAiConfigPage(page)
             PAGE_PROMPTS -> showPromptList()
             PAGE_PURIFY -> showPurifyModelSettings()
+            PAGE_CHARACTER_CARD -> showCharacterCardModelSettings()
             PAGE_READ_ALOUD -> showReadAloudModelSettings()
             PAGE_ASSISTANT -> showAssistantModelSettings()
         }
@@ -2318,6 +2349,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun refreshModelSettings() {
+        characterCardSettingsState = requireContext().characterCardModelSettingsState(AiProviderStore.providers())
         val reasoningEnabled = selectedPurifyModel()?.model?.supportsReasoning() == true
         val readAloudReasoningEnabled =
             selectedReadAloudStoryboardModel()?.model?.supportsReasoning() == true
@@ -2543,6 +2575,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private enum class AiModelSelectionTarget {
         PURIFY,
+        CHARACTER_CARD,
         READ_ALOUD,
         ASSISTANT,
     }
@@ -2554,18 +2587,23 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             return assistantModelSelectionProviders()
         }
         return AiProviderStore.providers().modelSelectionEligibleProviders().map { provider ->
-            provider.toModelSelectionProviderUiModel(provider.purifyEligibleModels())
+            val models = if (target == AiModelSelectionTarget.CHARACTER_CARD) {
+                provider.displayModels().mapNotNull { provider.characterCardModel(it.safeId()) }
+            } else provider.purifyEligibleModels()
+            provider.toModelSelectionProviderUiModel(models)
         }
     }
 
     private fun showComposeModelSelectionSheet(target: AiModelSelectionTarget) {
         val selectedProviderId = when (target) {
             AiModelSelectionTarget.PURIFY -> AiConfig.purifyProviderId
+            AiModelSelectionTarget.CHARACTER_CARD -> AiConfig.characterCardProviderId
             AiModelSelectionTarget.READ_ALOUD -> AiConfig.readAloudStoryboardProviderId
             AiModelSelectionTarget.ASSISTANT -> AiConfig.assistantProviderId
         }
         val selectedModelId = when (target) {
             AiModelSelectionTarget.PURIFY -> AiConfig.purifyModelId
+            AiModelSelectionTarget.CHARACTER_CARD -> AiConfig.characterCardModelId
             AiModelSelectionTarget.READ_ALOUD -> AiConfig.readAloudStoryboardModelId
             AiModelSelectionTarget.ASSISTANT -> AiConfig.assistantModelId
         }
@@ -2575,6 +2613,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             emptyText = when (target) {
                 AiModelSelectionTarget.ASSISTANT ->
                     getString(R.string.ai_assistant_model_empty)
+                AiModelSelectionTarget.CHARACTER_CARD ->
+                    getString(R.string.ai_character_card_model_empty)
                 else -> getString(R.string.ai_purify_model_empty)
             },
             providers = modelSelectionProviders(target),
@@ -2617,6 +2657,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     onClear = {
                         when (target) {
                             AiModelSelectionTarget.PURIFY -> AiConfig.clearPurifyModel()
+                            AiModelSelectionTarget.CHARACTER_CARD -> AiConfig.clearCharacterCardModel()
                             AiModelSelectionTarget.READ_ALOUD -> AiConfig.clearReadAloudStoryboardModel()
                             AiModelSelectionTarget.ASSISTANT -> AiConfig.clearAssistantModel()
                         }
@@ -2626,6 +2667,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                         when (target) {
                             AiModelSelectionTarget.PURIFY -> {
                                 AiConfig.savePurifyModel(providerId, modelId)
+                            }
+                            AiModelSelectionTarget.CHARACTER_CARD -> {
+                                if (!AiConfig.saveCharacterCardModel(providerId, modelId)) {
+                                    toastOnUi(R.string.ai_purify_model_unavailable)
+                                    sheetState = sheetState.copy(providers = modelSelectionProviders(target))
+                                    return@select
+                                }
                             }
                             AiModelSelectionTarget.READ_ALOUD -> {
                                 AiConfig.saveReadAloudStoryboardModel(providerId, modelId)
@@ -2716,6 +2764,21 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 AiConfig.assistantContextWindowTokens = value
                 refreshModelSettings()
             }
+        }
+    }
+
+    private fun showCharacterCardReasoningDialog() {
+        if (!characterCardSettingsState.reasoningAvailable) {
+            toastOnUi(characterCardSettingsState.reasoningSummary)
+            return
+        }
+        showReasoningLevelDialog(
+            title = getString(R.string.ai_purify_reasoning_title),
+            currentLevel = AiConfig.characterCardReasoningLevel,
+            iconTintWhenOff = true,
+        ) { level ->
+            AiConfig.characterCardReasoningLevel = level
+            refreshModelSettings()
         }
     }
 

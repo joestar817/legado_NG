@@ -47,6 +47,30 @@ class CharacterCardSelectionTest {
     }
 
     @Test
+    fun generatedSaveAllowsPreviouslyStoredAliasOverlap() {
+        val liFeiYu = BookCharacter(id = 3L, name = "厉飞雨")
+        assertNull(
+            CharacterCardSelection.generatedSaveConflict(
+                hanLi.name, listOf("韩跑跑", "「厉飞雨」"), hanLi, listOf(hanLi, liFeiYu),
+            ),
+        )
+    }
+
+    @Test
+    fun generatedSaveRejectsNewAliasesOrRenamesThatMatchAnotherCard() {
+        val liFeiYu = BookCharacter(id = 3L, name = "厉飞雨")
+        val existing = listOf(hanLi, nangong, liFeiYu)
+        assertEquals(
+            liFeiYu,
+            CharacterCardSelection.generatedSaveConflict(nangong.name, listOf("厉飞雨"), nangong, existing),
+        )
+        assertEquals(
+            liFeiYu,
+            CharacterCardSelection.generatedSaveConflict("厉飞雨", emptyList(), hanLi, existing),
+        )
+    }
+
+    @Test
     fun normalizedNameTakesPrecedenceOverAnotherCharactersAlias() {
         val aliasOwner = BookCharacter(name = "Other", aliasesJson = "[\"li fei\"]")
         val liFei = BookCharacter(name = "Li  Fei", aliasesJson = "[]")

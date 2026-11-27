@@ -5,22 +5,19 @@ import com.google.gson.JsonObject
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.ai.AgentModeEntryContext
-import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.book.menuCapabilities
 import io.legado.app.ui.config.AiChatActivity
 import io.legado.app.utils.startActivity
 
 object BookAiAssistantLauncher {
 
-    fun openCharacterCardFromSelection(
-        context: Context,
+    internal fun characterCardSelection(
         book: Book,
         selectedName: String,
         chapterIndex: Int,
-        chapterTitle: String?
-    ) {
-        val name = selectedName.trim()
-        if (name.isBlank()) return
+        chapterTitle: String?,
+    ): CharacterCardSelectionEntry {
+        val name = selectedName.trim().also { require(it.isNotBlank()) }
         val workKey = BookCharacterProfile.workKey(book.name, book.author)
         val payload = JsonObject().apply {
             addProperty("work_key", workKey)
@@ -30,7 +27,8 @@ object BookAiAssistantLauncher {
             book.originName?.takeIf { it.isNotBlank() }?.let { addProperty("origin_name", it) }
             addProperty("character_name", name)
             addProperty("selected_text", name)
-            addProperty("current_chapter_index", chapterIndex + 1)
+            addProperty("current_chapter_index", chapterIndex)
+            addProperty("current_chapter_number", chapterIndex + 1)
             chapterTitle?.takeIf { it.isNotBlank() }
                 ?.let { addProperty("current_chapter_title", it) }
             addProperty("total_chapters", book.totalChapterNum)
@@ -57,25 +55,14 @@ object BookAiAssistantLauncher {
                 }
             )
         }
-        context.startActivity<AiChatActivity> {
-            putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_TEXT_SELECTION)
-            putStringArrayListExtra(
-                AiChatActivity.EXTRA_LOADED_SKILL_IDS,
-                arrayListOf(AiSkillRegistry.SKILL_CHARACTER_CARD_GENERATE)
-            )
-            putExtra(AiChatActivity.EXTRA_MODE_ENTRY_CONTEXT, entryContext.toJson())
-            putStringArrayListExtra(
-                AiChatActivity.EXTRA_CONTEXT_ATTACHMENTS,
-                arrayListOf(selectionAttachment.toString())
-            )
-            putExtra(
-                AiChatActivity.EXTRA_INITIAL_INPUT,
-                "为《${book.name}》中的角色「$name」创建角色卡。" +
-                    "这是指定角色模式：直接使用当前书已缓存章节，不要再询问扫描范围或强度；" +
-                    "先查已有角色卡，再用正文搜索定位该角色的章节，只读命中章节。" +
-                    "采样完成后先展示待审核表格，等我确认后再写入。"
-            )
-        }
+        return CharacterCardSelectionEntry(
+            context = entryContext,
+            attachment = selectionAttachment.toString(),
+            prompt = "为《${book.name}》中的角色「$name」创建角色卡。" +
+                "这是指定角色模式：直接使用当前书已缓存章节，不要再询问扫描范围或强度；" +
+                "先查已有角色卡。按 Skill 的阅读器选名流程，优先读取选名所在章，再判断是否需要补读。" +
+                "采样完成后先展示待审核表格，等我确认后再写入。",
+        )
     }
 
     fun openBookScan(context: Context, book: Book) {
@@ -111,3 +98,9 @@ object BookAiAssistantLauncher {
         }
     }
 }
+
+internal data class CharacterCardSelectionEntry(
+    val context: AgentModeEntryContext,
+    val attachment: String,
+    val prompt: String,
+)

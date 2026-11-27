@@ -8,8 +8,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.test.assertDoesNotExist
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -43,7 +41,7 @@ class ReadFloatingToolRailInteractionTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         var tools by mutableStateOf(listOf(ReadFloatingTool.AI, ReadFloatingTool.BRIGHTNESS, ReadFloatingTool.SEARCH))
         var expansion by mutableStateOf<ReadFloatingToolExpansion?>(null)
-        var openedSettings = 0
+        var openedCharacterCards = 0
         val snapshot = NgThemeResolver.resolve(NgLegacyThemeInput(
             primaryColor = 0xFFFFF1E8.toInt(), accentColor = 0xFF008577.toInt(),
             backgroundColor = 0xFFFFF9F5.toInt(), bottomBackground = 0xFFFFF1E8.toInt(),
@@ -59,7 +57,7 @@ class ReadFloatingToolRailInteractionTest {
                         autoPage = false, pageAnim = 0, chineseMode = 0,
                         onBrightnessChange = {}, onBrightnessChangeFinished = {}, onToggleBrightnessAutomatic = {},
                         onSearch = {}, onReplace = {}, onThemeModeSelected = {}, onAiPurify = {},
-                        onAiSettings = { openedSettings++; expansion = null }, onToggleDockSide = {},
+                        onAiCharacterCards = { openedCharacterCards++; expansion = null }, onToggleDockSide = {},
                         onReadAloud = {}, onAutoPage = {}, onPageAnimSelected = {}, onChineseModeSelected = {},
                     )
                 }
@@ -69,11 +67,13 @@ class ReadFloatingToolRailInteractionTest {
         val brightness = composeRule.onNodeWithContentDescription(context.getString(R.string.brightness))
         assertTrue(ai.fetchSemanticsNode().boundsInRoot.top < brightness.fetchSemanticsNode().boundsInRoot.top)
         ai.performClick()
-        composeRule.onNodeWithText(context.getString(R.string.ai_purify_settings)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.ai_purify_chapter)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.ai_character_card_generate_action)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.ai_purify_settings)).assertDoesNotExist()
         composeRule.runOnIdle { tools = listOf(ReadFloatingTool.BRIGHTNESS, ReadFloatingTool.AI) }
         assertTrue(brightness.fetchSemanticsNode().boundsInRoot.top < ai.fetchSemanticsNode().boundsInRoot.top)
-        composeRule.onNodeWithText(context.getString(R.string.ai_purify_settings)).performClick()
-        composeRule.runOnIdle { assertEquals(1, openedSettings); tools = emptyList() }
+        composeRule.onNodeWithText(context.getString(R.string.ai_character_card_generate_action)).performClick()
+        composeRule.runOnIdle { assertEquals(1, openedCharacterCards); tools = emptyList() }
         ai.assertDoesNotExist()
         brightness.assertDoesNotExist()
         composeRule.onNodeWithContentDescription(context.getString(R.string.adjust_pos)).assertExists()
@@ -84,7 +84,7 @@ class ReadFloatingToolRailInteractionTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         var dock by mutableStateOf(ReadFloatingToolDock.LEFT)
         var expansion by mutableStateOf<ReadFloatingToolExpansion?>(null)
-        var aiSettings = 0
+        var characterCards = 0
         var themeMode by mutableStateOf(ReadThemeMode.FOLLOW_SYSTEM)
         val snapshot = NgThemeResolver.resolve(NgLegacyThemeInput(
             primaryColor = 0xFFFFF1E8.toInt(), accentColor = 0xFF008577.toInt(),
@@ -101,7 +101,7 @@ class ReadFloatingToolRailInteractionTest {
                         onExpansionChange = { expansion = it }, onBrightnessChange = {},
                         onBrightnessChangeFinished = {}, onToggleBrightnessAutomatic = {},
                         onSearch = {}, onReplace = {}, onThemeModeSelected = { themeMode = it },
-                        onAiPurify = {}, onAiSettings = { aiSettings++; expansion = null },
+                        onAiPurify = {}, onAiCharacterCards = { characterCards++; expansion = null },
                         onToggleDockSide = { expansion = null; dock = dock.toggled() },
                         onReadAloud = {}, onAutoPage = {}, onPageAnimSelected = {}, onChineseModeSelected = {},
                     )
@@ -116,9 +116,9 @@ class ReadFloatingToolRailInteractionTest {
         composeRule.onNodeWithText(context.getString(R.string.theme_mode_follow_short)).assertExists()
         assertEquals(initialTop, brightness.fetchSemanticsNode().boundsInRoot.top, 1f)
         composeRule.onNodeWithContentDescription(context.getString(R.string.ai_actions)).performClick()
-        composeRule.onNodeWithText(context.getString(R.string.ai_purify_settings)).performClick()
-        composeRule.runOnIdle { assertEquals(1, aiSettings) }
-        composeRule.onNodeWithText(context.getString(R.string.ai_purify_settings)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.ai_character_card_generate_action)).performClick()
+        composeRule.runOnIdle { assertEquals(1, characterCards) }
+        composeRule.onNodeWithText(context.getString(R.string.ai_character_card_generate_action)).assertDoesNotExist()
         composeRule.onNodeWithContentDescription(context.getString(R.string.adjust_pos)).performClick()
         composeRule.onNodeWithContentDescription(context.getString(R.string.dark_theme)).performClick()
         composeRule.onNodeWithText(context.getString(R.string.theme_mode_follow_short)).assertExists()
@@ -150,7 +150,7 @@ class ReadFloatingToolRailInteractionTest {
                         themeMode = ReadThemeMode.FOLLOW_SYSTEM, autoPage = autoPage,
                         pageAnim = pageAnim, chineseMode = chineseMode, onExpansionChange = { expansion = it },
                         onBrightnessChange = {}, onBrightnessChangeFinished = {}, onToggleBrightnessAutomatic = {},
-                        onSearch = {}, onReplace = {}, onThemeModeSelected = {}, onAiPurify = {}, onAiSettings = {},
+                        onSearch = {}, onReplace = {}, onThemeModeSelected = {}, onAiPurify = {}, onAiCharacterCards = {},
                         onReadAloud = { readAloudCalls++ }, onAutoPage = { autoPage = !autoPage },
                         onPageAnimSelected = { pageAnim = it }, onChineseModeSelected = { chineseMode = it },
                         onToggleDockSide = { expansion = null; dock = dock.toggled() },

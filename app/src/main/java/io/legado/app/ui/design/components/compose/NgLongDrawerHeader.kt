@@ -19,13 +19,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.ui.design.theme.NgTheme
+
+enum class NgLongDrawerHeaderVariant {
+    COMPACT,
+    ROUND_ACTIONS,
+    ROUND_ACTIONS_TRAILING_GROUP,
+}
 
 /**
  * NG 长列表抽屉的紧凑标题区。
@@ -64,24 +72,51 @@ fun NgLongDrawerHeader(
     modifier: Modifier = Modifier,
     navigationActive: Boolean = false,
     titleFontWeight: FontWeight = FontWeight.Medium,
+    variant: NgLongDrawerHeaderVariant = NgLongDrawerHeaderVariant.COMPACT,
     navigationContent: (@Composable () -> Unit)? = null,
     actionContent: (@Composable () -> Unit)? = null,
+    centeredTrailingContent: (@Composable () -> Unit)? = null,
 ) {
     val colors = NgTheme.colors
+    val roundActions = variant != NgLongDrawerHeaderVariant.COMPACT
+    val actionSize = if (roundActions) 44.dp else 40.dp
     val hasSecondaryAction = secondaryActionIconRes != null && onSecondaryActionClick != null
+    val rowModifier = Modifier.fillMaxWidth().height(if (roundActions) 48.dp else 42.dp)
     Column(modifier = modifier.fillMaxWidth()) {
         NgDrawerDragHandle(variant = NgDrawerDragHandleVariant.COMPACT)
+        if (centerTitle && centeredTrailingContent != null) {
+            DrawerHeaderWithCenteredTitle(
+                modifier = rowModifier,
+                navigation = {
+                    if (navigationContent != null) {
+                        Box(Modifier.size(actionSize), contentAlignment = Alignment.Center) {
+                            navigationContent()
+                        }
+                    } else {
+                        DrawerHeaderIconSlot(
+                            iconRes = navigationIconRes,
+                            contentDescription = navigationContentDescription,
+                            active = navigationActive,
+                            onClick = onNavigationClick,
+                            size = actionSize,
+                        )
+                    }
+                },
+                title = { DrawerHeaderTitle(title, centerTitle, titleFontWeight) },
+                trailing = centeredTrailingContent,
+                fitTitleBetweenActions = variant == NgLongDrawerHeaderVariant.ROUND_ACTIONS_TRAILING_GROUP,
+            )
+            return@Column
+        }
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(42.dp),
+            modifier = rowModifier,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (navigationContent != null) {
-                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(actionSize), contentAlignment = Alignment.Center) {
                     navigationContent()
                 }
-                if (centerTitle && hasSecondaryAction) Spacer(Modifier.width(40.dp))
+                if (centerTitle && hasSecondaryAction) Spacer(Modifier.width(actionSize))
             } else if (centerTitle) {
                 repeat(if (hasSecondaryAction) 2 else 1) { index ->
                     DrawerHeaderIconSlot(
@@ -89,6 +124,7 @@ fun NgLongDrawerHeader(
                         contentDescription = navigationContentDescription.takeIf { index == 0 },
                         active = navigationActive,
                         onClick = onNavigationClick.takeIf { index == 0 },
+                        size = actionSize,
                     )
                 }
             } else if (navigationIconRes != null && onNavigationClick != null) {
@@ -97,19 +133,10 @@ fun NgLongDrawerHeader(
                     contentDescription = navigationContentDescription,
                     active = navigationActive,
                     onClick = onNavigationClick,
+                    size = actionSize,
                 )
             }
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f),
-                color = Color(colors.onSurface),
-                fontSize = 17.sp,
-                lineHeight = 21.sp,
-                fontWeight = titleFontWeight,
-                textAlign = if (centerTitle) TextAlign.Center else TextAlign.Start,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            DrawerHeaderTitle(title, centerTitle, titleFontWeight, Modifier.weight(1f))
             if (!statusText.isNullOrBlank()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (statusIconRes != null) {
@@ -131,7 +158,7 @@ fun NgLongDrawerHeader(
                 }
             }
             if (tertiaryActionIconRes != null && onTertiaryActionClick != null) {
-                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(actionSize), contentAlignment = Alignment.Center) {
                     if (tertiaryActionLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(22.dp),
@@ -144,6 +171,7 @@ fun NgLongDrawerHeader(
                             contentDescription = tertiaryActionContentDescription,
                             active = false,
                             onClick = onTertiaryActionClick,
+                            size = actionSize,
                         )
                     }
                 }
@@ -155,6 +183,7 @@ fun NgLongDrawerHeader(
                     active = false,
                     enabled = quaternaryActionEnabled,
                     onClick = onQuaternaryActionClick,
+                    size = actionSize,
                 )
             }
             if (hasSecondaryAction) {
@@ -163,17 +192,19 @@ fun NgLongDrawerHeader(
                     contentDescription = secondaryActionContentDescription,
                     active = secondaryActionActive,
                     onClick = onSecondaryActionClick,
+                    size = actionSize,
                 )
             }
             if (centerTitle) {
                 if (actionContent != null) {
-                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { actionContent() }
+                    Box(Modifier.size(actionSize), contentAlignment = Alignment.Center) { actionContent() }
                 } else {
                     DrawerHeaderIconSlot(
                         iconRes = actionIconRes,
                         contentDescription = actionContentDescription,
                         active = actionActive,
                         onClick = onActionClick,
+                        size = actionSize,
                     )
                 }
             } else if (actionIconRes != null && onActionClick != null) {
@@ -182,6 +213,7 @@ fun NgLongDrawerHeader(
                     contentDescription = actionContentDescription,
                     active = actionActive,
                     onClick = onActionClick,
+                    size = actionSize,
                 )
             }
             DrawerHeaderTextAction(
@@ -194,6 +226,61 @@ fun NgLongDrawerHeader(
             )
         }
     }
+}
+
+@Composable
+private fun DrawerHeaderWithCenteredTitle(
+    modifier: Modifier,
+    navigation: @Composable () -> Unit,
+    title: @Composable () -> Unit,
+    trailing: @Composable () -> Unit,
+    fitTitleBetweenActions: Boolean,
+) {
+    Layout(
+        modifier = modifier,
+        content = {
+            Box { navigation() }
+            Box { title() }
+            Box { trailing() }
+        },
+    ) { (navigationMeasurable, titleMeasurable, trailingMeasurable), constraints ->
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val sideConstraints = constraints.copy(minWidth = 0, minHeight = 0, maxWidth = width / 2)
+        val start = navigationMeasurable.measure(sideConstraints)
+        val end = trailingMeasurable.measure(sideConstraints)
+        val sideWidth = maxOf(start.width, end.width)
+        val gap = minOf(6.dp.roundToPx(), (width - start.width - end.width) / 2)
+        val titleStart = if (fitTitleBetweenActions) start.width + gap else sideWidth
+        val titleEnd = if (fitTitleBetweenActions) width - end.width - gap else width - sideWidth
+        val center = titleMeasurable.measure(sideConstraints.copy(maxWidth = titleEnd - titleStart))
+        val titleX = ((width - center.width) / 2).coerceIn(titleStart, titleEnd - center.width)
+        layout(width, height) {
+            start.placeRelative(0, (height - start.height) / 2)
+            center.placeRelative(titleX, (height - center.height) / 2)
+            end.placeRelative(width - end.width, (height - end.height) / 2)
+        }
+    }
+}
+
+@Composable
+private fun DrawerHeaderTitle(
+    title: String,
+    centered: Boolean,
+    fontWeight: FontWeight,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = title,
+        modifier = modifier,
+        color = Color(NgTheme.colors.onSurface),
+        fontSize = 17.sp,
+        lineHeight = 21.sp,
+        fontWeight = fontWeight,
+        textAlign = if (centered) TextAlign.Center else TextAlign.Start,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -225,16 +312,17 @@ private fun DrawerHeaderIconSlot(
     active: Boolean,
     enabled: Boolean = true,
     onClick: (() -> Unit)?,
+    size: Dp,
 ) {
     Box(
-        modifier = Modifier.size(40.dp),
+        modifier = Modifier.size(size),
         contentAlignment = Alignment.Center,
     ) {
         if (iconRes != null && onClick != null) {
             IconButton(
                 onClick = onClick,
                 enabled = enabled,
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(size),
             ) {
                 Icon(
                     painter = painterResource(iconRes),

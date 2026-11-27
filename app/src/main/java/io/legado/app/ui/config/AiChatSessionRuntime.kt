@@ -13,7 +13,6 @@ import io.legado.app.help.ai.AgentModeDefinition
 import io.legado.app.help.ai.AgentModeEntryContext
 import io.legado.app.help.ai.AgentModeIdentity
 import io.legado.app.help.ai.AgentModeRegistry
-import io.legado.app.help.ai.AiActiveSkillSnapshot
 import io.legado.app.help.ai.AiAssistantReplyEndException
 import io.legado.app.help.ai.AiAssistantReplyEndReason
 import io.legado.app.help.ai.AiBookSearchCandidate
@@ -626,19 +625,7 @@ internal class AiChatSessionRuntime(
         }
         AiChatContextManager.syncActiveSkill(
             messages = uploadMessages,
-            snapshot = skill?.let { attachment ->
-                AiActiveSkillSnapshot(
-                    skillId = attachment.id.removePrefix("skill."),
-                    title = attachment.title,
-                    prompt = attachment.prompt,
-                    revision = attachment.skillRevision,
-                    runtimeRevision = attachment.skillRuntimeRevision,
-                    contentHash = attachment.skillContentHash,
-                    runtime = attachment.skillRuntime,
-                    description = attachment.subtitle,
-                    availableSkills = attachment.availableSkills
-                )
-            }
+            snapshot = skill?.activeSkillSnapshot()
         )
     }
 
