@@ -217,6 +217,15 @@ internal fun AiModel.withCatalogCapabilities(info: AiModelInfo?): AiModel {
     return detected.withCapabilityOverrides(this, settings)
 }
 
+internal fun AiProviderSetting.resolveTextOutputTokens(model: AiModel, requestedTokens: Int?): Int? {
+    val info = effectiveModelInfo(model)
+    val configuredLimit = model.modelSettingsFor(info.endpoint)?.maxOutputTokens?.takeIf { it > 0 }
+    val catalogLimit = info.maxOutputTokens?.value?.takeIf { it > 0 }
+    return (requestedTokens ?: configuredLimit)?.let { requested ->
+        minOf(requested, configuredLimit ?: requested, catalogLimit ?: requested)
+    }
+}
+
 internal fun AiProviderSetting.filterGenerationParams(model: AiModel, params: AiTextParams): AiTextParams {
     val info = effectiveModelInfo(model)
     return params.copy(

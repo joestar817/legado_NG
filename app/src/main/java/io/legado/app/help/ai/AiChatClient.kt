@@ -47,6 +47,7 @@ private class AiChatHttpResponseException(val status: Int) : IOException()
 class AiChatClient internal constructor(
     private val externalSearchClient: () -> AiExternalSearchClient = { AiExternalSearchClient() },
     private val workBuddy: AiWorkBuddySessions = workBuddySessions,
+    private val onModelRequestUsage: ((AiChatUsage?) -> Unit)? = null,
     private val clientForTimeout: (Int) -> OkHttpClient,
 ) {
 
@@ -58,12 +59,7 @@ class AiChatClient internal constructor(
         messages: List<AiMessage>,
         params: AiTextParams,
     ): AiTextResult {
-        val modelInfo = setting.effectiveModelInfo(model)
-        val configuredLimit = model.modelSettingsFor(modelInfo.endpoint)?.maxOutputTokens?.takeIf { it > 0 }
-        val catalogLimit = modelInfo.maxOutputTokens?.value?.takeIf { it > 0 }
-        val limit = (params.maxTokens ?: configuredLimit)?.let { requested ->
-            minOf(requested, configuredLimit ?: requested, catalogLimit ?: requested)
-        }
+        val limit = setting.resolveTextOutputTokens(model, params.maxTokens)
         val route = setting.resolveModelGenerationRoute(model)
         val requestSetting = if (route.requiresStreaming && !setting.streamResponseEnabled) {
             setting.copy(streamResponseEnabled = true)
@@ -297,7 +293,11 @@ class AiChatClient internal constructor(
         onToolActivity: (String?) -> Unit = {},
         previousImageId: String? = null,
         onImageStarted: (editing: Boolean) -> Unit = {},
-        onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
+        paramsOverride: ((AiTextParams) -> AiTextParams)? = null,
+        toolAllowed: ((String, JsonObject?) -> Boolean)? = null,
+        onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false },
+        toolResultForModel: (String, JsonObject) -> JsonObject = { _, result -> result },
+        onToolExecution: ((AiToolExecutionUpdate) -> Unit)? = null,
     ): AiChatTurnResult {
         val user = messages.lastOrNull { it.stringOrNull("role") == "user" }
         val attachedImages = user?.chatImageAssets().orEmpty()
@@ -341,7 +341,8 @@ class AiChatClient internal constructor(
         val outputParams = modelSettings?.applyOutputLimit(
             assistantParams, model.catalogInfo(modelSettings), contextWindow,
         ) ?: assistantParams
-        val params = AiConfig.assistantModelReasoning(setting, model).applyTo(outputParams)
+        val params = paramsOverride?.invoke(outputParams)
+            ?: AiConfig.assistantModelReasoning(setting, model).applyTo(outputParams)
         val webRoute = setting.nativeWebRoute(model, AiModelGenerationRoute(protocol, null))
         val webPlan = AiExternalSearchStore.current().resolveWebToolPlan(
             nativeRoute = webRoute,
@@ -380,7 +381,9 @@ class AiChatClient internal constructor(
         } else {
             emptyList()
         }
-        val imageProvider = if (!requireWebSearch && AiModelAbility.TOOL in model.abilities) {
+        val imageProvider = if (!requireWebSearch && AiModelAbility.TOOL in model.abilities &&
+            toolAllowed?.invoke(CODEX_IMAGE_TOOL, null) != false
+        ) {
             setting.availableCodexImageProvider()
         } else null
         val imageToolEnabled = imageProvider != null
@@ -394,6 +397,12 @@ class AiChatClient internal constructor(
                 hasAttachedImages = attachedImages.isNotEmpty(),
                 hasPreviousImage = previousImageId != null
             ))
+        }.filter { definition ->
+            val name = definition.objectOrNull("function")?.stringOrNull("name")
+            toolAllowed == null || (name != null && toolAllowed(name.removePrefix(MCP_TOOL_PREFIX), null))
+        }
+        val offeredToolNames = tools.mapNotNullTo(hashSetOf()) {
+            it.objectOrNull("function")?.stringOrNull("name")
         }
         val warnings = buildList {
             if (AiConfig.internalMcpEnabled && !model.abilities.contains(AiModelAbility.TOOL)) {
@@ -725,15 +734,12 @@ class AiChatClient internal constructor(
             require(parsedToolCalls.size == toolCalls.size()) {
                 "模型返回了无法解析的 tool_calls，已在执行任何工具前中止"
             }
-            val preparedToolCalls = parsedToolCalls.map { call ->
+            val preparedToolCalls = parsedToolCalls.mapNotNull { call ->
                 require(call.callId.isNotBlank()) { "模型返回的 tool_call id 不能为空" }
-                require(call.externalTool != null || (imageToolEnabled && call.functionName == CODEX_IMAGE_TOOL) ||
-                    (call.functionName.startsWith(MCP_TOOL_PREFIX) && call.toolName.isNotBlank())) {
-                    "模型返回了非法或未启用的工具名"
-                }
                 require(seenToolCallIds.add(call.callId)) {
                     "模型在同一轮重复使用 tool_call id：${call.callId}"
                 }
+                if (call.functionName !in offeredToolNames) return@mapNotNull null
                 val executionArguments = call.externalTool?.let {
                     requireNotNull(externalWeb).receiptArguments(it, call.arguments)
                 } ?: if (call.functionName == CODEX_IMAGE_TOOL) {
@@ -785,12 +791,16 @@ class AiChatClient internal constructor(
                     memoryTrace = memoryTrace.toList()
                 )
             )
+            val deniedToolCallIds = if (toolAllowed == null) emptySet() else preparedToolCalls
+                .map { it.call }
+                .filterNot { toolAllowed(it.toolName, it.arguments) }
+                .mapTo(mutableSetOf()) { it.callId }
             val writeToolCalls = if (AiConfig.operationPermissionMode.requiresWriteConfirmation) {
                 preparedToolCalls
                     .filter { prepared -> prepared.reusableArtifact == null }
                     .map { prepared -> prepared.call }
                     .filter { call ->
-                        call.externalTool == null && call.toolName.requiresPerCallConfirmation(
+                        call.callId !in deniedToolCallIds && call.externalTool == null && call.toolName.requiresPerCallConfirmation(
                             arguments = call.arguments
                         )
                     }
@@ -811,8 +821,13 @@ class AiChatClient internal constructor(
             } else {
                 true
             }
-            preparedToolCalls.forEach { prepared ->
-                val call = prepared.call
+            val preparedByCallId = preparedToolCalls.associateBy { it.call.callId }
+            parsedToolCalls.forEach { call ->
+                val prepared = preparedByCallId[call.callId]
+                if (prepared == null) {
+                    requestMessages.add(call.resultMessage(unavailableModelToolResult(call.functionName).toString()))
+                    return@forEach
+                }
                 val proposedEffects = if (prepared.reusableArtifact == null) {
                     hookRuntime.evaluate(
                         AgentHookEvent(
@@ -837,6 +852,10 @@ class AiChatClient internal constructor(
                 var resolvedArtifact = prepared.reusableArtifact
                 var indeterminateIntent: AgentToolExecutionIntent? = null
                 val result = when {
+                    call.callId in deniedToolCallIds -> JsonObject().apply {
+                        addProperty("ok", false)
+                        addProperty("error", "当前入口未授权这项操作")
+                    }
                     resolvedArtifact != null -> resolvedArtifact.toReplayedMcpResult()
                     proposedBlock != null -> blockedToolResult(call.toolName, proposedBlock)
                     !writeApproved && requiresWriteApproval -> writeOperationCanceledResult(call.toolName)
@@ -875,6 +894,7 @@ class AiChatClient internal constructor(
                         is AgentToolExecutionBeginOutcome.Started -> {
                             startedIntent = begin.intent
                             onToolActivity(call.toolName)
+                            onToolExecution?.invoke(AiToolExecutionUpdate(call.callId, call.toolName))
                             try {
                                 if (call.externalTool != null) {
                                     requireNotNull(externalWeb).execute(call.externalTool, call.arguments)
@@ -894,7 +914,7 @@ class AiChatClient internal constructor(
                                     } catch (_: Exception) {
                                         codexImageError(appCtx.getString(R.string.ai_codex_image_failed))
                                     }
-                                } else runCatching {
+                                } else executeInternalToolForModel {
                                     AiAgentSkillTools.call(
                                         name = call.toolName,
                                         arguments = call.arguments,
@@ -917,11 +937,6 @@ class AiChatClient internal constructor(
                                             allowedMemoryRanges = memoryPolicy?.allowedRanges.orEmpty()
                                         )
                                     )
-                                }.getOrElse {
-                                    JsonObject().apply {
-                                        addProperty("ok", false)
-                                        addProperty("error", it.localizedMessage ?: "MCP tool failed")
-                                    }
                                 }
                             } finally {
                                 onToolActivity(null)
@@ -949,6 +964,7 @@ class AiChatClient internal constructor(
                 )
                 val fullModelToolContent = resolvedArtifact?.payload
                     ?: AiModelToolContent.format(result, call.toolName, Int.MAX_VALUE)
+                val projectedResult = toolResultForModel(call.toolName, result)
                 val modelResultCharBudget = resolveToolResultCharBudget(
                     messages = requestMessages,
                     toolDefinitions = tools,
@@ -956,17 +972,18 @@ class AiChatClient internal constructor(
                     contextWindow = contextWindow,
                 )
                 val boundedModelToolContent = AiModelToolContent.format(
-                    result,
+                    projectedResult,
                     call.toolName,
                     (modelResultCharBudget - AiToolResultBudget.ENVELOPE_RESERVE_CHARS)
                         .coerceAtLeast(512)
                 )
+                val truncatedByApp = AiModelToolContent.isTruncatedByApp(boundedModelToolContent)
                 val resultSucceeded = resolvedArtifact?.success
                     ?: result.isSuccessfulToolResult()
                 val resultComplete = resolvedArtifact?.complete
                     ?: (!result.containsTruncationMarker() &&
                         indeterminateIntent == null &&
-                        !AiModelToolContent.isTruncatedByApp(boundedModelToolContent))
+                        !truncatedByApp)
                 val newArtifact = AgentToolResultArtifact(
                         receiptId = prepared.receiptId,
                         conversationId = conversationId,
@@ -1037,24 +1054,29 @@ class AiChatClient internal constructor(
                     requestMessages.removeRuntimeNotices()
                 }
                 val modelToolContent = if (storedArtifact == null) {
-                    AiModelToolContent.format(result, call.toolName, modelResultCharBudget)
-                } else if (AiModelToolContent.isTruncatedByApp(boundedModelToolContent)) {
+                    AiModelToolContent.format(projectedResult, call.toolName, modelResultCharBudget)
+                } else if (truncatedByApp) {
                     JsonParser.parseString(boundedModelToolContent).asJsonObject.apply {
                         add("_agent_result", storedArtifact.toAgentResultEnvelope())
                     }.toString()
                 } else {
                     AiModelToolContent.format(
-                        result.withAgentResultEnvelope(storedArtifact),
+                        projectedResult.withAgentResultEnvelope(storedArtifact),
                         call.toolName,
                         modelResultCharBudget
                     )
                 }
-                requestMessages.add(JsonObject().apply {
-                    addProperty("role", "tool")
-                    addProperty("tool_call_id", call.callId)
-                    addProperty("name", call.functionName)
-                    addProperty("content", modelToolContent)
-                })
+                requestMessages.add(call.resultMessage(modelToolContent))
+                if (startedIntent != null) {
+                    onToolExecution?.invoke(
+                        AiToolExecutionUpdate(
+                            callId = call.callId,
+                            toolName = call.toolName,
+                            receipt = receipt,
+                            result = result.takeIf { resultSucceeded && !truncatedByApp },
+                        )
+                    )
+                }
             }
             // 一次发布完整的 tool-call batch，避免进程恢复时留下半组 Provider 消息。
             onDurableContextUpdate(
@@ -1458,11 +1480,14 @@ class AiChatClient internal constructor(
                     .post(body)
                     .build()
                     .withAiTextLog(params)
-                request.logAiGeneration {
+                request.logAiGeneration { recordUsage ->
                     client.executeStreamChat(
                         request, "reasoning_content", null, onStreamUpdate, generationTest, assistantTurn,
                         null, null, workBuddyResponse = true,
-                    ).also { if (!generationTest) it.requireAssistantEnd() }
+                    ).also {
+                        recordUsage(it.usage)
+                        if (!generationTest) it.requireAssistantEnd()
+                    }
                 }
             }
         }
@@ -1496,7 +1521,7 @@ class AiChatClient internal constructor(
                 .map { it.asJsonObject }
             val request = codec.request(providerMessages, tools, requestParams, stream, conversationId)
                 .withAiTextLog(params)
-            return request.logAiGeneration {
+            return request.logAiGeneration { recordUsage ->
                 var partialContent = ""
                 var partialReasoning: String? = null
                 val client = if (subscription) chatGptHttpClient(setting.timeoutSeconds) else this
@@ -1545,6 +1570,7 @@ class AiChatClient internal constructor(
                     reply.message, reply.content, reply.reasoning, reply.model,
                     reply.finishReason, reply.usage, reply.toolCalls,
                 )
+                recordUsage(completion.usage)
                 if (!generationTest) {
                     completion.requireAssistantEnd(partialContent, partialReasoning)
                     reply.requireCompleted()
@@ -1569,7 +1595,7 @@ class AiChatClient internal constructor(
             .withAiTextLog(params)
         val reasoningKey = setting.reasoningOptions(model.id).reasoningOutputField.ifBlank { "reasoning_content" }
         val openRouterHistory = setting.openRouterChatHistory(model.id)
-        return request.logAiGeneration {
+        return request.logAiGeneration { recordUsage ->
             val completion = if (stream) {
                 executeStreamChat(request, reasoningKey, openRouterHistory, onStreamUpdate, generationTest,
                     assistantTurn, deepSeekHistory, webEvents)
@@ -1579,14 +1605,18 @@ class AiChatClient internal constructor(
                     allowDeltaContent = !assistantTurn && !generationTest,
                 )
             }
+            recordUsage(completion.usage)
             if (!generationTest) completion.requireAssistantEnd()
             completion
         }
     }
 
-    private suspend fun Request.logAiGeneration(read: suspend () -> ChatCompletionSnapshot): ChatCompletionSnapshot {
+    private suspend fun Request.logAiGeneration(
+        read: suspend ((AiChatUsage?) -> Unit) -> ChatCompletionSnapshot,
+    ): ChatCompletionSnapshot {
+        var usage: AiChatUsage? = null
         return try {
-            read().also { result ->
+            read { usage = it }.also { result ->
                 val reason = assistantReplyEndReason(
                     result.finishReason, result.streamEnded, result.message.hasChatGenerationRefusal(),
                 )
@@ -1601,6 +1631,8 @@ class AiChatClient internal constructor(
             }
             NetworkLog.finishGeneration(this, state)
             throw error
+        } finally {
+            onModelRequestUsage?.invoke(usage)
         }
     }
 
@@ -1822,7 +1854,9 @@ class AiChatClient internal constructor(
                             }
                         }
                         model = json.stringOrNull("model") ?: model
-                        usage = json.objectOrNull("usage")?.toChatUsage() ?: usage
+                        json.objectOrNull("usage")?.toChatUsage()?.let { update ->
+                            usage = usage.mergeRequestUsage(update)
+                        }
                         val choice = json.arrayOrNull("choices")
                             ?.firstOrNull()
                             ?.takeIf { it.isJsonObject }
@@ -2249,6 +2283,13 @@ class AiChatClient internal constructor(
         val arguments: JsonObject,
         val externalTool: AiExternalSearchTool?,
     ) {
+        fun resultMessage(content: String): JsonObject = JsonObject().apply {
+            addProperty("role", "tool")
+            addProperty("tool_call_id", callId)
+            addProperty("name", functionName)
+            addProperty("content", content)
+        }
+
         fun toPendingToolCall(sideEffect: McpToolSideEffect): AiPendingToolCall {
             return AiPendingToolCall(
                 toolName = toolName,
@@ -2401,6 +2442,13 @@ data class AiPendingToolCall(
     val sideEffect: McpToolSideEffect
 )
 
+internal data class AiToolExecutionUpdate(
+    val callId: String,
+    val toolName: String,
+    val receipt: ToolExecutionReceipt? = null,
+    val result: JsonObject? = null,
+)
+
 data class AiChatTurnResult(
     val content: String,
     val reasoning: String?,
@@ -2482,6 +2530,9 @@ internal class AiChatUsageAccumulator {
     var callsWithoutUsage = 0
         private set
 
+    val hasMissingPromptTokens: Boolean get() = promptReports < callsWithUsage + callsWithoutUsage
+    val hasMissingCompletionTokens: Boolean get() = completionReports < callsWithUsage + callsWithoutUsage
+
     /** True when any reported field omits one or more model calls. */
     val hasPartialCoverage: Boolean
         get() {
@@ -2534,6 +2585,15 @@ data class AiChatUsage(
     val completionTokens: Int?,
     val totalTokens: Int?
 )
+
+private fun AiChatUsage?.mergeRequestUsage(update: AiChatUsage): AiChatUsage {
+    fun latest(previous: Int?, reported: Int?): Int? = reported?.takeIf { it != 0 } ?: previous ?: reported
+    return AiChatUsage(
+        promptTokens = latest(this?.promptTokens, update.promptTokens),
+        completionTokens = latest(this?.completionTokens, update.completionTokens),
+        totalTokens = latest(this?.totalTokens, update.totalTokens),
+    )
+}
 
 private data class AiChatCompactionSummary(
     val content: String,

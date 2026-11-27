@@ -79,9 +79,12 @@ class AiSharedTextGenerationTest {
 
     @Test
     fun responseTruncationGetsTheSameTypeForNonAssistantCalls() {
-        val frame = """{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Prefix"}]}]}}"""
+        val frame = """{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Prefix"}]}],"usage":{"input_tokens":45,"output_tokens":12,"total_tokens":57}}}"""
+        val usageReports = mutableListOf<AiChatUsage?>()
         lateinit var sent: Request
-        val client = mockClient("data: $frame\n\n", "text/event-stream") { request, _ -> sent = request }
+        val client = mockClient("data: $frame\n\n", "text/event-stream", usageReports::add) { request, _ ->
+            sent = request
+        }
         val setting = setting(AiProviderType.OPENAI).copy(
             useResponsesApi = true,
             streamResponseEnabled = true,
@@ -90,10 +93,31 @@ class AiSharedTextGenerationTest {
             runBlocking { client.generateText(setting, AiModel("review"), input, AiTextParams()) }
         }
         assertEquals(AiAssistantReplyEndReason.TRUNCATED, error.reason)
+        assertEquals(listOf(AiChatUsage(45, 12, 57)), usageReports)
         assertEquals(
             NetworkLog.GenerationState.TRUNCATED,
             sent.tag(NetworkLog.GenerationTrace::class.java)?.result?.state,
         )
+    }
+
+    @Test
+    fun streamingUsageReportsOncePerRequestWithTheLatestCounts() = runBlocking {
+        val response = """
+            data: {"usage":{"prompt_tokens":40,"completion_tokens":0},"choices":[]}
+
+            data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}
+
+            data: {"usage":{"prompt_tokens":0,"completion_tokens":8,"total_tokens":48},"choices":[]}
+
+            data: [DONE]
+        """.trimIndent()
+        val usageReports = mutableListOf<AiChatUsage?>()
+        val client = mockClient(response, "text/event-stream", usageReports::add) { _, _ -> }
+        val setting = setting(AiProviderType.OPENAI).copy(streamResponseEnabled = true)
+
+        repeat(2) { client.generateText(setting, AiModel("review"), input, AiTextParams()) }
+
+        assertEquals(listOf(AiChatUsage(40, 8, 48), AiChatUsage(40, 8, 48)), usageReports)
     }
 
     @Test
@@ -147,6 +171,7 @@ class AiSharedTextGenerationTest {
     private fun mockClient(
         reply: String,
         contentType: String = "application/json",
+        onModelRequestUsage: ((AiChatUsage?) -> Unit)? = null,
         verify: (Request, JsonObject) -> Unit,
     ): AiChatClient {
         val http = OkHttpClient.Builder().addInterceptor { chain ->
@@ -156,6 +181,6 @@ class AiSharedTextGenerationTest {
             Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("Fixture")
                 .body(reply.toResponseBody(contentType.toMediaType())).build()
         }.build()
-        return AiChatClient { http }
+        return AiChatClient(onModelRequestUsage = onModelRequestUsage) { http }
     }
 }
