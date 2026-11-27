@@ -419,10 +419,7 @@
     <string name="mcp_service_desc">For development debugging, used by MCP clients.</string>
     <string name="mcp_service_url_format">%s/mcp</string>
     <string name="mcp_port_title">MCP port</string>
-    <string name="mcp_port_summary">Current port %s</string>
-    <string name="service_port_decrease">Decrease port by one</string>
-    <string name="service_port_increase">Increase port by one</string>
-    <string name="service_port_range_step">Range %1$d–%2$d · Tap ±1 · Hold to repeat</string>
+    <string name="service_port_range">Enter %1$d–%2$d</string>
     <string name="ai_setting">AI settings</string>
     <string name="ai_setting_summary">Configure model providers for built-in AI features</string>
     <string name="ai_provider_menu">Providers</string>
@@ -1702,7 +1699,6 @@
     <string name="e_ink_mode_detail">Remove animations and optimize the experience of using E-paper books</string>
     <string name="web_menu">Web service</string>
     <string name="web_port_title">Web port</string>
-    <string name="web_port_summary">Current port %s</string>
     <string name="qr_share">QR code sharing</string>
     <string name="str_share">Strings sharing</string>
     <string name="wifi_share">Wifi sharing</string>

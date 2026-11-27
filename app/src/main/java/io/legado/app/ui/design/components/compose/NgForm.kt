@@ -75,6 +75,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
@@ -750,8 +751,9 @@ private fun NgStepperButton(
     onLongPressFinished: (() -> Unit)? = null,
     @DrawableRes chevronIcon: Int? = null,
     modifier: Modifier = Modifier,
+    commitOnRelease: Boolean = false,
 ) {
-    if (chevronIcon != null) {
+    if (chevronIcon != null && !commitOnRelease) {
         NgSliderStepButton(
             iconRes = chevronIcon,
             contentDescription = contentDescription,
@@ -771,8 +773,11 @@ private fun NgStepperButton(
     val repeatEnabled = onLongPressStep != null && onLongPressFinished != null
     Box(
         modifier = modifier
-            .size(34.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .size(
+                width = if (chevronIcon == null) 34.dp else formNumberStepWidth,
+                height = if (chevronIcon == null) 34.dp else 44.dp,
+            )
+            .clip(RoundedCornerShape(if (chevronIcon == null) 8.dp else 18.dp))
             .then(
                 if (repeatEnabled) {
                     Modifier
@@ -833,14 +838,23 @@ private fun NgStepperButton(
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = text,
-            color = Color(NgTheme.colors.onSurfaceVariant).copy(
-                alpha = if (enabled) 1f else 0.36f
-            ),
-            fontSize = 22.sp,
-            lineHeight = 22.sp,
-        )
+        if (chevronIcon == null) {
+            Text(
+                text = text,
+                color = Color(NgTheme.colors.onSurfaceVariant).copy(
+                    alpha = if (enabled) 1f else 0.36f
+                ),
+                fontSize = 22.sp,
+                lineHeight = 22.sp,
+            )
+        } else {
+            Icon(
+                painter = painterResource(chevronIcon),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = Color(NgTheme.colors.onSurface).copy(alpha = if (enabled) 0.74f else 0.28f),
+            )
+        }
     }
 }
 
@@ -973,6 +987,8 @@ fun NgFormNumberSettingRow(
     onStepValueChangeFinished: (() -> Unit)? = null,
     variant: NgFormNumberSettingRowVariant = NgFormNumberSettingRowVariant.OUTLINED,
     isError: Boolean = false,
+    stepFallbackValue: Int? = null,
+    commitStepsOnRelease: Boolean = false,
 ) {
     val colors = NgTheme.colors
     val compact = variant == NgFormNumberSettingRowVariant.COMPACT_CHEVRONS
@@ -1003,23 +1019,23 @@ fun NgFormNumberSettingRow(
     } else {
         requestedValueWidth
     }
-    val parsedValue = value.toIntOrNull()?.takeIf { current ->
+    val stepBaseValue = value.toIntOrNull()?.takeIf { current ->
         valueRange?.let { current in it } ?: true
-    }
-    var repeatedValue by remember { mutableIntStateOf(parsedValue ?: 0) }
+    } ?: stepFallbackValue?.takeIf { valueRange != null && it in valueRange }
+    var repeatedValue by remember { mutableIntStateOf(stepBaseValue ?: 0) }
     var repeating by remember { mutableStateOf(false) }
 
     fun stepValue(delta: Int, repeat: Boolean): Boolean {
         val range = valueRange ?: return false
         val base = if (repeat) {
             if (!repeating) {
-                val current = parsedValue ?: return false
+                val current = stepBaseValue ?: return false
                 repeatedValue = current
                 repeating = true
             }
             repeatedValue
         } else {
-            parsedValue ?: return false
+            stepBaseValue ?: return false
         }
         val next = (base + delta).coerceIn(range)
         if (next == base) return false
@@ -1075,7 +1091,7 @@ fun NgFormNumberSettingRow(
             NgStepperButton(
                 text = "−",
                 contentDescription = "${stringResource(R.string.reduce)} $title",
-                enabled = enabled && parsedValue != null && parsedValue > valueRange.first,
+                enabled = enabled && stepBaseValue != null && stepBaseValue > valueRange.first,
                 onClick = {
                     if (stepValue(delta = -1, repeat = false)) {
                         onStepValueChangeFinished()
@@ -1085,6 +1101,7 @@ fun NgFormNumberSettingRow(
                 onLongPressFinished = ::finishRepeatedValue,
                 chevronIcon = if (compact) R.drawable.ic_chevron_left_20 else null,
                 modifier = countControlModifier,
+                commitOnRelease = commitStepsOnRelease,
             )
             if (!compact) Spacer(Modifier.width(4.dp))
         }
@@ -1152,7 +1169,7 @@ fun NgFormNumberSettingRow(
             NgStepperButton(
                 text = "+",
                 contentDescription = "${stringResource(R.string.plus)} $title",
-                enabled = enabled && parsedValue != null && parsedValue < valueRange.last,
+                enabled = enabled && stepBaseValue != null && stepBaseValue < valueRange.last,
                 onClick = {
                     if (stepValue(delta = 1, repeat = false)) {
                         onStepValueChangeFinished()
@@ -1162,6 +1179,7 @@ fun NgFormNumberSettingRow(
                 onLongPressFinished = ::finishRepeatedValue,
                 chevronIcon = if (compact) R.drawable.ic_chevron_right_20 else null,
                 modifier = countControlModifier,
+                commitOnRelease = commitStepsOnRelease,
             )
         }
     }

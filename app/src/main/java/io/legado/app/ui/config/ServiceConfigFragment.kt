@@ -125,7 +125,7 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
             }
 
             PreferKey.webPort -> {
-                updatePortSummaries()
+                refreshPorts()
                 if (WebService.isRun) {
                     WebService.stop(requireContext())
                     WebService.start(requireContext())
@@ -133,7 +133,7 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
             }
 
             PreferKey.mcpPort -> {
-                updatePortSummaries()
+                refreshPorts()
                 if (McpService.isRun) {
                     McpService.stop(requireContext())
                     McpService.start(requireContext())
@@ -157,10 +157,6 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
                 getString(R.string.web_service_desc)
             },
             webPort = AppConfig.webPort,
-            webPortSummary = getString(
-                R.string.web_port_summary,
-                AppConfig.webPort.toString(),
-            ),
             webServiceWakeLock = getPrefBoolean(PreferKey.webServiceWakeLock),
             mcpServiceEnabled = McpService.isRun,
             mcpServiceSummary = if (McpService.isRun) {
@@ -169,25 +165,13 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
                 getString(R.string.mcp_service_desc)
             },
             mcpPort = AppConfig.mcpPort,
-            mcpPortSummary = getString(
-                R.string.mcp_port_summary,
-                AppConfig.mcpPort.toString(),
-            ),
         )
     }
 
-    private fun updatePortSummaries() {
+    private fun refreshPorts() {
         screenState = screenState.copy(
             webPort = AppConfig.webPort,
-            webPortSummary = getString(
-                R.string.web_port_summary,
-                AppConfig.webPort.toString(),
-            ),
             mcpPort = AppConfig.mcpPort,
-            mcpPortSummary = getString(
-                R.string.mcp_port_summary,
-                AppConfig.mcpPort.toString(),
-            ),
         )
     }
 
@@ -207,10 +191,7 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
     }
 
     private fun setWebPortDraft(value: Int) {
-        screenState = screenState.copy(
-            webPort = value,
-            webPortSummary = getString(R.string.web_port_summary, value.toString()),
-        )
+        screenState = screenState.copy(webPort = value)
     }
 
     private fun saveWebPort() {
@@ -218,10 +199,7 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
     }
 
     private fun setMcpPortDraft(value: Int) {
-        screenState = screenState.copy(
-            mcpPort = value,
-            mcpPortSummary = getString(R.string.mcp_port_summary, value.toString()),
-        )
+        screenState = screenState.copy(mcpPort = value)
     }
 
     private fun saveMcpPort() {
