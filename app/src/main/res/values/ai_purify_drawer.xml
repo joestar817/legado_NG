@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_purify_drawer_details">Purify details</string>
+    <string name="ai_purify_drawer_compare">Confirm paragraph cleaning</string>
+    <string name="ai_purify_drawer_changes">Changes</string>
+    <string name="ai_purify_drawer_custom_range">Custom range</string>
+    <string name="ai_purify_drawer_chapter">Chapter %1$d</string>
+    <string name="ai_purify_drawer_chapters">Chapters %1$d–%2$d</string>
+    <string name="ai_purify_drawer_current_chapter">%1$s · %2$s</string>
+    <string name="ai_purify_drawer_range_count">%1$d selected · up to %2$d chapters</string>
+    <string name="ai_purify_drawer_reading">Reading the chapters</string>
+    <string name="ai_purify_drawer_generating_rules">Preparing purification rules</string>
+    <string name="ai_purify_drawer_checking_selection">Checking the selected text</string>
+    <string name="ai_purify_drawer_selected_paragraph">Selected paragraph</string>
+    <string name="ai_purify_drawer_selected_count">%1$s characters selected</string>
+    <string name="ai_purify_drawer_in_progress">In progress</string>
+    <string name="ai_purify_drawer_completed">Completed</string>
+    <string name="ai_purify_drawer_failed">Purification failed</string>
+    <string name="ai_purify_drawer_incomplete">Incomplete</string>
+    <string name="ai_purify_drawer_no_changes">No changes found</string>
+    <string name="ai_purify_drawer_retry">Purify again</string>
+    <string name="ai_purify_drawer_rules">Rules</string>
+    <string name="ai_purify_drawer_selected_rules">%1$d / %2$d</string>
+    <string name="ai_purify_drawer_hit_count">%1$d hits</string>
+    <string name="ai_purify_drawer_hit_location">Chapter %1$d · Paragraph %2$d</string>
+    <string name="ai_purify_drawer_locations">Hit locations</string>
+    <string name="ai_purify_drawer_select_rule">Select rule %1$s</string>
+    <string name="ai_purify_drawer_removals">%1$d removals</string>
+    <string name="ai_purify_drawer_replacements">%1$d replacements</string>
+    <string name="ai_purify_drawer_additions">%1$d additions</string>
+    <string name="ai_purify_drawer_length">Text length</string>
+    <string name="ai_purify_drawer_length_change">%1$s → %2$s characters</string>
+    <string name="ai_purify_drawer_character_count">%1$s characters</string>
+    <string name="ai_purify_drawer_scope">Rule scope</string>
+    <string name="ai_purify_drawer_scope_book">Current book text</string>
+    <string name="ai_purify_drawer_scope_source">Text in this book or source</string>
+    <string name="ai_purify_drawer_skipped">Skipped %1$d chapters. You can retry.</string>
+    <string name="ai_purify_drawer_book_changed">The current book changed</string>
+    <plurals name="ai_purify_drawer_rule_count">
+        <item quantity="one">%d rule</item>
+        <item quantity="other">%d rules</item>
+    </plurals>
+</resources>

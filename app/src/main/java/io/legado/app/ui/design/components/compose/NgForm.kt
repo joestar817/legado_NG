@@ -101,6 +101,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.takeOrElse
 import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgButtonVariant
@@ -960,7 +961,7 @@ fun NgFormNumberSettingRow(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    valueWidth: Dp = 96.dp,
+    valueWidth: Dp = Dp.Unspecified,
     keyboardOptions: KeyboardOptions = KeyboardOptions(
         keyboardType = KeyboardType.Number,
         imeAction = ImeAction.Done,
@@ -996,6 +997,12 @@ fun NgFormNumberSettingRow(
     val stepControlsVisible = valueRange != null &&
         onStepValueChange != null &&
         onStepValueChangeFinished != null
+    val requestedValueWidth = valueWidth.takeOrElse { if (compact) 44.dp else 96.dp }
+    val inputWidth = if (stepControlsVisible && !compact) {
+        requestedValueWidth.coerceAtMost(80.dp)
+    } else {
+        requestedValueWidth
+    }
     val parsedValue = value.toIntOrNull()?.takeIf { current ->
         valueRange?.let { current in it } ?: true
     }
@@ -1085,11 +1092,7 @@ fun NgFormNumberSettingRow(
             value = value,
             onValueChange = onValueChange,
             modifier = countControlModifier
-                .width(when {
-                    compact -> 44.dp
-                    stepControlsVisible -> valueWidth.coerceAtMost(80.dp)
-                    else -> valueWidth
-                })
+                .width(inputWidth)
                 .height(if (compact) 44.dp else 34.dp)
                 .semantics {
                     contentDescription = title

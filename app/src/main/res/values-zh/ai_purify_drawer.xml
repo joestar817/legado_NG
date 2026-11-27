@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_purify_drawer_details">净化详情</string>
+    <string name="ai_purify_drawer_compare">确认段落净化</string>
+    <string name="ai_purify_drawer_changes">改动</string>
+    <string name="ai_purify_drawer_custom_range">自定义范围</string>
+    <string name="ai_purify_drawer_chapter">第%1$d章</string>
+    <string name="ai_purify_drawer_chapters">第%1$d–%2$d章</string>
+    <string name="ai_purify_drawer_current_chapter">%1$s · %2$s</string>
+    <string name="ai_purify_drawer_range_count">共 %1$d 章，最多 %2$d 章</string>
+    <string name="ai_purify_drawer_reading">正在读取章节正文</string>
+    <string name="ai_purify_drawer_generating_rules">正在整理净化规则</string>
+    <string name="ai_purify_drawer_checking_selection">正在核对选中内容</string>
+    <string name="ai_purify_drawer_selected_paragraph">选中段落</string>
+    <string name="ai_purify_drawer_selected_count">选中 %1$s 字</string>
+    <string name="ai_purify_drawer_in_progress">进行中</string>
+    <string name="ai_purify_drawer_completed">已完成</string>
+    <string name="ai_purify_drawer_failed">净化失败</string>
+    <string name="ai_purify_drawer_incomplete">未完成</string>
+    <string name="ai_purify_drawer_no_changes">未发现改动</string>
+    <string name="ai_purify_drawer_retry">重新净化</string>
+    <string name="ai_purify_drawer_rules">净化规则</string>
+    <string name="ai_purify_drawer_selected_rules">%1$d / %2$d 条</string>
+    <string name="ai_purify_drawer_hit_count">命中 %1$d 次</string>
+    <string name="ai_purify_drawer_hit_location">第%1$d章 · 第%2$d段</string>
+    <string name="ai_purify_drawer_locations">命中位置</string>
+    <string name="ai_purify_drawer_select_rule">勾选规则 %1$s</string>
+    <string name="ai_purify_drawer_removals">删除 %1$d 处</string>
+    <string name="ai_purify_drawer_replacements">替换 %1$d 处</string>
+    <string name="ai_purify_drawer_additions">新增 %1$d 处</string>
+    <string name="ai_purify_drawer_length">正文长度</string>
+    <string name="ai_purify_drawer_length_change">%1$s → %2$s 字</string>
+    <string name="ai_purify_drawer_character_count">%1$s 字</string>
+    <string name="ai_purify_drawer_scope">规则范围</string>
+    <string name="ai_purify_drawer_scope_book">当前书正文</string>
+    <string name="ai_purify_drawer_scope_source">当前书或同书源正文</string>
+    <string name="ai_purify_drawer_skipped">已跳过 %1$d 章失败结果，可重试</string>
+    <string name="ai_purify_drawer_book_changed">当前书籍已切换</string>
+    <plurals name="ai_purify_drawer_rule_count">
+        <item quantity="other">%d 条</item>
+    </plurals>
+</resources>

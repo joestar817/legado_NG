@@ -22,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -41,6 +42,7 @@ import io.legado.app.ui.design.components.compose.NgExpandableSettingsItemVarian
 import io.legado.app.ui.design.components.compose.NgFormControlGroup
 import io.legado.app.ui.design.components.compose.NgFormGroupDivider
 import io.legado.app.ui.design.components.compose.NgFormNumberSettingRow
+import io.legado.app.ui.design.components.compose.NgFormNumberSettingRowVariant
 import io.legado.app.ui.design.components.compose.NgFormPanelSectionTitle
 import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
@@ -671,6 +673,7 @@ private fun AiPurifyNumberFormRow(
         onValueChange = {
             onAction(AiPurifySettingsAction.NumberChanged(field, it))
         },
+        valueWidth = 56.dp * LocalDensity.current.fontScale.coerceAtLeast(1f),
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Number,
             imeAction = ImeAction.Done,
@@ -686,5 +689,6 @@ private fun AiPurifyNumberFormRow(
         onFocusLost = {
             onAction(AiPurifySettingsAction.NumberFocusLost(field))
         },
+        variant = NgFormNumberSettingRowVariant.COMPACT_CHEVRONS,
     )
 }
