@@ -58,6 +58,7 @@ import io.legado.app.ui.book.read.page.provider.LayoutProgressListener
 import io.legado.app.ui.book.read.page.provider.NativeReaderSelectionSource
 import io.legado.app.ui.book.read.page.provider.NativeTextHighlightResolver
 import io.legado.app.ui.book.read.page.provider.TextPageFactory
+import io.legado.app.ui.design.components.view.NgBackdropSourceLayout
 import io.legado.app.utils.activity
 import io.legado.app.utils.invisible
 import io.legado.app.utils.longToastOnUi
@@ -87,6 +88,15 @@ class ReadView(context: Context, attrs: AttributeSet) :
     val prevPage by lazy { PageView(context) }
     val curPage by lazy { PageView(context) }
     val nextPage by lazy { PageView(context) }
+    // Anchor the glass to the page without drawing titles, text, or reader chrome into it.
+    internal val liquidGlassBackdropSource: View = object : NgBackdropSourceLayout(context) {
+        override fun drawForBackdrop(canvas: Canvas) {
+            curPage.drawPageBackground(canvas)
+        }
+    }.apply {
+        id = R.id.ng_liquid_glass_backdrop_source
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
     private val nativeSelectionSource: ReaderSelectionSource by lazy { NativeReaderSelectionSource(this) }
     private val selectionSource: ReaderSelectionSource
         get() = epubLayout?.takeIf { it.active } ?: nativeSelectionSource
@@ -407,6 +417,10 @@ class ReadView(context: Context, attrs: AttributeSet) :
             upPageAnim()
             upPageSlopSquare()
         }
+        addView(
+            liquidGlassBackdropSource,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
         addView(nextPage)
         addView(curPage)
         addView(prevPage)
@@ -1099,6 +1113,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
         curPage.upBg()
         prevPage.upBg()
         nextPage.upBg()
+        liquidGlassBackdropSource.invalidate()
         // EPUB draws the background in this view's drawChild, outside the PageView display list.
         invalidate()
     }
@@ -1110,6 +1125,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
         curPage.upBgAlpha()
         prevPage.upBgAlpha()
         nextPage.upBgAlpha()
+        liquidGlassBackdropSource.invalidate()
         invalidate()
     }
 

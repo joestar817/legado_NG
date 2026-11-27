@@ -23,6 +23,21 @@ import org.robolectric.annotation.Config
 class NgBackdropSourceLayoutTest {
 
     @Test
+    fun `ordinary backdrop hosts still sample their normal draw pass`() {
+        var drawnCanvas: Canvas? = null
+        val host = object : NgBackdropSourceLayout(ApplicationProvider.getApplicationContext<Context>()) {
+            override fun draw(canvas: Canvas) {
+                drawnCanvas = canvas
+            }
+        }
+        val canvas = Canvas()
+
+        host.drawForBackdrop(canvas)
+
+        assertSame(canvas, drawnCanvas)
+    }
+
+    @Test
     fun `two hosts share tint invalidation and restore callback in either detach order`() {
         listOf(false, true).forEach { reverse ->
             val fixture = Fixture()

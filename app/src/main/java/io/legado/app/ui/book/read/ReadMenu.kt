@@ -51,6 +51,7 @@ import io.legado.app.ui.book.read.config.applyReadChineseConverter
 import io.legado.app.ui.browser.WebViewActivity
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgGlassStyle
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.resolveNgFloatingGlassStyle
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
@@ -327,7 +328,9 @@ class ReadMenu @JvmOverloads constructor(
                 NgGlassSurface(
                     modifier = Modifier.fillMaxSize(),
                     shape = RoundedCornerShape(12.dp),
-                    style = readFloatingGlassStyle()
+                    style = readFloatingGlassStyle(),
+                    role = NgMaterialRole.TOP_NAVIGATION,
+                    liquidCornerRadius = 12.dp,
                 ) {}
             }
         }
@@ -339,7 +342,9 @@ class ReadMenu @JvmOverloads constructor(
                 NgGlassSurface(
                     modifier = Modifier.fillMaxSize(),
                     shape = RoundedCornerShape(12.dp),
-                    style = readFloatingGlassStyle()
+                    style = readFloatingGlassStyle(),
+                    role = NgMaterialRole.BOTTOM_NAVIGATION,
+                    liquidCornerRadius = 12.dp,
                 ) {}
             }
         }

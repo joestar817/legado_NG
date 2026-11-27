@@ -37,6 +37,7 @@ import io.legado.app.help.config.ReadFloatingAppearanceConfig
 import io.legado.app.help.config.ReadFloatingColorStyle
 import io.legado.app.ui.book.read.ReadCatalogStyle
 import io.legado.app.ui.book.read.ReadDrawerStyle
+import io.legado.app.ui.book.read.ReadFloatingAppearanceState
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandle
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandleVariant
 import io.legado.app.ui.design.components.compose.NgFormGroupDivider
@@ -133,6 +134,14 @@ private fun FloatingAppearanceSettings(state: ReadStyleUiState, color: Color, ac
                 state.globalFloatingFollowApp, color, actions.onGlobalFloatingFollowAppChanged)
             NgFormGroupDivider()
         }
+        PresetSwitchRow(
+            title = stringResource(R.string.ng_visual_system_liquid_glass),
+            iconRes = R.drawable.ic_bookshelf_top_bar_floating,
+            checked = ReadFloatingAppearanceState.liquidGlassEnabled,
+            contentColor = color,
+            onCheckedChange = actions.onFloatingLiquidGlassChanged,
+        )
+        NgFormGroupDivider()
         FloatingColorSettingRow(state, color, actions)
         NgFormGroupDivider()
         ReadStyleChoiceSettingRow(

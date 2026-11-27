@@ -280,7 +280,11 @@ internal class NgViewLiquidGlassRenderer(
             (padding + sourceLocation[0] - ownerLocation[0] - source.scrollX).toFloat(),
             (padding + sourceLocation[1] - ownerLocation[1] - source.scrollY).toFloat(),
         )
-        source.draw(canvas)
+        if (source is NgBackdropSourceLayout) {
+            source.drawForBackdrop(canvas)
+        } else {
+            source.draw(canvas)
+        }
         canvas.restoreToCount(saveCount)
     }
 

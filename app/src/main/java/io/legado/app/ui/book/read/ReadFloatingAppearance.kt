@@ -3,6 +3,7 @@ package io.legado.app.ui.book.read
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadFloatingAppearanceConfig
 import io.legado.app.help.config.ReadFloatingColorStyle
@@ -20,6 +21,7 @@ internal object ReadFloatingAppearanceState {
     private val colorStyleState = mutableStateOf(
         ReadBookConfig.effectiveReadFloatingColor().colorStyle
     )
+    private val liquidGlassState = mutableStateOf(ReadBookConfig.readFloatingLiquidGlassEnabled)
 
     val transparencyPercent: Int
         get() = transparencyState.intValue
@@ -29,6 +31,17 @@ internal object ReadFloatingAppearanceState {
 
     val colorStyle: ReadFloatingColorStyle
         get() = colorStyleState.value
+
+    val liquidGlassEnabled: Boolean
+        get() = liquidGlassState.value
+
+    val visualSystem: NgVisualSystem
+        get() = if (liquidGlassEnabled) NgVisualSystem.LIQUID_GLASS else NgVisualSystem.TRANSPARENT_GLASS
+
+    fun setLiquidGlassEnabled(enabled: Boolean) {
+        ReadBookConfig.readFloatingLiquidGlassEnabled = enabled
+        liquidGlassState.value = enabled
+    }
 
     fun update(
         transparencyPercent: Int,
@@ -45,6 +58,7 @@ internal object ReadFloatingAppearanceState {
     }
 
     fun refreshFromConfig() {
+        liquidGlassState.value = ReadBookConfig.readFloatingLiquidGlassEnabled
         update(
             transparencyPercent = ReadBookConfig.durConfig.curReadFloatingTransparency(),
             primaryStrengthPercent = ReadBookConfig.durConfig.curReadFloatingPrimaryStrength(),

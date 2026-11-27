@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import com.materialkolor.hct.Hct
+import io.legado.app.help.config.NgVisualSystem.LIQUID_GLASS
+import io.legado.app.help.config.NgVisualSystem.TRANSPARENT_GLASS
 import io.legado.app.ui.book.read.ReadFloatingPalette
 import io.legado.app.ui.design.theme.NgColorMath
 import io.legado.app.ui.design.theme.NgLegacyThemeInput
@@ -14,6 +16,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NgGlassSurfaceTest {
+
+    @Test
+    fun windowMaterialWinsOverSurfaceAndAppMaterial() {
+        assertEquals(
+            LIQUID_GLASS,
+            resolveNgSurfaceVisualSystem(
+                window = LIQUID_GLASS,
+                surface = TRANSPARENT_GLASS,
+                theme = TRANSPARENT_GLASS,
+            ),
+        )
+        assertEquals(
+            TRANSPARENT_GLASS,
+            resolveNgSurfaceVisualSystem(
+                window = TRANSPARENT_GLASS,
+                surface = LIQUID_GLASS,
+                theme = LIQUID_GLASS,
+            ),
+        )
+    }
+
+    @Test
+    fun appWindowsWithoutMaterialPreferenceKeepTheirNormalPrecedence() {
+        assertEquals(
+            TRANSPARENT_GLASS,
+            resolveNgSurfaceVisualSystem(window = null, surface = TRANSPARENT_GLASS, theme = LIQUID_GLASS),
+        )
+        assertEquals(
+            LIQUID_GLASS,
+            resolveNgSurfaceVisualSystem(window = null, surface = null, theme = LIQUID_GLASS),
+        )
+    }
 
     @Test
     fun defaultStyleUsesThemeDrawerAlphaAndSemanticContentColor() {

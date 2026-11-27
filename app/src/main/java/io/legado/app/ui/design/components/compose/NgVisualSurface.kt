@@ -33,6 +33,7 @@ import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.ui.design.components.view.NgViewLiquidGlassBackdropView
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.findNgWindowVisualSystemOwner
 
 enum class NgMaterialRole {
     NAVIGATION,
@@ -235,7 +236,7 @@ private fun currentNgLiquidGlassViewBackdropSource(): View? {
     if (providedSource != null) return providedSource
     return LocalView.current.rootView.findViewById(
         R.id.ng_liquid_glass_backdrop_source,
-    )
+    ) ?: LocalContext.current.findNgWindowVisualSystemOwner()?.windowLiquidGlassBackdropSource
 }
 
 @Composable
@@ -268,8 +269,7 @@ fun NgLiquidGlassViewBackdropProvider(
 /**
  * 按语义角色在透明玻璃与液态玻璃之间选择渲染后端。
  *
- * 调用方仍负责页面结构；没有同一 Compose 树中的 [liquidBackdrop] 时会可靠地
- * 回退到现有透明玻璃，而不会伪造或重复绘制背景。
+ * 背景来自当前 Compose 树或所属窗口。没有可采样的背景时使用透明玻璃。
  */
 @Composable
 fun NgVisualSurface(
@@ -289,14 +289,20 @@ fun NgVisualSurface(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val context = LocalContext.current
+    val windowOwner = context.findNgWindowVisualSystemOwner()
     val supportsBackdropEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val visualSystem = visualSystemOverride ?: NgTheme.visualSystem
+    val visualSystem = resolveNgSurfaceVisualSystem(
+        window = windowOwner?.windowVisualSystem,
+        surface = visualSystemOverride,
+        theme = NgTheme.visualSystem,
+    )
     val usesLiquidGlass = visualSystem == NgVisualSystem.LIQUID_GLASS &&
         !NgTheme.snapshot.isEInk && role != NgMaterialRole.MANGA_PANEL
-    val usesSoftGradient = NgThemeModeStore.current(context) ==
+    val usesSoftGradient = windowOwner == null && NgThemeModeStore.current(context) ==
         NgThemePresentationMode.SOFT_GRADIENT
-    val resolvedViewBackdropSource =
+    val resolvedViewBackdropSource = if (usesLiquidGlass && supportsBackdropEffect && liquidBackdrop == null) {
         viewBackdropSource ?: currentNgLiquidGlassViewBackdropSource()
+    } else null
     if (
         !usesLiquidGlass ||
         (liquidBackdrop == null && resolvedViewBackdropSource == null) ||
@@ -348,7 +354,7 @@ fun NgVisualSurface(
         NgViewLiquidGlassSurface(
             modifier = modifier,
             sourceView = requireNotNull(resolvedViewBackdropSource),
-            visualSystemOverride = visualSystemOverride,
+            visualSystemOverride = if (windowOwner != null) visualSystem else visualSystemOverride,
             role = role,
             shape = shape,
             cornerRadius = cornerRadius,
@@ -360,6 +366,12 @@ fun NgVisualSurface(
         )
     }
 }
+
+internal fun resolveNgSurfaceVisualSystem(
+    window: NgVisualSystem?,
+    surface: NgVisualSystem?,
+    theme: NgVisualSystem,
+): NgVisualSystem = window ?: surface ?: theme
 
 @Composable
 private fun NgLiquidGlassSurface(

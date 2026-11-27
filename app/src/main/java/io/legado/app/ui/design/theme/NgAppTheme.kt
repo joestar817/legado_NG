@@ -3,6 +3,7 @@ package io.legado.app.ui.design.theme
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.view.View
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ColorScheme
@@ -137,9 +138,11 @@ fun NgAppTheme(
     val resolvedSnapshot = snapshot ?: rememberNgThemeSnapshot(darkModeOverride)
     val view = LocalView.current
     val context = LocalContext.current
-    val visualSystemFlow = remember(context) { NgVisualSystemStore.observe(context) }
-    val observedVisualSystem by visualSystemFlow.collectAsState()
-    val visualSystem = observedVisualSystem ?: NgVisualSystemStore.current(context)
+    val visualSystem = context.findNgWindowVisualSystemOwner()?.windowVisualSystem ?: run {
+        val visualSystemFlow = remember(context) { NgVisualSystemStore.observe(context) }
+        val observedVisualSystem by visualSystemFlow.collectAsState()
+        observedVisualSystem ?: NgVisualSystemStore.current(context)
+    }
     val interfaceFontRevision by NgInterfaceFontStore.revision.collectAsState()
     val appTypeface = NgThemeRuntimeAssets.appTypeface(context)
     val typography = remember(appTypeface, interfaceFontRevision) {
@@ -264,6 +267,15 @@ private fun NgShapeTokens.toMaterialShapes(): Shapes {
         large = RoundedCornerShape(largeDp.dp)
     )
 }
+
+/** Lets a window and its dialogs share a material preference and a live backdrop. */
+interface NgWindowVisualSystemOwner {
+    val windowVisualSystem: NgVisualSystem
+    val windowLiquidGlassBackdropSource: View?
+}
+
+internal fun Context.findNgWindowVisualSystemOwner(): NgWindowVisualSystemOwner? =
+    findActivity() as? NgWindowVisualSystemOwner
 
 internal fun Context.findActivity(): Activity? {
     return when (this) {

@@ -476,6 +476,7 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
             refreshUi()
             notifyFloatingAppearanceChanged()
         },
+        onFloatingLiquidGlassChanged = ReadFloatingAppearanceState::setLiquidGlassEnabled,
         onImportHighlights = {
             selectHighlightImportDocument.launch(
                 arrayOf("application/zip", "application/json", "text/plain", "application/octet-stream")

@@ -516,6 +516,10 @@ object ReadBookConfig {
             }
         }
 
+    var readFloatingLiquidGlassEnabled: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.readFloatingLiquidGlass, true)
+        set(value) = appCtx.putPrefBoolean(PreferKey.readFloatingLiquidGlass, value)
+
     fun reloadGlobalReadFloatingColorPreferences() {
         readFloatingFollowAppGlobally = appCtx.getPrefBoolean(
             PreferKey.readFloatingFollowAppGlobally,

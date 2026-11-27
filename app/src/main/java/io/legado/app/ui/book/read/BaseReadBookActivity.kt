@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import androidx.activity.viewModels
@@ -31,6 +32,7 @@ import io.legado.app.ui.book.read.config.PageKeyDialog
 import io.legado.app.ui.book.read.config.ReadCharsetDialogContent
 import io.legado.app.ui.book.read.config.ReadOfflineCacheDialogContent
 import io.legado.app.ui.book.read.config.showReadComposeDialog
+import io.legado.app.ui.design.theme.NgWindowVisualSystemOwner
 import io.legado.app.utils.SelectDirectoryContract
 import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.FileDoc
@@ -48,10 +50,16 @@ import io.legado.app.utils.viewbindingdelegate.viewBinding
  * 阅读界面
  */
 abstract class BaseReadBookActivity :
-    VMBaseActivity<ActivityBookReadBinding, ReadBookViewModel>(imageBg = false) {
+    VMBaseActivity<ActivityBookReadBinding, ReadBookViewModel>(imageBg = false),
+    NgWindowVisualSystemOwner {
 
     override val binding by viewBinding(ActivityBookReadBinding::inflate)
     override val viewModel by viewModels<ReadBookViewModel>()
+    override val windowVisualSystem
+        get() = ReadFloatingAppearanceState.visualSystem
+    override val windowLiquidGlassBackdropSource: View?
+        get() = binding.readView.liquidGlassBackdropSource.takeIf { it.isAttachedToWindow }
+
     protected val menuLayoutIsVisible
         get() = bottomDialog > 0 || binding.readMenu.isVisible || binding.searchMenu.bottomMenuVisible
     private var catalogStatusBarHidden = false

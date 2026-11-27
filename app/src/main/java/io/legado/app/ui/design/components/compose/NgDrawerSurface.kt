@@ -50,6 +50,7 @@ import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.design.theme.NgThemeSnapshot
 import io.legado.app.ui.design.theme.findActivity
+import io.legado.app.ui.design.theme.findNgWindowVisualSystemOwner
 
 enum class NgDrawerDragHandleVariant {
     STANDARD,
@@ -77,6 +78,12 @@ internal val LocalNgDrawerInheritThemeProfile = staticCompositionLocalOf { true 
 fun rememberNgDrawerThemeProfile(): NgThemeDrawerProfile? {
     if (!LocalNgDrawerInheritThemeProfile.current) return null
     val context = LocalContext.current
+    if (context.findNgWindowVisualSystemOwner()?.windowVisualSystem == NgVisualSystem.LIQUID_GLASS &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !NgTheme.snapshot.isEInk
+    ) {
+        // A drawer background profile can cover the live page sampled by the window.
+        return null
+    }
     val state by remember(context) { NgDrawerProfileStore.observe(context) }.collectAsState()
     return remember(state) { state.snapshot() }
 }
@@ -377,17 +384,19 @@ private fun NgDrawerBackgroundSurface(
     liquidCornerRadius: Dp = NgTheme.shapes.dialogDp.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val liquid = profile?.source == NgThemeDrawerProfile.LIQUID_GLASS
+    val context = LocalContext.current
+    val windowOwner = context.findNgWindowVisualSystemOwner()
+    val liquid = windowOwner?.windowVisualSystem?.let { it == NgVisualSystem.LIQUID_GLASS }
+        ?: (profile?.source == NgThemeDrawerProfile.LIQUID_GLASS)
     val dialogBackdrop = if (liquid && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !NgTheme.snapshot.isEInk) {
         val drawerRoot = LocalView.current.rootView
-        val activityRoot = LocalContext.current.findActivity()?.window?.decorView
-        if (activityRoot != null && activityRoot !== drawerRoot) {
-            activityRoot.findNgDrawerBackdropSource()
-                ?: activityRoot.findViewById<View>(R.id.ng_liquid_glass_backdrop_source)
-                    ?.takeIf { it.isAttachedToWindow }
-        } else {
-            null
-        }
+        val activityRoot = context.findActivity()?.window?.decorView
+        windowOwner?.windowLiquidGlassBackdropSource
+            ?: activityRoot?.takeIf { it !== drawerRoot }?.let { root ->
+                root.findNgDrawerBackdropSource()
+                    ?: root.findViewById<View>(R.id.ng_liquid_glass_backdrop_source)
+                        ?.takeIf { it.isAttachedToWindow }
+            }
     } else null
     NgVisualSurface(
         modifier = modifier,

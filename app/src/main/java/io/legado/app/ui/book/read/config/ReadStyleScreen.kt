@@ -116,6 +116,7 @@ import io.legado.app.ui.design.components.compose.NgFormGroup
 import io.legado.app.ui.design.components.compose.NgFormPanel
 import io.legado.app.ui.design.components.compose.NgFormPanelVariant
 import io.legado.app.ui.design.components.compose.NgFormGroupDivider
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderStepButton
@@ -309,6 +310,7 @@ internal data class ReadStyleActions(
     val onOnlyThisBookChanged: (Boolean) -> Unit,
     val onShareLayoutChanged: (Boolean) -> Unit,
     val onGlobalFloatingFollowAppChanged: (Boolean) -> Unit,
+    val onFloatingLiquidGlassChanged: (Boolean) -> Unit,
     val onImportHighlights: () -> Unit,
     val onBeginHighlightSelection: () -> Unit,
     val onRestoreBuiltInHighlights: () -> Unit,
@@ -434,6 +436,8 @@ internal fun ReadStyleScreen(
             topEnd = NgDrawerAppearanceConfig.DEFAULT_CORNER_RADIUS_DP.dp,
         ),
         style = readFloatingGlassStyle(),
+        role = NgMaterialRole.OVERLAY,
+        liquidCornerRadius = NgDrawerAppearanceConfig.DEFAULT_CORNER_RADIUS_DP.dp,
     ) {
         if (page in rootPages) {
             ReadStyleRoot(

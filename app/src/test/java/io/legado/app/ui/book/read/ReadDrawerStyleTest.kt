@@ -31,6 +31,26 @@ import java.io.File
 class ReadDrawerStyleTest {
 
     @Test
+    fun `reading liquid glass defaults on and honors a saved off value`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferences = context.defaultSharedPreferences
+        val key = PreferKey.readFloatingLiquidGlass
+        val original = preferences.getBoolean(key, false).takeIf { preferences.contains(key) }
+
+        try {
+            preferences.edit().remove(key).apply()
+            assertTrue(ReadBookConfig.readFloatingLiquidGlassEnabled)
+
+            ReadBookConfig.readFloatingLiquidGlassEnabled = false
+            assertFalse(ReadBookConfig.readFloatingLiquidGlassEnabled)
+        } finally {
+            preferences.edit().apply {
+                if (original == null) remove(key) else putBoolean(key, original)
+            }.apply()
+        }
+    }
+
+    @Test
     fun `unconfigured independent multicolor night uses the original blue palette`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val originalEInkMode = AppConfig.isEInkMode

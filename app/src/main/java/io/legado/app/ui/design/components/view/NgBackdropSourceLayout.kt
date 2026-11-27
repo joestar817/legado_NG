@@ -1,6 +1,7 @@
 package io.legado.app.ui.design.components.view
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.util.AttributeSet
@@ -20,6 +21,11 @@ internal open class NgBackdropSourceLayout @JvmOverloads constructor(
 
     var contentRevision: Long = 0L
         private set
+
+    /** A host that supplies a separate background pass invalidates when that pass changes. */
+    open fun drawForBackdrop(canvas: Canvas) {
+        draw(canvas)
+    }
 
     private var backgroundRevision = 0L
     private var windowBackgroundObserver: WindowBackgroundObserver? = null

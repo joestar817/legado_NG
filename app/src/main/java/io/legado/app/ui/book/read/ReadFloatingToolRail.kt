@@ -59,6 +59,7 @@ import io.legado.app.help.config.ReadThemeMode
 import io.legado.app.help.config.ReadFloatingTool
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgSlider
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.components.compose.popupVisibleBoundsInWindow
 import io.legado.app.ui.design.theme.NgTheme
@@ -185,6 +186,8 @@ private fun ToolRail(
         shape = RoundedCornerShape(12.dp),
         style = readFloatingGlassStyle(),
         contentPadding = PaddingValues(vertical = FloatingToolRailVerticalPadding)
+        role = NgMaterialRole.NAVIGATION,
+        liquidCornerRadius = 12.dp,
     ) {
       Column(Modifier.heightIn(max = LocalConfiguration.current.screenHeightDp.dp * FloatingToolMaxScreenFraction)
           .verticalScroll(rememberScrollState())) {
